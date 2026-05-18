@@ -2,6 +2,8 @@
 
 Turn YouTube rabbit holes into structured, searchable knowledge — a CLI for people who watch to learn.
 
+![CI](https://github.com/earlyprototype/meTube/actions/workflows/build.yml/badge.svg)
+
 ![demo](docs/demo.gif)
 
 ## What this is / why I built it
