@@ -89,6 +89,7 @@ data/temp_audio/
 
 # Kanbanger local sync + worker state
 .kanban.json
+.kanban.lock
 .populate-state.json
 worker-notes.md
 worker-notes.archive/
