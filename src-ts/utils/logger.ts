@@ -2,7 +2,7 @@ import pino from 'pino';
 
 /**
  * Structured logger using Pino
- * 
+ *
  * Usage:
  *   logger.info({ context: 'value' }, 'Message');
  *   logger.error({ error: err.message }, 'Error occurred');
@@ -14,17 +14,18 @@ const isDebug = process.env.DEBUG === 'true';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || (isTest ? 'silent' : isDebug ? 'debug' : 'error'),
-  transport: isProd || isTest || !isDebug
-    ? undefined
-    : {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'HH:MM:ss',
-          ignore: 'pid,hostname',
-          singleLine: false,
+  transport:
+    isProd || isTest || !isDebug
+      ? undefined
+      : {
+          target: 'pino-pretty',
+          options: {
+            colorize: true,
+            translateTime: 'HH:MM:ss',
+            ignore: 'pid,hostname',
+            singleLine: false,
+          },
         },
-      },
   formatters: {
     level: (label) => {
       return { level: label };

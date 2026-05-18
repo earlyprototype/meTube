@@ -7,18 +7,18 @@ import chalk from 'chalk';
 
 // Orange (Primary/Accent)
 export const orange = {
-  bright: chalk.hex('#FF8C00'),  // High contrast
-  normal: chalk.hex('#FFA500'),  // Standard
-  dim: chalk.hex('#CC8400'),     // Muted
+  bright: chalk.hex('#FF8C00'), // High contrast
+  normal: chalk.hex('#FFA500'), // Standard
+  dim: chalk.hex('#CC8400'), // Muted
 };
 
 // Grey (UI/Secondary)
 export const grey = {
   lightest: chalk.hex('#D3D3D3'), // Borders/dividers (light backgrounds)
-  light: chalk.hex('#808080'),    // Secondary text (darker for light backgrounds)
-  normal: chalk.gray,             // Inactive items
-  dark: chalk.hex('#505050'),     // Subtle emphasis
-  darkest: chalk.hex('#303030'),  // Backgrounds
+  light: chalk.hex('#808080'), // Secondary text (darker for light backgrounds)
+  normal: chalk.gray, // Inactive items
+  dark: chalk.hex('#505050'), // Subtle emphasis
+  darkest: chalk.hex('#303030'), // Backgrounds
 };
 
 // Semantic colors (standard)
@@ -35,7 +35,7 @@ export const inkColors = {
   orangeBright: '#FF8C00',
   orangeDim: '#CC8400',
   grey: 'gray',
-  greyLight: '#808080',  // Darker for better contrast on light backgrounds
+  greyLight: '#808080', // Darker for better contrast on light backgrounds
   greyDark: '#505050',
 };
 

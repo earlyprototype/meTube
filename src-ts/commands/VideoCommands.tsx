@@ -26,10 +26,7 @@ interface VideoCommandsProps {
 export function VideoCommands({ subcommand, args, flags, onComplete }: VideoCommandsProps) {
   if (!subcommand) {
     return (
-      <ErrorDisplay
-        message="No video subcommand specified"
-        suggestions={['add <url_or_id>']}
-      />
+      <ErrorDisplay message="No video subcommand specified" suggestions={['add <url_or_id>']} />
     );
   }
 
@@ -70,20 +67,24 @@ function extractVideoId(input: string): string {
 /**
  * Video Add - Extract and optionally report on a single video
  */
-function VideoAdd({ 
-  videoInput, 
-  flags, 
-  onComplete 
-}: { 
-  videoInput?: string; 
-  flags: Record<string, any>; 
+function VideoAdd({
+  videoInput,
+  flags,
+  onComplete,
+}: {
+  videoInput?: string;
+  flags: Record<string, any>;
   onComplete?: () => void;
 }) {
-  const [status, setStatus] = useState<'validating' | 'extracting' | 'generating_report' | 'done' | 'error'>('validating');
+  const [status, setStatus] = useState<
+    'validating' | 'extracting' | 'generating_report' | 'done' | 'error'
+  >('validating');
   const [error, setError] = useState<string | null>(null);
   const [videoId, setVideoId] = useState<string>('');
   const [videoTitle, setVideoTitle] = useState<string>('');
-  const [progressStatus, setProgressStatus] = useState<'downloading' | 'transcribing' | 'parsing' | 'saving' | 'completed'>('downloading');
+  const [progressStatus, setProgressStatus] = useState<
+    'downloading' | 'transcribing' | 'parsing' | 'saving' | 'completed'
+  >('downloading');
   const [reportGenerated, setReportGenerated] = useState(false);
 
   useEffect(() => {
@@ -99,7 +100,7 @@ function VideoAdd({
         // Extract video ID
         const extractedId = extractVideoId(videoInput);
         setVideoId(extractedId);
-        
+
         logger.info({ input: videoInput, extractedId }, 'Extracting video ID');
 
         // Initialize services
@@ -115,11 +116,14 @@ function VideoAdd({
           enableWhisper: !flags.noWhisper,
           onProgress: (prog) => {
             // Map progress status to ProgressDisplay compatible status
-            const statusMap: Record<string, 'downloading' | 'transcribing' | 'parsing' | 'saving' | 'completed'> = {
-              'processing': 'downloading',
-              'complete': 'completed',
-              'failed': 'saving',
-              'skipped': 'saving',
+            const statusMap: Record<
+              string,
+              'downloading' | 'transcribing' | 'parsing' | 'saving' | 'completed'
+            > = {
+              processing: 'downloading',
+              complete: 'completed',
+              failed: 'saving',
+              skipped: 'saving',
             };
             setProgressStatus(statusMap[prog.status] || 'downloading');
             if (prog.videoTitle) {
@@ -132,13 +136,13 @@ function VideoAdd({
 
         // Extract video
         const result = await extractor.extractSingleVideo(extractedId);
-        
+
         if (result && result.videoData) {
           setVideoTitle(result.videoData.title || extractedId);
         }
 
         db.close();
-        
+
         // Generate report if requested
         if (flags.report) {
           setStatus('generating_report');
@@ -147,10 +151,9 @@ function VideoAdd({
           setStatus('done');
           if (onComplete) onComplete();
         }
-
       } catch (err) {
         logger.error({ error: err }, 'Video extraction failed');
-        
+
         if (err instanceof Error) {
           if (err.message.includes('not found') || err.message.includes('Video unavailable')) {
             setError(`Video not found: ${videoInput}. Check the URL or ID is correct.`);
@@ -185,18 +188,16 @@ function VideoAdd({
         </Box>
         <Box marginBottom={1}>
           <Text>
-            Video: <Text bold color={inkColors.orange}>{videoTitle || videoId}</Text>
+            Video:{' '}
+            <Text bold color={inkColors.orange}>
+              {videoTitle || videoId}
+            </Text>
           </Text>
         </Box>
         <Box marginBottom={2}>
           <Text dimColor>Generating report...</Text>
         </Box>
-        <ReportCommand 
-          type="video" 
-          id={videoId} 
-          flags={flags} 
-          onComplete={onComplete} 
-        />
+        <ReportCommand type="video" id={videoId} flags={flags} onComplete={onComplete} />
       </Box>
     );
   }
@@ -212,7 +213,10 @@ function VideoAdd({
         </Box>
         <Box marginBottom={1}>
           <Text>
-            Video ID: <Text bold color={inkColors.orange}>{videoId}</Text>
+            Video ID:{' '}
+            <Text bold color={inkColors.orange}>
+              {videoId}
+            </Text>
           </Text>
         </Box>
         <Box>

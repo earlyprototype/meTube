@@ -12,7 +12,9 @@ interface StatusPanelProps {
 export function StatusPanel({ showDetails = true }: StatusPanelProps) {
   const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const [authStatus, setAuthStatus] = useState<'checking' | 'valid' | 'invalid'>('checking');
-  const [whisperStatus, setWhisperStatus] = useState<'checking' | 'available' | 'unavailable'>('checking');
+  const [whisperStatus, setWhisperStatus] = useState<'checking' | 'available' | 'unavailable'>(
+    'checking'
+  );
 
   useEffect(() => {
     // Check database
@@ -40,7 +42,8 @@ export function StatusPanel({ showDetails = true }: StatusPanelProps) {
 
   const getStatusIcon = (status: string) => {
     if (status === 'checking') return '...';
-    if (status === 'connected' || status === 'valid' || status === 'available') return symbols.check;
+    if (status === 'connected' || status === 'valid' || status === 'available')
+      return symbols.check;
     return symbols.cross;
   };
 
@@ -52,34 +55,31 @@ export function StatusPanel({ showDetails = true }: StatusPanelProps) {
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Box borderStyle="round" borderColor={status.border.normal} padding={1} flexDirection="column">
+      <Box
+        borderStyle="round"
+        borderColor={status.border.normal}
+        padding={1}
+        flexDirection="column"
+      >
         <Box marginBottom={1}>
-          <Text bold color={inkColors.orange}>System Status</Text>
+          <Text bold color={inkColors.orange}>
+            System Status
+          </Text>
         </Box>
 
         <Box>
-          <Text color={getStatusColor(dbStatus)}>
-            {getStatusIcon(dbStatus)} Database
-          </Text>
+          <Text color={getStatusColor(dbStatus)}>{getStatusIcon(dbStatus)} Database</Text>
           {showDetails && <Text dimColor> (metube.db)</Text>}
         </Box>
 
         <Box>
-          <Text color={getStatusColor(authStatus)}>
-            {getStatusIcon(authStatus)} YouTube API
-          </Text>
-          {showDetails && authStatus === 'invalid' && (
-            <Text dimColor> (run: metube init)</Text>
-          )}
+          <Text color={getStatusColor(authStatus)}>{getStatusIcon(authStatus)} YouTube API</Text>
+          {showDetails && authStatus === 'invalid' && <Text dimColor> (run: metube init)</Text>}
         </Box>
 
         <Box>
-          <Text color={getStatusColor(whisperStatus)}>
-            {getStatusIcon(whisperStatus)} Whisper
-          </Text>
-          {showDetails && whisperStatus === 'unavailable' && (
-            <Text dimColor> (Python venv)</Text>
-          )}
+          <Text color={getStatusColor(whisperStatus)}>{getStatusIcon(whisperStatus)} Whisper</Text>
+          {showDetails && whisperStatus === 'unavailable' && <Text dimColor> (Python venv)</Text>}
         </Box>
       </Box>
     </Box>

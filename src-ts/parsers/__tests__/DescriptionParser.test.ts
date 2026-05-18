@@ -67,8 +67,7 @@ describe('DescriptionParser', () => {
 
     it('should deduplicate URLs', () => {
       const title = 'Test Video';
-      const description =
-        'Visit https://example.com and https://example.com again';
+      const description = 'Visit https://example.com and https://example.com again';
 
       const result = parser.parse(title, description);
 
@@ -151,10 +150,7 @@ describe('DescriptionParser', () => {
 
   describe('extractEntitiesForDatabase()', () => {
     it('should convert GitHub repos to database format', () => {
-      const parsed = parser.parse(
-        'Test',
-        'https://github.com/test/repo'
-      );
+      const parsed = parser.parse('Test', 'https://github.com/test/repo');
       const entities = parser.extractEntitiesForDatabase(parsed);
 
       expect(entities).toHaveLength(1);
@@ -180,10 +176,7 @@ describe('DescriptionParser', () => {
     });
 
     it('should convert both repos and websites', () => {
-      const parsed = parser.parse(
-        'Test',
-        'https://github.com/test/repo and https://example.com'
-      );
+      const parsed = parser.parse('Test', 'https://github.com/test/repo and https://example.com');
       const entities = parser.extractEntitiesForDatabase(parsed);
 
       expect(entities).toHaveLength(2);
@@ -210,10 +203,7 @@ describe('DescriptionParser', () => {
 
   describe('getTags()', () => {
     it('should return github tag when repos found', () => {
-      const parsed = parser.parse(
-        'Test',
-        'https://github.com/test/repo'
-      );
+      const parsed = parser.parse('Test', 'https://github.com/test/repo');
       const tags = parser.getTags(parsed);
 
       expect(tags).toContain('github');
@@ -227,10 +217,7 @@ describe('DescriptionParser', () => {
     });
 
     it('should return both tags when both found', () => {
-      const parsed = parser.parse(
-        'Test',
-        'https://github.com/test/repo and https://example.com'
-      );
+      const parsed = parser.parse('Test', 'https://github.com/test/repo and https://example.com');
       const tags = parser.getTags(parsed);
 
       expect(tags).toContain('github');

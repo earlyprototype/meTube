@@ -39,9 +39,14 @@ if (!selectedUri) {
 
 console.log('2. Selected Redirect URI:');
 console.log('   URI:', selectedUri);
-console.log('   Reason:', selectedUri.includes('localhost:3000') ? 'Contains localhost:3000' : 
-                           selectedUri.includes('localhost') ? 'Contains localhost' : 
-                           'First in list');
+console.log(
+  '   Reason:',
+  selectedUri.includes('localhost:3000')
+    ? 'Contains localhost:3000'
+    : selectedUri.includes('localhost')
+      ? 'Contains localhost'
+      : 'First in list'
+);
 console.log();
 
 // Extract port from URI

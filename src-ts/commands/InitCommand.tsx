@@ -13,7 +13,9 @@ interface InitCommandProps {
 
 export function InitCommand({ force = false, onComplete }: InitCommandProps) {
   const { exit } = useApp();
-  const [status, setStatus] = useState<'initializing' | 'authenticating' | 'success' | 'error'>('initializing');
+  const [status, setStatus] = useState<'initializing' | 'authenticating' | 'success' | 'error'>(
+    'initializing'
+  );
   const [message, setMessage] = useState('Initializing...');
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +31,7 @@ export function InitCommand({ force = false, onComplete }: InitCommandProps) {
         // Step 2: Authenticate
         setStatus('authenticating');
         setMessage('Authenticating with YouTube...');
-        
+
         const auth = new YouTubeAuth({
           credentialsPath: 'client_secret.json',
           tokensPath: 'tokens.json',
@@ -48,7 +50,7 @@ export function InitCommand({ force = false, onComplete }: InitCommandProps) {
         }
 
         const authenticated = await auth.authenticate(force);
-        
+
         if (authenticated) {
           setStatus('success');
           setMessage('Authentication successful!');
@@ -95,7 +97,9 @@ export function InitCommand({ force = false, onComplete }: InitCommandProps) {
       <Box flexDirection="column" padding={1}>
         <Box borderStyle="round" borderColor="green" padding={1} flexDirection="column">
           <Box marginBottom={1}>
-            <Text bold color="green">OK Initialization Complete</Text>
+            <Text bold color="green">
+              OK Initialization Complete
+            </Text>
           </Box>
           <Box>
             <Text>{message}</Text>
@@ -113,7 +117,9 @@ export function InitCommand({ force = false, onComplete }: InitCommandProps) {
     <Box flexDirection="column" padding={1}>
       <Box borderStyle="round" padding={1} flexDirection="column">
         <Box marginBottom={1}>
-          <Text bold color="cyan">YouTube Authentication</Text>
+          <Text bold color="cyan">
+            YouTube Authentication
+          </Text>
         </Box>
         <Box>
           <Text>

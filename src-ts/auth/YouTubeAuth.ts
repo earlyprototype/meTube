@@ -52,11 +52,10 @@ export class YouTubeAuth {
       let redirectUri = options.redirectUri;
       if (!redirectUri) {
         // Try to find localhost:3000 or localhost in redirect URIs
-        redirectUri = this.credentials.redirect_uris.find(
-          (uri) => uri.includes('localhost:3000')
-        ) || this.credentials.redirect_uris.find(
-          (uri) => uri.includes('localhost')
-        ) || this.credentials.redirect_uris[0];
+        redirectUri =
+          this.credentials.redirect_uris.find((uri) => uri.includes('localhost:3000')) ||
+          this.credentials.redirect_uris.find((uri) => uri.includes('localhost')) ||
+          this.credentials.redirect_uris[0];
       }
 
       logger.info({ redirectUri }, 'Using redirect URI');
@@ -112,9 +111,7 @@ export class YouTubeAuth {
       const creds = config.installed || config.web;
 
       if (!creds) {
-        throw new ValidationError(
-          'Invalid credentials file: missing "installed" or "web" key'
-        );
+        throw new ValidationError('Invalid credentials file: missing "installed" or "web" key');
       }
 
       if (!creds.client_id || !creds.client_secret || !creds.redirect_uris) {
@@ -349,13 +346,13 @@ export class YouTubeAuth {
 
   /**
    * Authenticate using local server (Python-style one-click authentication)
-   * 
+   *
    * This method matches Python's `run_local_server()` experience:
    * 1. Starts a temporary local server
    * 2. Opens browser automatically
    * 3. Captures OAuth callback
    * 4. Exchanges code for tokens
-   * 
+   *
    * @param port - Port to run local server on (default: 80)
    * @returns True if authentication successful
    * @throws {AppError} If authentication fails
@@ -376,7 +373,6 @@ export class YouTubeAuth {
         // Note: response_type is NOT included for Desktop/installed apps
         // The googleapis library sets it automatically based on client type
       });
-
 
       // Start the capture process (this starts the server)
       const capturePromise = captureAuthorizationCode(port);
@@ -426,11 +422,14 @@ export class YouTubeAuth {
       console.log('✓ Authentication successful!');
       console.log(`✓ Tokens saved to: ${this.tokensPath}\n`);
       logger.info('Local server authentication successful');
-      
+
       return true;
     } catch (error) {
       logger.error({ error }, 'Local server authentication failed');
-      console.error('\n✗ Authentication failed:', error instanceof Error ? error.message : String(error));
+      console.error(
+        '\n✗ Authentication failed:',
+        error instanceof Error ? error.message : String(error)
+      );
       throw new AppError('Failed to authenticate with local server', {
         cause: error,
         code: 'LOCAL_AUTH_FAILED',
@@ -440,12 +439,12 @@ export class YouTubeAuth {
 
   /**
    * Authenticate with automatic token management
-   * 
+   *
    * This is the main authentication method that:
    * 1. Checks if valid tokens exist
    * 2. Tries to refresh if expired
    * 3. Falls back to local server auth if needed
-   * 
+   *
    * @param forceReauth - Force re-authentication even if tokens exist
    * @returns True if authenticated successfully
    */

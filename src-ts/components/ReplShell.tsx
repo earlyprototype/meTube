@@ -10,12 +10,7 @@ interface ReplShellProps {
   history?: string[];
 }
 
-export function ReplShell({ 
-  onCommand, 
-  onExit, 
-  prompt = '>', 
-  history = [] 
-}: ReplShellProps) {
+export function ReplShell({ onCommand, onExit, prompt = '>', history = [] }: ReplShellProps) {
   const [input, setInput] = useState('');
   const [commandHistory, setCommandHistory] = useState<string[]>(history);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -42,7 +37,7 @@ export function ReplShell({
 
   const handleSubmit = (value: string) => {
     const trimmed = value.trim();
-    
+
     if (!trimmed) {
       setInput('');
       return;
@@ -55,7 +50,7 @@ export function ReplShell({
     }
 
     // Add to history
-    setCommandHistory(prev => [...prev, trimmed]);
+    setCommandHistory((prev) => [...prev, trimmed]);
     setHistoryIndex(-1);
 
     // Execute command
@@ -66,7 +61,9 @@ export function ReplShell({
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color={inkColors.orange} bold backgroundColor={inkColors.greyDark}>{prompt}</Text>
+        <Text color={inkColors.orange} bold backgroundColor={inkColors.greyDark}>
+          {prompt}
+        </Text>
         <Text> </Text>
         <TextInput
           key="repl-input"

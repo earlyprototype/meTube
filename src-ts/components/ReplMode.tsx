@@ -8,7 +8,10 @@ import { PlaylistRepository, VideoRepository } from '../database/repositories.js
 import { YouTubeAuth } from '../auth/YouTubeAuth.js';
 
 interface ReplModeProps {
-  onCommand: (command: string, setComponent: (component: React.ReactElement | null) => void) => Promise<void>;
+  onCommand: (
+    command: string,
+    setComponent: (component: React.ReactElement | null) => void
+  ) => Promise<void>;
   onExit: () => void;
 }
 
@@ -152,9 +155,9 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
 
   const handleCommand = async (command: string) => {
     const trimmed = command.trim();
-    
+
     // Add to history
-    setHistory(prev => [...prev, trimmed]);
+    setHistory((prev) => [...prev, trimmed]);
 
     // Handle REPL-specific commands
     if (trimmed === '/help' || trimmed === 'help') {
@@ -174,10 +177,7 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
     }
 
     if (trimmed === '/history') {
-      setOutput([
-        'Command History:',
-        ...history.map((cmd, i) => `  ${i + 1}. ${cmd}`)
-      ]);
+      setOutput(['Command History:', ...history.map((cmd, i) => `  ${i + 1}. ${cmd}`)]);
       setShowHelp(false);
       setShowWorkflow(false);
       setCurrentCommand(null);
@@ -190,9 +190,9 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
 
     // Execute the actual command
     try {
-      setOutput(prev => [...prev, `${symbols.arrow} ${trimmed}`]);
+      setOutput((prev) => [...prev, `${symbols.arrow} ${trimmed}`]);
       await onCommand(trimmed, setCurrentCommand);
-      
+
       // Refresh stats after commands that modify database
       const commandType = trimmed.split(' ')[0];
       if (['init', 'playlist', 'extract', 'video'].includes(commandType)) {
@@ -200,7 +200,7 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      setOutput(prev => [...prev, `${symbols.cross} Error: ${errorMsg}`]);
+      setOutput((prev) => [...prev, `${symbols.cross} Error: ${errorMsg}`]);
       setCurrentCommand(null);
     }
   };
@@ -209,17 +209,18 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
   // Show splash screen on startup
   if (showSplash) {
     return (
-      <Box flexDirection="column" padding={2} justifyContent="center" alignItems="center" height="100%">
-        <Box 
-          paddingX={4} 
-          paddingY={2} 
-          borderStyle="single" 
-          borderColor={inkColors.grey}
-        >
+      <Box
+        flexDirection="column"
+        padding={2}
+        justifyContent="center"
+        alignItems="center"
+        height="100%"
+      >
+        <Box paddingX={4} paddingY={2} borderStyle="single" borderColor={inkColors.grey}>
           <Box flexDirection="column" alignItems="center">
             <Text backgroundColor={inkColors.greyDark}>
               <Text color={inkColors.orange} bold>
-{`
+                {`
  ███╗   ███╗███████╗████████╗██╗   ██╗██████╗ ███████╗
  ████╗ ████║██╔════╝╚══██╔══╝██║   ██║██╔══██╗██╔════╝
  ██╔████╔██║█████╗     ██║   ██║   ██║██████╔╝█████╗  
@@ -230,9 +231,7 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
               </Text>
             </Text>
             <Box marginTop={1}>
-              <Text color={inkColors.greyLight}>
-                YouTube Video Extraction & Analysis
-              </Text>
+              <Text color={inkColors.greyLight}>YouTube Video Extraction & Analysis</Text>
             </Box>
             <Box>
               <Text color={inkColors.greyLight} dimColor>
@@ -248,16 +247,35 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
   return (
     <Box flexDirection="column" height="100%">
       {/* Header with Logo */}
-      <Box borderStyle="single" borderColor={inkColors.grey} paddingX={2} paddingY={1} justifyContent="center" alignItems="center">
+      <Box
+        borderStyle="single"
+        borderColor={inkColors.grey}
+        paddingX={2}
+        paddingY={1}
+        justifyContent="center"
+        alignItems="center"
+      >
         <Box flexDirection="column" alignItems="center">
           <Box backgroundColor={inkColors.greyDark}>
             <Box flexDirection="column" alignItems="center">
-              <Text color={inkColors.orange} bold>███╗   ███╗███████╗████████╗██╗   ██╗██████╗ ███████╗</Text>
-              <Text color={inkColors.orange} bold>████╗ ████║██╔════╝╚══██╔══╝██║   ██║██╔══██╗██╔════╝</Text>
-              <Text color={inkColors.orange} bold>██╔████╔██║█████╗     ██║   ██║   ██║██████╔╝█████╗  </Text>
-              <Text color={inkColors.orange} bold>██║╚██╔╝██║██╔══╝     ██║   ██║   ██║██╔══██╗██╔══╝  </Text>
-              <Text color={inkColors.orange} bold>██║ ╚═╝ ██║███████╗   ██║   ╚██████╔╝██████╔╝███████╗</Text>
-              <Text color={inkColors.orange} bold>╚═╝     ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═════╝ ╚══════╝</Text>
+              <Text color={inkColors.orange} bold>
+                ███╗ ███╗███████╗████████╗██╗ ██╗██████╗ ███████╗
+              </Text>
+              <Text color={inkColors.orange} bold>
+                ████╗ ████║██╔════╝╚══██╔══╝██║ ██║██╔══██╗██╔════╝
+              </Text>
+              <Text color={inkColors.orange} bold>
+                ██╔████╔██║█████╗ ██║ ██║ ██║██████╔╝█████╗{' '}
+              </Text>
+              <Text color={inkColors.orange} bold>
+                ██║╚██╔╝██║██╔══╝ ██║ ██║ ██║██╔══██╗██╔══╝{' '}
+              </Text>
+              <Text color={inkColors.orange} bold>
+                ██║ ╚═╝ ██║███████╗ ██║ ╚██████╔╝██████╔╝███████╗
+              </Text>
+              <Text color={inkColors.orange} bold>
+                ╚═╝ ╚═╝╚══════╝ ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝
+              </Text>
             </Box>
           </Box>
           <Box marginTop={1}>
@@ -272,20 +290,34 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
         <Sidebar recentCommands={history} stats={stats} />
 
         {/* Main content area */}
-        <Box flexDirection="column" flexGrow={1} paddingX={1} paddingY={1} borderStyle="single" borderColor={inkColors.grey}>
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          paddingX={1}
+          paddingY={1}
+          borderStyle="single"
+          borderColor={inkColors.grey}
+        >
           {/* Workflow hint (shown on startup) */}
           {showWorkflow && (
             <Box marginBottom={1} flexDirection="column">
               <Box marginBottom={1}>
                 <Text>
-                  <Text color={inkColors.orange} bold backgroundColor={inkColors.greyDark}>QUICK START:</Text>
-                  <Text dimColor> init {symbols.arrow} playlist discover {symbols.arrow} extract {symbols.arrow} report</Text>
+                  <Text color={inkColors.orange} bold backgroundColor={inkColors.greyDark}>
+                    QUICK START:
+                  </Text>
+                  <Text dimColor>
+                    {' '}
+                    init {symbols.arrow} playlist discover {symbols.arrow} extract {symbols.arrow}{' '}
+                    report
+                  </Text>
                 </Text>
               </Box>
               <Box>
                 <Text dimColor>
                   Type <Text color={inkColors.orange}>help</Text> for all commands {symbols.bullet}{' '}
-                  <Text color={inkColors.orange}>exit</Text> or <Text color={inkColors.orange}>Ctrl+C</Text> to quit
+                  <Text color={inkColors.orange}>exit</Text> or{' '}
+                  <Text color={inkColors.orange}>Ctrl+C</Text> to quit
                 </Text>
               </Box>
             </Box>
@@ -299,22 +331,13 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
           )}
 
           {/* Current command component (displayed inline) */}
-          {currentCommand && (
-            <Box marginBottom={1}>
-              {currentCommand}
-            </Box>
-          )}
+          {currentCommand && <Box marginBottom={1}>{currentCommand}</Box>}
         </Box>
       </Box>
 
       {/* Input at bottom */}
       <Box borderStyle="single" borderTop={true} borderColor={inkColors.grey} paddingX={1}>
-        <ReplShell
-          onCommand={handleCommand}
-          onExit={onExit}
-          prompt="metube>"
-          history={history}
-        />
+        <ReplShell onCommand={handleCommand} onExit={onExit} prompt="metube>" history={history} />
       </Box>
     </Box>
   );

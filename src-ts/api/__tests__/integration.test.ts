@@ -88,13 +88,17 @@ describe('YouTubeClient Integration', () => {
     it('should validate playlistId in getPlaylistVideos', async () => {
       const client = new YouTubeClient(mockAuth);
 
-      await expect(client.getPlaylistVideos('')).rejects.toThrow('playlistId must be a non-empty string');
+      await expect(client.getPlaylistVideos('')).rejects.toThrow(
+        'playlistId must be a non-empty string'
+      );
     });
 
     it('should validate videoId in getVideoDetails', async () => {
       const client = new YouTubeClient(mockAuth);
 
-      await expect(client.getVideoDetails('')).rejects.toThrow('videoId must be a non-empty string');
+      await expect(client.getVideoDetails('')).rejects.toThrow(
+        'videoId must be a non-empty string'
+      );
       await expect(client.getVideoDetails('invalid')).rejects.toThrow(
         'Invalid YouTube video ID format'
       );
@@ -104,7 +108,7 @@ describe('YouTubeClient Integration', () => {
       const client = new YouTubeClient(mockAuth);
 
       await expect(client.getMultipleVideoDetails([])).rejects.toThrow('non-empty array');
-      
+
       // Create array of 51 items
       const tooMany = Array(51).fill('video1test123');
       await expect(client.getMultipleVideoDetails(tooMany)).rejects.toThrow(

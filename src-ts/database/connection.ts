@@ -22,7 +22,7 @@ export class DatabaseManager {
       const dbDir = path.dirname(this.databasePath);
       if (!fs.existsSync(dbDir)) {
         fs.mkdirSync(dbDir, { recursive: true });
-        logger.info({  dbDir  }, 'Created database directory');
+        logger.info({ dbDir }, 'Created database directory');
       }
     } catch (error) {
       throw new DatabaseError('Failed to create database directory', {
@@ -53,7 +53,7 @@ export class DatabaseManager {
         // Set WAL mode for better concurrency
         this.db.pragma('journal_mode = WAL');
 
-        logger.info({  path: this.databasePath  }, 'Database connection established');
+        logger.info({ path: this.databasePath }, 'Database connection established');
       } catch (error) {
         throw new DatabaseError('Failed to establish database connection', {
           operation: 'getConnection',
@@ -75,12 +75,15 @@ export class DatabaseManager {
       try {
         this.db.close();
         this.db = null;
-        logger.info({  path: this.databasePath  }, 'Database connection closed');
+        logger.info({ path: this.databasePath }, 'Database connection closed');
       } catch (error) {
-        logger.error({ 
-          error: error instanceof Error ? error.message : String(error),
-          path: this.databasePath,
-         }, 'Failed to close database connection');
+        logger.error(
+          {
+            error: error instanceof Error ? error.message : String(error),
+            path: this.databasePath,
+          },
+          'Failed to close database connection'
+        );
         // Don't throw - we're cleaning up
       }
     }
@@ -163,7 +166,7 @@ export class DatabaseManager {
       console.error('Params:', JSON.stringify(params, null, 2));
       console.error('Error:', errorMsg);
       console.error('===================\n');
-      
+
       throw new DatabaseError(`Query execution failed: ${errorMsg}`, {
         operation: 'run',
         cause: error,
@@ -244,11 +247,14 @@ export function initDatabase(databasePath?: string): DatabaseManager {
       );
     }
 
-    logger.info({ 
-      path: manager.getPath(),
-      tableCount: tables.length,
-      tables: tables.map((t) => t.name),
-     }, 'Database initialized successfully');
+    logger.info(
+      {
+        path: manager.getPath(),
+        tableCount: tables.length,
+        tables: tables.map((t) => t.name),
+      },
+      'Database initialized successfully'
+    );
 
     return manager;
   } catch (error) {
@@ -292,20 +298,25 @@ export function setupGracefulShutdown(): void {
 
   // Handle uncaught errors
   process.on('uncaughtException', (error) => {
-    logger.error({ 
-      error: error.message,
-      stack: error.stack,
-     }, 'Uncaught exception');
+    logger.error(
+      {
+        error: error.message,
+        stack: error.stack,
+      },
+      'Uncaught exception'
+    );
     closeDatabase();
     process.exit(1);
   });
 
   process.on('unhandledRejection', (reason) => {
-    logger.error({ 
-      reason: reason instanceof Error ? reason.message : String(reason),
-     }, 'Unhandled rejection');
+    logger.error(
+      {
+        reason: reason instanceof Error ? reason.message : String(reason),
+      },
+      'Unhandled rejection'
+    );
     closeDatabase();
     process.exit(1);
   });
 }
-

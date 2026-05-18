@@ -21,7 +21,7 @@ export function validateNonEmptyString(value: unknown, fieldName: string): asser
  */
 export function validateVideoId(videoId: unknown): asserts videoId is string {
   validateNonEmptyString(videoId, 'videoId');
-  
+
   if (!videoId.match(/^[a-zA-Z0-9_-]{11}$/)) {
     throw new ValidationError('Invalid YouTube video ID format', {
       field: 'videoId',
@@ -35,7 +35,7 @@ export function validateVideoId(videoId: unknown): asserts videoId is string {
  */
 export function validatePlaylistId(playlistId: unknown): asserts playlistId is string {
   validateNonEmptyString(playlistId, 'playlistId');
-  
+
   if (!playlistId.match(/^[a-zA-Z0-9_-]+$/)) {
     throw new ValidationError('Invalid YouTube playlist ID format', {
       field: 'playlistId',
@@ -58,7 +58,10 @@ export function validateYouTubeId(id: unknown, type: 'video' | 'playlist'): asse
 /**
  * Validates that a value is a positive integer
  */
-export function validatePositiveInteger(value: unknown, fieldName: string): asserts value is number {
+export function validatePositiveInteger(
+  value: unknown,
+  fieldName: string
+): asserts value is number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
     throw new ValidationError(`${fieldName} must be a positive integer`, {
       field: fieldName,

@@ -54,28 +54,27 @@ export function PlaylistPicker({ playlists, onSelect, onCancel }: PlaylistPicker
         const index = scrollOffset + visibleIndex;
         // Handle both DB playlists (video_count) and YouTube API playlists (itemCount)
         const videoCount = playlist.video_count ?? playlist.itemCount ?? 0;
-        
+
         return (
-        <Box key={playlist.id || playlist.playlist_id} flexDirection="column" marginY={0}>
-          <Box>
-            <Text 
-              color={index === selectedIndex ? 'cyan' : undefined}
-              bold={index === selectedIndex}
-            >
-              {index === selectedIndex ? `${symbols.selected} ` : '  '}
-              [{index + 1}] {safeTitle(playlist.title)}{' '}
-              <Text dimColor>({videoCount} videos)</Text>
-            </Text>
-          </Box>
-          {index === selectedIndex && playlist.description && (
-            <Box marginLeft={5}>
-              <Text dimColor>
-                {playlist.description.substring(0, 60)}
-                {playlist.description.length > 60 ? '...' : ''}
+          <Box key={playlist.id || playlist.playlist_id} flexDirection="column" marginY={0}>
+            <Box>
+              <Text
+                color={index === selectedIndex ? 'cyan' : undefined}
+                bold={index === selectedIndex}
+              >
+                {index === selectedIndex ? `${symbols.selected} ` : '  '}[{index + 1}]{' '}
+                {safeTitle(playlist.title)} <Text dimColor>({videoCount} videos)</Text>
               </Text>
             </Box>
-          )}
-        </Box>
+            {index === selectedIndex && playlist.description && (
+              <Box marginLeft={5}>
+                <Text dimColor>
+                  {playlist.description.substring(0, 60)}
+                  {playlist.description.length > 60 ? '...' : ''}
+                </Text>
+              </Box>
+            )}
+          </Box>
         );
       })}
 
@@ -83,12 +82,14 @@ export function PlaylistPicker({ playlists, onSelect, onCancel }: PlaylistPicker
         {(hasPrevious || hasMore) && (
           <Box marginBottom={1}>
             <Text dimColor>
-              {hasPrevious && '↑ More above'} {hasPrevious && hasMore && ' • '} {hasMore && '↓ More below'}
+              {hasPrevious && '↑ More above'} {hasPrevious && hasMore && ' • '}{' '}
+              {hasMore && '↓ More below'}
             </Text>
           </Box>
         )}
         <Text dimColor>
-          ↑↓ Navigate {symbols.bullet} j/k Vim keys {symbols.bullet} Enter Select {symbols.bullet} q Quit
+          ↑↓ Navigate {symbols.bullet} j/k Vim keys {symbols.bullet} Enter Select {symbols.bullet} q
+          Quit
         </Text>
       </Box>
     </Box>

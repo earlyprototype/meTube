@@ -7,7 +7,8 @@ import { executeCommandLogic } from './commands/CommandExecutor.js';
 import { ErrorDisplay } from './components/ErrorDisplay.js';
 import { ReplMode } from './components/ReplMode.js';
 
-const cli = meow(`
+const cli = meow(
+  `
   Usage
     $ metube <command> [options]
 
@@ -71,24 +72,26 @@ const cli = meow(`
   Interactive Mode
     $ metube                    Start interactive REPL mode
     Type 'help' in REPL for more commands, 'exit' to quit
-`, {
-  importMeta: import.meta,
-  flags: {
-    force: { type: 'boolean', default: false },
-    reprocess: { type: 'boolean', default: false },
-    maxVideos: { type: 'number' },
-    noTranscript: { type: 'boolean', default: false },
-    noLlm: { type: 'boolean', default: false },
-    noWhisper: { type: 'boolean', default: false },
-    report: { type: 'boolean', default: false },
-    noOpen: { type: 'boolean', default: false },
-    privacy: { type: 'string' },
-    skipExisting: { type: 'boolean', default: false },
-    removeDeleted: { type: 'boolean', default: false },
-    all: { type: 'boolean', default: false },
-    debug: { type: 'boolean', default: false },
+`,
+  {
+    importMeta: import.meta,
+    flags: {
+      force: { type: 'boolean', default: false },
+      reprocess: { type: 'boolean', default: false },
+      maxVideos: { type: 'number' },
+      noTranscript: { type: 'boolean', default: false },
+      noLlm: { type: 'boolean', default: false },
+      noWhisper: { type: 'boolean', default: false },
+      report: { type: 'boolean', default: false },
+      noOpen: { type: 'boolean', default: false },
+      privacy: { type: 'string' },
+      skipExisting: { type: 'boolean', default: false },
+      removeDeleted: { type: 'boolean', default: false },
+      all: { type: 'boolean', default: false },
+      debug: { type: 'boolean', default: false },
+    },
   }
-});
+);
 
 const [command, subcommand, ...args] = cli.input;
 
@@ -112,7 +115,7 @@ if (!command) {
         // Parse REPL input
         const parts = input.trim().split(/\s+/);
         const [cmd, sub, ...cmdArgs] = parts;
-        
+
         // Get command component (doesn't call render!)
         const component = executeCommandLogic({
           cmd,
@@ -123,7 +126,7 @@ if (!command) {
             // Command completed in REPL - component stays visible
           },
         });
-        
+
         // Display component inline in REPL
         setComponent(component);
       }}
@@ -146,7 +149,7 @@ if (!command) {
     render(component);
   } catch (error) {
     render(
-      <ErrorDisplay 
+      <ErrorDisplay
         message={error instanceof Error ? error.message : String(error)}
         details={error instanceof Error ? error.stack : undefined}
       />

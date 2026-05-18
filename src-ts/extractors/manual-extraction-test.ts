@@ -60,7 +60,9 @@ async function main() {
     // Check if database exists
     if (!fs.existsSync(dbPath)) {
       console.log('\n❌ Database not found at:', dbPath);
-      console.log('\nPlease ensure the database exists. You may need to run Phase 2 initialization.\n');
+      console.log(
+        '\nPlease ensure the database exists. You may need to run Phase 2 initialization.\n'
+      );
       process.exit(1);
     }
 
@@ -97,11 +99,19 @@ async function main() {
 
     console.log('📹 Video Metadata:');
     console.log(`  Title: ${result.videoData.title || 'N/A'}`);
-    console.log(`  Channel: ${result.videoData.channelTitle || result.videoData.channel_title || 'N/A'}`);
+    console.log(
+      `  Channel: ${result.videoData.channelTitle || result.videoData.channel_title || 'N/A'}`
+    );
     console.log(`  Duration: ${result.videoData.duration || 'N/A'}`);
-    console.log(`  Views: ${result.videoData.viewCount?.toLocaleString() || result.videoData.view_count?.toLocaleString() || 'N/A'}`);
-    console.log(`  Likes: ${result.videoData.likeCount?.toLocaleString() || result.videoData.like_count?.toLocaleString() || 'N/A'}`);
-    console.log(`  Published: ${result.videoData.publishedAt || result.videoData.published_at || 'N/A'}\n`);
+    console.log(
+      `  Views: ${result.videoData.viewCount?.toLocaleString() || result.videoData.view_count?.toLocaleString() || 'N/A'}`
+    );
+    console.log(
+      `  Likes: ${result.videoData.likeCount?.toLocaleString() || result.videoData.like_count?.toLocaleString() || 'N/A'}`
+    );
+    console.log(
+      `  Published: ${result.videoData.publishedAt || result.videoData.published_at || 'N/A'}\n`
+    );
 
     console.log('📝 Transcript:');
     if (result.transcriptData) {
@@ -148,7 +158,9 @@ async function main() {
     console.log('\nNext steps:');
     console.log('  1. Review the extracted data above');
     console.log('  2. Check the database for saved records');
-    console.log('  3. Try extracting other videos: npx tsx src-ts/extractors/manual-extraction-test.ts [videoId]');
+    console.log(
+      '  3. Try extracting other videos: npx tsx src-ts/extractors/manual-extraction-test.ts [videoId]'
+    );
     console.log('  4. Document results in PHASE_4_MANUAL_VERIFICATION.md\n');
 
     // Close database

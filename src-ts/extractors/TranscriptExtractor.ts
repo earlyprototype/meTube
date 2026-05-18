@@ -56,11 +56,14 @@ export class TranscriptExtractor {
     this.lastRequestTime = 0;
     this.whisperExtractor = options.whisperExtractor;
 
-    logger.info({
-      languages: this.languages,
-      rateLimitDelay: this.rateLimitDelay,
-      hasWhisperFallback: !!this.whisperExtractor,
-    }, 'TranscriptExtractor initialized');
+    logger.info(
+      {
+        languages: this.languages,
+        rateLimitDelay: this.rateLimitDelay,
+        hasWhisperFallback: !!this.whisperExtractor,
+      },
+      'TranscriptExtractor initialized'
+    );
   }
 
   /**
@@ -98,18 +101,20 @@ export class TranscriptExtractor {
       try {
         const transcriptData = await this.extractTranscript(videoId);
         if (transcriptData) {
-          logger.info({
-            videoId,
-            language: transcriptData.language,
-            segmentCount: transcriptData.segments.length,
-          }, 'Successfully extracted YouTube transcript');
+          logger.info(
+            {
+              videoId,
+              language: transcriptData.language,
+              segmentCount: transcriptData.segments.length,
+            },
+            'Successfully extracted YouTube transcript'
+          );
           return transcriptData;
         }
         youtubeFailedReason = 'No transcript available';
         break; // No transcript available, don't retry
       } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
 
         // Check if it's a rate limit error
         if (errorMessage.toLowerCase().includes('rate limit')) {
@@ -117,28 +122,37 @@ export class TranscriptExtractor {
           if (retryCount <= maxRetries) {
             // Exponential backoff: wait longer each time
             const waitTime = this.rateLimitDelay * Math.pow(2, retryCount);
-            logger.warn({
-              videoId,
-              retryCount,
-              maxRetries,
-              waitTime,
-            }, 'Rate limited - applying exponential backoff');
+            logger.warn(
+              {
+                videoId,
+                retryCount,
+                maxRetries,
+                waitTime,
+              },
+              'Rate limited - applying exponential backoff'
+            );
             await this.sleep(waitTime);
           } else {
             youtubeFailedReason = 'Rate limit exceeded';
-            logger.error({
-              videoId,
-              retries: retryCount,
-            }, 'YouTube transcript unavailable (rate limit)');
+            logger.error(
+              {
+                videoId,
+                retries: retryCount,
+              },
+              'YouTube transcript unavailable (rate limit)'
+            );
             break;
           }
         } else {
           // Non-rate-limit error, don't retry
           youtubeFailedReason = errorMessage;
-          logger.debug({
-            videoId,
-            error: errorMessage,
-          }, 'YouTube transcript extraction failed');
+          logger.debug(
+            {
+              videoId,
+              error: errorMessage,
+            },
+            'YouTube transcript extraction failed'
+          );
           break;
         }
       }
@@ -159,16 +173,22 @@ export class TranscriptExtractor {
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message.split('\n')[0].substring(0, 100) : String(error);
-          logger.error({
-            videoId,
-            error: errorMessage,
-          }, 'Whisper extraction error');
+          logger.error(
+            {
+              videoId,
+              error: errorMessage,
+            },
+            'Whisper extraction error'
+          );
         }
       } else {
-        logger.info({
-          videoId,
-          reason: youtubeFailedReason,
-        }, 'No transcript available');
+        logger.info(
+          {
+            videoId,
+            reason: youtubeFailedReason,
+          },
+          'No transcript available'
+        );
       }
     }
 
@@ -232,11 +252,14 @@ export class TranscriptExtractor {
 
       // Log other errors but return null (graceful degradation)
       const errorType = error instanceof Error ? error.constructor.name : 'Error';
-      logger.debug({
-        videoId,
-        errorType,
-        message: errorMessage.substring(0, 80),
-      }, 'Transcript extraction error');
+      logger.debug(
+        {
+          videoId,
+          errorType,
+          message: errorMessage.substring(0, 80),
+        },
+        'Transcript extraction error'
+      );
 
       return null;
     }
@@ -248,9 +271,7 @@ export class TranscriptExtractor {
    * @param videoIds - List of YouTube video IDs
    * @returns Map of video ID to transcript data
    */
-  async extractBatch(
-    videoIds: string[]
-  ): Promise<Record<string, TranscriptData | null>> {
+  async extractBatch(videoIds: string[]): Promise<Record<string, TranscriptData | null>> {
     if (!Array.isArray(videoIds)) {
       throw new ValidationError('videoIds must be an array');
     }
@@ -261,10 +282,13 @@ export class TranscriptExtractor {
       try {
         results[videoId] = await this.extract(videoId);
       } catch (error) {
-        logger.error({
-          videoId,
-          error: error instanceof Error ? error.message : String(error),
-        }, 'Failed to extract transcript in batch');
+        logger.error(
+          {
+            videoId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Failed to extract transcript in batch'
+        );
         results[videoId] = null;
       }
     }

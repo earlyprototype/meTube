@@ -61,10 +61,10 @@ export class WhisperExtractor {
     this.tempDir = config.temp_dir || path.join(os.tmpdir(), 'metube-whisper');
     this.cleanupAudio = config.cleanup_audio ?? true;
     this.onProgress = config.onProgress;
-    
+
     // Auto-detect Python and yt-dlp paths (Windows-specific for now)
-    this.pythonPath = config.python_path || 
-      path.join(process.cwd(), 'venv', 'Scripts', 'python.exe');
+    this.pythonPath =
+      config.python_path || path.join(process.cwd(), 'venv', 'Scripts', 'python.exe');
     this.ytDlpPath = config.yt_dlp_path || 'yt-dlp';
 
     // Ensure temp directory exists
@@ -72,13 +72,16 @@ export class WhisperExtractor {
       fs.mkdirSync(this.tempDir, { recursive: true });
     }
 
-    logger.info({
-      enabled: this.enabled,
-      model: this.model,
-      tempDir: this.tempDir,
-      pythonPath: this.pythonPath,
-      hasProgressCallback: !!this.onProgress,
-    }, 'WhisperExtractor initialized');
+    logger.info(
+      {
+        enabled: this.enabled,
+        model: this.model,
+        tempDir: this.tempDir,
+        pythonPath: this.pythonPath,
+        hasProgressCallback: !!this.onProgress,
+      },
+      'WhisperExtractor initialized'
+    );
   }
 
   /**
@@ -94,10 +97,13 @@ export class WhisperExtractor {
     }
 
     if (!this.isAvailable()) {
-      logger.warn({ 
-        videoId,
-        reason: this.getUnavailableReason(),
-      }, 'Whisper not available');
+      logger.warn(
+        {
+          videoId,
+          reason: this.getUnavailableReason(),
+        },
+        'Whisper not available'
+      );
       return null;
     }
 
@@ -107,14 +113,22 @@ export class WhisperExtractor {
       // Step 1: Download audio
       logger.info({ videoId }, 'Downloading audio for Whisper transcription');
       if (this.onProgress) {
-        this.onProgress({ stage: 'downloading', percentage: 0, message: 'Starting audio download...' });
+        this.onProgress({
+          stage: 'downloading',
+          percentage: 0,
+          message: 'Starting audio download...',
+        });
       }
       await this.downloadAudio(videoId, audioPath);
 
       // Step 2: Transcribe with Whisper
       logger.info({ videoId, model: this.model }, 'Transcribing audio with Whisper');
       if (this.onProgress) {
-        this.onProgress({ stage: 'transcribing', percentage: 100, message: 'Transcribing with Whisper...' });
+        this.onProgress({
+          stage: 'transcribing',
+          percentage: 100,
+          message: 'Transcribing with Whisper...',
+        });
       }
       const transcriptData = await this.transcribeAudio(audioPath, videoId);
 
@@ -124,10 +138,13 @@ export class WhisperExtractor {
 
       return transcriptData;
     } catch (error) {
-      logger.error({
-        videoId,
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Whisper extraction failed');
+      logger.error(
+        {
+          videoId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Whisper extraction failed'
+      );
       return null;
     } finally {
       // Cleanup audio file
@@ -149,10 +166,13 @@ export class WhisperExtractor {
     return new Promise((resolve, reject) => {
       const args = [
         '-x', // Extract audio
-        '--audio-format', 'mp3',
-        '--audio-quality', '128K',
+        '--audio-format',
+        'mp3',
+        '--audio-quality',
+        '128K',
         '--newline', // Output progress on new lines for easier parsing
-        '-o', outputPath,
+        '-o',
+        outputPath,
         `https://www.youtube.com/watch?v=${videoId}`,
       ];
 
@@ -162,7 +182,7 @@ export class WhisperExtractor {
 
       proc.stdout?.on('data', (data) => {
         const output = data.toString();
-        
+
         // Parse yt-dlp progress output: [download]  XX.X% of ...
         const progressMatch = output.match(/\[download\]\s+(\d+\.?\d*)%/);
         if (progressMatch && this.onProgress) {
@@ -182,7 +202,7 @@ export class WhisperExtractor {
       proc.stderr?.on('data', (data) => {
         const output = data.toString();
         stderr += output;
-        
+
         // yt-dlp sometimes outputs progress to stderr
         const progressMatch = output.match(/\[download\]\s+(\d+\.?\d*)%/);
         if (progressMatch && this.onProgress) {
@@ -201,20 +221,28 @@ export class WhisperExtractor {
       proc.on('close', (code) => {
         if (code === 0 && fs.existsSync(outputPath)) {
           if (this.onProgress) {
-            this.onProgress({ stage: 'downloading', percentage: 100, message: 'Audio download complete' });
+            this.onProgress({
+              stage: 'downloading',
+              percentage: 100,
+              message: 'Audio download complete',
+            });
           }
           resolve();
         } else {
-          reject(new AppError(`yt-dlp failed: ${stderr}`, {
-            code: 'AUDIO_DOWNLOAD_FAILED',
-          }));
+          reject(
+            new AppError(`yt-dlp failed: ${stderr}`, {
+              code: 'AUDIO_DOWNLOAD_FAILED',
+            })
+          );
         }
       });
 
       proc.on('error', (err) => {
-        reject(new AppError(`Failed to spawn yt-dlp: ${err.message}`, {
-          code: 'YT_DLP_NOT_FOUND',
-        }));
+        reject(
+          new AppError(`Failed to spawn yt-dlp: ${err.message}`, {
+            code: 'YT_DLP_NOT_FOUND',
+          })
+        );
       });
     });
   }
@@ -223,10 +251,7 @@ export class WhisperExtractor {
    * Transcribe audio file using existing Python Whisper code
    * Calls the original Python whisper_extractor.py directly
    */
-  private async transcribeAudio(
-    audioPath: string,
-    videoId: string
-  ): Promise<TranscriptData> {
+  private async transcribeAudio(audioPath: string, videoId: string): Promise<TranscriptData> {
     return new Promise((resolve, reject) => {
       // Use the existing Python whisper implementation
       // Create a simple Python script that uses the existing code
@@ -308,14 +333,18 @@ print('JSON_OUTPUT_END')
 
             resolve(transcriptData);
           } catch (err) {
-            reject(new AppError(`Failed to parse Whisper output: ${err}`, {
-              code: 'WHISPER_PARSE_FAILED',
-            }));
+            reject(
+              new AppError(`Failed to parse Whisper output: ${err}`, {
+                code: 'WHISPER_PARSE_FAILED',
+              })
+            );
           }
         } else {
-          reject(new AppError(`Whisper transcription failed: ${stderr}`, {
-            code: 'WHISPER_FAILED',
-          }));
+          reject(
+            new AppError(`Whisper transcription failed: ${stderr}`, {
+              code: 'WHISPER_FAILED',
+            })
+          );
         }
       });
 
@@ -324,9 +353,11 @@ print('JSON_OUTPUT_END')
         if (fs.existsSync(scriptPath)) {
           fs.unlinkSync(scriptPath);
         }
-        reject(new AppError(`Failed to spawn Python: ${err.message}`, {
-          code: 'PYTHON_NOT_FOUND',
-        }));
+        reject(
+          new AppError(`Failed to spawn Python: ${err.message}`, {
+            code: 'PYTHON_NOT_FOUND',
+          })
+        );
       });
     });
   }
@@ -381,7 +412,7 @@ export function getWhisperSetupStatus(): {
 } {
   const pythonPath = path.join(process.cwd(), 'venv', 'Scripts', 'python.exe');
   const pythonAvailable = fs.existsSync(pythonPath);
-  
+
   // Assume yt-dlp is available if in PATH (simple check)
   const ytDlpAvailable = true; // Can't easily check without spawning
 

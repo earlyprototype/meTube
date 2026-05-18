@@ -63,7 +63,7 @@ export class VideoRepository {
         }
 
         if (updateFields.length === 0) {
-          logger.debug({  videoId: videoData.video_id  }, 'No fields to update for video');
+          logger.debug({ videoId: videoData.video_id }, 'No fields to update for video');
           return existing;
         }
 
@@ -84,7 +84,7 @@ export class VideoRepository {
           });
         }
 
-        logger.info({  videoId: videoData.video_id  }, 'Video updated successfully');
+        logger.info({ videoId: videoData.video_id }, 'Video updated successfully');
         return updated;
       } else {
         // Insert new video
@@ -96,10 +96,7 @@ export class VideoRepository {
           return typeof value === 'boolean' ? (value ? 1 : 0) : value;
         });
 
-        this.db.run(
-          `INSERT INTO videos (${fields.join(', ')}) VALUES (${placeholders})`,
-          values
-        );
+        this.db.run(`INSERT INTO videos (${fields.join(', ')}) VALUES (${placeholders})`, values);
 
         const created = this.getByVideoId(videoData.video_id);
         if (!created) {
@@ -110,7 +107,7 @@ export class VideoRepository {
           });
         }
 
-        logger.info({  videoId: videoData.video_id  }, 'Video created successfully');
+        logger.info({ videoId: videoData.video_id }, 'Video created successfully');
         return created;
       }
     } catch (error) {
@@ -232,10 +229,10 @@ export class VideoRepository {
 
     try {
       const pattern = `%${queryText}%`;
-      return this.db.all<Video>(
-        'SELECT * FROM videos WHERE title LIKE ? OR description LIKE ?',
-        [pattern, pattern]
-      );
+      return this.db.all<Video>('SELECT * FROM videos WHERE title LIKE ? OR description LIKE ?', [
+        pattern,
+        pattern,
+      ]);
     } catch (error) {
       throw new DatabaseError('Failed to search videos', {
         operation: 'search',
@@ -312,9 +309,12 @@ export class PlaylistRepository {
         }
 
         if (updateFields.length === 0) {
-          logger.debug({ 
-            playlistId: playlistData.playlist_id,
-           }, 'No fields to update for playlist');
+          logger.debug(
+            {
+              playlistId: playlistData.playlist_id,
+            },
+            'No fields to update for playlist'
+          );
           return existing;
         }
 
@@ -335,7 +335,7 @@ export class PlaylistRepository {
           });
         }
 
-        logger.info({  playlistId: playlistData.playlist_id  }, 'Playlist updated successfully');
+        logger.info({ playlistId: playlistData.playlist_id }, 'Playlist updated successfully');
         return updated;
       } else {
         // Insert new playlist
@@ -361,7 +361,7 @@ export class PlaylistRepository {
           });
         }
 
-        logger.info({  playlistId: playlistData.playlist_id  }, 'Playlist created successfully');
+        logger.info({ playlistId: playlistData.playlist_id }, 'Playlist created successfully');
         return created;
       }
     } catch (error) {
@@ -388,9 +388,7 @@ export class PlaylistRepository {
     validatePlaylistId(playlistId);
 
     try {
-      return this.db.get<Playlist>('SELECT * FROM playlists WHERE playlist_id = ?', [
-        playlistId,
-      ]);
+      return this.db.get<Playlist>('SELECT * FROM playlists WHERE playlist_id = ?', [playlistId]);
     } catch (error) {
       throw new DatabaseError('Failed to get playlist by ID', {
         operation: 'getById',
@@ -434,7 +432,7 @@ export class PlaylistRepository {
 
     try {
       this.db.run('DELETE FROM playlists WHERE playlist_id = ?', [playlistId]);
-      logger.info({  playlistId  }, 'Playlist deleted successfully');
+      logger.info({ playlistId }, 'Playlist deleted successfully');
     } catch (error) {
       throw new DatabaseError('Failed to delete playlist', {
         operation: 'delete',
@@ -511,7 +509,7 @@ export class PlaylistItemRepository {
       );
 
       if (existing) {
-        logger.debug({  playlistId, videoId  }, 'Video already in playlist');
+        logger.debug({ playlistId, videoId }, 'Video already in playlist');
         return existing;
       }
 
@@ -533,7 +531,7 @@ export class PlaylistItemRepository {
         });
       }
 
-      logger.info({  playlistId, videoId, position  }, 'Video added to playlist');
+      logger.info({ playlistId, videoId, position }, 'Video added to playlist');
       return created;
     } catch (error) {
       if (error instanceof ValidationError || error instanceof DatabaseError) {
@@ -638,7 +636,7 @@ export class TranscriptRepository {
         });
       }
 
-      logger.info({  videoId  }, 'Transcript created successfully');
+      logger.info({ videoId }, 'Transcript created successfully');
       return created;
     } catch (error) {
       if (error instanceof ValidationError || error instanceof DatabaseError) {
@@ -748,7 +746,7 @@ export class EntityRepository {
         );
       }
 
-      logger.info({  videoId, count: entities.length  }, 'Entities added successfully');
+      logger.info({ videoId, count: entities.length }, 'Entities added successfully');
     } catch (error) {
       if (error instanceof ValidationError || error instanceof DatabaseError) {
         throw error;
@@ -806,10 +804,9 @@ export class EntityRepository {
           [videoId, entityType]
         );
       }
-      return this.db.all<ExtractedEntity>(
-        'SELECT * FROM extracted_entities WHERE video_id = ?',
-        [videoId]
-      );
+      return this.db.all<ExtractedEntity>('SELECT * FROM extracted_entities WHERE video_id = ?', [
+        videoId,
+      ]);
     } catch (error) {
       throw new DatabaseError('Failed to get entities by video', {
         operation: 'getByVideo',
@@ -870,19 +867,28 @@ export class StatisticsRepository {
     validateVideoId(videoId);
 
     // Validate counts are non-negative numbers
-    if (stats.view_count !== undefined && (typeof stats.view_count !== 'number' || stats.view_count < 0)) {
+    if (
+      stats.view_count !== undefined &&
+      (typeof stats.view_count !== 'number' || stats.view_count < 0)
+    ) {
       throw new ValidationError('view_count must be a non-negative number', {
         field: 'view_count',
         value: stats.view_count,
       });
     }
-    if (stats.like_count !== undefined && (typeof stats.like_count !== 'number' || stats.like_count < 0)) {
+    if (
+      stats.like_count !== undefined &&
+      (typeof stats.like_count !== 'number' || stats.like_count < 0)
+    ) {
       throw new ValidationError('like_count must be a non-negative number', {
         field: 'like_count',
         value: stats.like_count,
       });
     }
-    if (stats.comment_count !== undefined && (typeof stats.comment_count !== 'number' || stats.comment_count < 0)) {
+    if (
+      stats.comment_count !== undefined &&
+      (typeof stats.comment_count !== 'number' || stats.comment_count < 0)
+    ) {
       throw new ValidationError('comment_count must be a non-negative number', {
         field: 'comment_count',
         value: stats.comment_count,
@@ -893,12 +899,7 @@ export class StatisticsRepository {
       this.db.run(
         `INSERT INTO video_statistics (video_id, view_count, like_count, comment_count, recorded_at)
          VALUES (?, ?, ?, ?, datetime('now'))`,
-        [
-          videoId,
-          stats.view_count ?? 0,
-          stats.like_count ?? 0,
-          stats.comment_count ?? 0,
-        ]
+        [videoId, stats.view_count ?? 0, stats.like_count ?? 0, stats.comment_count ?? 0]
       );
 
       const created = this.getLatest(videoId);
@@ -910,7 +911,7 @@ export class StatisticsRepository {
         });
       }
 
-      logger.info({  videoId, ...stats  }, 'Statistics snapshot added');
+      logger.info({ videoId, ...stats }, 'Statistics snapshot added');
       return created;
     } catch (error) {
       if (error instanceof ValidationError || error instanceof DatabaseError) {
@@ -975,4 +976,3 @@ export class StatisticsRepository {
     }
   }
 }
-

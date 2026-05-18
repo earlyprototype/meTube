@@ -17,15 +17,15 @@ async function main() {
   try {
     // Step 1 & 2: Initialize and authenticate (one-click!)
     console.log('[1/5] Authenticating with YouTube...');
-    
+
     const auth = new YouTubeAuth({
       credentialsPath: 'client_secret.json',
       tokensPath: 'tokens.json',
     });
-    
+
     // This is like Python's run_local_server() - automatic!
     const authenticated = await auth.authenticate();
-    
+
     if (!authenticated) {
       throw new Error('Authentication failed');
     }
@@ -41,18 +41,20 @@ async function main() {
     // Step 4: Test fetching playlists
     console.log('[4/5] Fetching your YouTube playlists...');
     const { playlists } = await client.getPlaylists(10);
-    
+
     if (playlists.length === 0) {
       console.log('No playlists found on your account.');
     } else {
       console.log(`Found ${playlists.length} playlist(s):`);
       console.log();
-      
+
       playlists.forEach((playlist, index) => {
         console.log(`${index + 1}. ${playlist.title}`);
         console.log(`   ID: ${playlist.id}`);
         console.log(`   Videos: ${playlist.itemCount}`);
-        console.log(`   Description: ${playlist.description.substring(0, 100)}${playlist.description.length > 100 ? '...' : ''}`);
+        console.log(
+          `   Description: ${playlist.description.substring(0, 100)}${playlist.description.length > 100 ? '...' : ''}`
+        );
         console.log();
       });
 
@@ -61,10 +63,10 @@ async function main() {
         console.log('[5/5] Fetching videos from first playlist...');
         const firstPlaylist = playlists[0];
         const { items } = await client.getPlaylistVideos(firstPlaylist.id, 5);
-        
+
         console.log(`Found ${items.length} video(s) in "${firstPlaylist.title}":`);
         console.log();
-        
+
         items.forEach((item, index) => {
           console.log(`${index + 1}. ${item.title || 'Untitled'}`);
           console.log(`   Video ID: ${item.videoId}`);
@@ -76,7 +78,7 @@ async function main() {
         if (items.length > 0) {
           console.log('Fetching detailed information for first video...');
           const videoDetails = await client.getVideoDetails(items[0].videoId);
-          
+
           console.log();
           console.log('Video Details:');
           console.log(`Title: ${videoDetails.title}`);
@@ -94,7 +96,6 @@ async function main() {
     console.log('Manual Verification COMPLETE');
     console.log('='.repeat(60));
     console.log();
-
   } catch (error) {
     console.error();
     console.error('ERROR during manual verification:');

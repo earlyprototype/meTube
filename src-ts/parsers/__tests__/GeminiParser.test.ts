@@ -64,9 +64,7 @@ describe('GeminiParser', () => {
     it('should parse transcript successfully', async () => {
       const mockResponse = {
         topics: ['TypeScript', 'Testing'],
-        github_repos: [
-          { name: 'vitest', url: 'https://github.com/vitest-dev/vitest' },
-        ],
+        github_repos: [{ name: 'vitest', url: 'https://github.com/vitest-dev/vitest' }],
         websites: [{ name: 'example.com', url: 'https://example.com' }],
         people: ['John Doe'],
         tags: ['tutorial', 'testing'],
@@ -81,10 +79,7 @@ describe('GeminiParser', () => {
         },
       });
 
-      const result = await parser.parseTranscript(
-        'This is a test transcript',
-        'Test Video'
-      );
+      const result = await parser.parseTranscript('This is a test transcript', 'Test Video');
 
       expect(result.topics).toEqual(['TypeScript', 'Testing']);
       expect(result.github_repos).toHaveLength(1);
@@ -131,21 +126,19 @@ describe('GeminiParser', () => {
     });
 
     it('should throw ValidationError for non-string transcript', async () => {
-      await expect(
-        parser.parseTranscript(123 as any, 'Test')
-      ).rejects.toThrow(ValidationError);
-      await expect(
-        parser.parseTranscript(123 as any, 'Test')
-      ).rejects.toThrow('transcriptText must be a string');
+      await expect(parser.parseTranscript(123 as any, 'Test')).rejects.toThrow(ValidationError);
+      await expect(parser.parseTranscript(123 as any, 'Test')).rejects.toThrow(
+        'transcriptText must be a string'
+      );
     });
 
     it('should throw ValidationError for non-string title', async () => {
-      await expect(
-        parser.parseTranscript('Test transcript', 123 as any)
-      ).rejects.toThrow(ValidationError);
-      await expect(
-        parser.parseTranscript('Test transcript', 123 as any)
-      ).rejects.toThrow('videoTitle must be a string');
+      await expect(parser.parseTranscript('Test transcript', 123 as any)).rejects.toThrow(
+        ValidationError
+      );
+      await expect(parser.parseTranscript('Test transcript', 123 as any)).rejects.toThrow(
+        'videoTitle must be a string'
+      );
     });
 
     it('should throw AppError for invalid JSON response', async () => {
@@ -155,23 +148,19 @@ describe('GeminiParser', () => {
         },
       });
 
-      await expect(
-        parser.parseTranscript('Test transcript', 'Test')
-      ).rejects.toThrow(AppError);
-      await expect(
-        parser.parseTranscript('Test transcript', 'Test')
-      ).rejects.toThrow('Gemini returned invalid JSON response');
+      await expect(parser.parseTranscript('Test transcript', 'Test')).rejects.toThrow(AppError);
+      await expect(parser.parseTranscript('Test transcript', 'Test')).rejects.toThrow(
+        'Gemini returned invalid JSON response'
+      );
     });
 
     it('should throw AppError for API errors', async () => {
       mockGenerateContent.mockRejectedValue(new Error('API rate limit exceeded'));
 
-      await expect(
-        parser.parseTranscript('Test transcript', 'Test')
-      ).rejects.toThrow(AppError);
-      await expect(
-        parser.parseTranscript('Test transcript', 'Test')
-      ).rejects.toThrow('Gemini API request failed');
+      await expect(parser.parseTranscript('Test transcript', 'Test')).rejects.toThrow(AppError);
+      await expect(parser.parseTranscript('Test transcript', 'Test')).rejects.toThrow(
+        'Gemini API request failed'
+      );
     });
 
     it('should normalize result with limits', async () => {
@@ -232,12 +221,7 @@ describe('GeminiParser', () => {
     it('should filter invalid github_repos', async () => {
       const mockResponse = {
         topics: [],
-        github_repos: [
-          { name: 'valid-repo' },
-          'invalid-string',
-          null,
-          { invalid: 'no-name' },
-        ],
+        github_repos: [{ name: 'valid-repo' }, 'invalid-string', null, { invalid: 'no-name' }],
         websites: [],
         people: [],
         tags: [],

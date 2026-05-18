@@ -20,10 +20,7 @@ export interface OAuthServerResult {
  * @param timeout - Timeout in milliseconds (default: 5 minutes)
  * @returns Promise that resolves with the authorization code
  */
-export async function captureAuthorizationCode(
-  port = 3000,
-  timeout = 300000
-): Promise<string> {
+export async function captureAuthorizationCode(port = 3000, timeout = 300000): Promise<string> {
   return new Promise((resolve, reject) => {
     let server: http.Server | null = null;
     let timeoutId: NodeJS.Timeout | null = null;
@@ -136,7 +133,9 @@ export async function captureAuthorizationCode(
     server.on('error', (error: NodeJS.ErrnoException) => {
       cleanup();
       if (error.code === 'EADDRINUSE') {
-        reject(new Error(`Port ${port} is already in use. Please close other applications or try again.`));
+        reject(
+          new Error(`Port ${port} is already in use. Please close other applications or try again.`)
+        );
       } else {
         reject(error);
       }
@@ -164,7 +163,7 @@ export async function captureAuthorizationCode(
  */
 export async function openBrowser(url: string): Promise<void> {
   const { spawn } = await import('child_process');
-  
+
   let command: string;
   let args: string[];
 

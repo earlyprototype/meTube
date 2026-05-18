@@ -142,7 +142,10 @@ describe('DatabaseManager', () => {
       dbManager.run('CREATE TABLE test (id INTEGER, name TEXT)');
       dbManager.run("INSERT INTO test VALUES (1, 'Alice')");
 
-      const result = dbManager.get<{ id: number; name: string }>('SELECT * FROM test WHERE id = ?', [1]);
+      const result = dbManager.get<{ id: number; name: string }>(
+        'SELECT * FROM test WHERE id = ?',
+        [1]
+      );
 
       expect(result).toBeDefined();
       expect(result?.name).toBe('Alice');

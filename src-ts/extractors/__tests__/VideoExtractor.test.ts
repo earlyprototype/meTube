@@ -162,36 +162,25 @@ describe('VideoExtractor', () => {
 
   describe('constructor', () => {
     it('should create extractor with default config', () => {
-      const defaultExtractor = new VideoExtractor(
-        mockYouTubeClient as any,
-        mockDb as any
-      );
+      const defaultExtractor = new VideoExtractor(mockYouTubeClient as any, mockDb as any);
       expect(defaultExtractor).toBeInstanceOf(VideoExtractor);
     });
 
     it('should create extractor with custom config', () => {
-      const customExtractor = new VideoExtractor(
-        mockYouTubeClient as any,
-        mockDb as any,
-        {
-          autoTranscript: false,
-          autoLlmParse: false,
-          languages: ['en', 'es'],
-          transcriptRateLimit: 5000,
-        }
-      );
+      const customExtractor = new VideoExtractor(mockYouTubeClient as any, mockDb as any, {
+        autoTranscript: false,
+        autoLlmParse: false,
+        languages: ['en', 'es'],
+        transcriptRateLimit: 5000,
+      });
       expect(customExtractor).toBeInstanceOf(VideoExtractor);
     });
 
     it('should handle missing Gemini API key gracefully', () => {
-      const extractorWithLlm = new VideoExtractor(
-        mockYouTubeClient as any,
-        mockDb as any,
-        {
-          autoLlmParse: true,
-          // No API key provided
-        }
-      );
+      const extractorWithLlm = new VideoExtractor(mockYouTubeClient as any, mockDb as any, {
+        autoLlmParse: true,
+        // No API key provided
+      });
       expect(extractorWithLlm).toBeInstanceOf(VideoExtractor);
     });
   });
@@ -214,24 +203,16 @@ describe('VideoExtractor', () => {
     });
 
     it('should throw ValidationError for empty video ID', async () => {
-      await expect(extractor.extractSingleVideo('')).rejects.toThrow(
-        ValidationError
-      );
-      await expect(extractor.extractSingleVideo('')).rejects.toThrow(
-        'must be a non-empty string'
-      );
+      await expect(extractor.extractSingleVideo('')).rejects.toThrow(ValidationError);
+      await expect(extractor.extractSingleVideo('')).rejects.toThrow('must be a non-empty string');
     });
 
     it('should throw ValidationError for non-string video ID', async () => {
-      await expect(extractor.extractSingleVideo(123 as any)).rejects.toThrow(
-        ValidationError
-      );
+      await expect(extractor.extractSingleVideo(123 as any)).rejects.toThrow(ValidationError);
     });
 
     it('should throw ValidationError for invalid video ID format', async () => {
-      await expect(extractor.extractSingleVideo('invalid')).rejects.toThrow(
-        ValidationError
-      );
+      await expect(extractor.extractSingleVideo('invalid')).rejects.toThrow(ValidationError);
       await expect(extractor.extractSingleVideo('invalid')).rejects.toThrow(
         'Invalid YouTube video ID format'
       );
@@ -240,15 +221,11 @@ describe('VideoExtractor', () => {
     it('should handle database save errors gracefully', async () => {
       // Mock VideoRepository to throw error
       const { VideoRepository } = await import('../../database/repositories.js');
-      (VideoRepository.createOrUpdate as any) = vi
-        .fn()
-        .mockImplementation(() => {
-          throw new Error('Database error');
-        });
+      (VideoRepository.createOrUpdate as any) = vi.fn().mockImplementation(() => {
+        throw new Error('Database error');
+      });
 
-      await expect(extractor.extractSingleVideo('dQw4w9WgXcQ')).rejects.toThrow(
-        AppError
-      );
+      await expect(extractor.extractSingleVideo('dQw4w9WgXcQ')).rejects.toThrow(AppError);
 
       // Reset mock
       (VideoRepository.createOrUpdate as any) = vi.fn();
@@ -262,20 +239,12 @@ describe('VideoExtractor', () => {
     });
 
     it('should skip LLM parsing when requested', async () => {
-      const extractorWithLlm = new VideoExtractor(
-        mockYouTubeClient as any,
-        mockDb as any,
-        {
-          autoLlmParse: true,
-          geminiApiKey: 'test-key',
-        }
-      );
+      const extractorWithLlm = new VideoExtractor(mockYouTubeClient as any, mockDb as any, {
+        autoLlmParse: true,
+        geminiApiKey: 'test-key',
+      });
 
-      const result = await extractorWithLlm.extractSingleVideo(
-        'dQw4w9WgXcQ',
-        false,
-        true
-      );
+      const result = await extractorWithLlm.extractSingleVideo('dQw4w9WgXcQ', false, true);
 
       expect(result).not.toBeNull();
       expect(result?.parsedEntities).toBeNull();
@@ -304,33 +273,22 @@ describe('VideoExtractor', () => {
       });
 
       expect(mockYouTubeClient.getPlaylists).toHaveBeenCalled();
-      expect(mockYouTubeClient.getPlaylistVideos).toHaveBeenCalledWith(
-        'PLtest',
-        undefined
-      );
+      expect(mockYouTubeClient.getPlaylistVideos).toHaveBeenCalledWith('PLtest', undefined);
     });
 
     it('should throw ValidationError for empty playlist ID', async () => {
-      await expect(extractor.extractPlaylist('')).rejects.toThrow(
-        ValidationError
-      );
-      await expect(extractor.extractPlaylist('')).rejects.toThrow(
-        'must be a non-empty string'
-      );
+      await expect(extractor.extractPlaylist('')).rejects.toThrow(ValidationError);
+      await expect(extractor.extractPlaylist('')).rejects.toThrow('must be a non-empty string');
     });
 
     it('should throw ValidationError for non-string playlist ID', async () => {
-      await expect(extractor.extractPlaylist(123 as any)).rejects.toThrow(
-        ValidationError
-      );
+      await expect(extractor.extractPlaylist(123 as any)).rejects.toThrow(ValidationError);
     });
 
     it('should throw error if playlist not found', async () => {
       mockYouTubeClient.getPlaylists.mockResolvedValue([]);
 
-      await expect(extractor.extractPlaylist('PLnonexistent')).rejects.toThrow(
-        AppError
-      );
+      await expect(extractor.extractPlaylist('PLnonexistent')).rejects.toThrow(AppError);
       await expect(extractor.extractPlaylist('PLnonexistent')).rejects.toThrow(
         'Playlist extraction failed'
       );
@@ -339,10 +297,7 @@ describe('VideoExtractor', () => {
     it('should respect maxVideos limit', async () => {
       await extractor.extractPlaylist('PLtest', false, 1);
 
-      expect(mockYouTubeClient.getPlaylistVideos).toHaveBeenCalledWith(
-        'PLtest',
-        1
-      );
+      expect(mockYouTubeClient.getPlaylistVideos).toHaveBeenCalledWith('PLtest', 1);
     });
 
     it('should skip existing videos when requested', async () => {
@@ -379,9 +334,7 @@ describe('VideoExtractor', () => {
     });
 
     it('should throw AppError if playlist fetch fails', async () => {
-      mockYouTubeClient.getPlaylists.mockRejectedValue(
-        new Error('API error')
-      );
+      mockYouTubeClient.getPlaylists.mockRejectedValue(new Error('API error'));
 
       await expect(extractor.extractPlaylist('PLtest')).rejects.toThrow(AppError);
       await expect(extractor.extractPlaylist('PLtest')).rejects.toThrow(

@@ -7,7 +7,14 @@ interface ProgressDisplayProps {
   current: number;
   total: number;
   currentVideo?: string;
-  status: 'downloading' | 'transcribing' | 'parsing' | 'saving' | 'completed' | 'downloading_audio' | 'whisper_transcribing';
+  status:
+    | 'downloading'
+    | 'transcribing'
+    | 'parsing'
+    | 'saving'
+    | 'completed'
+    | 'downloading_audio'
+    | 'whisper_transcribing';
   successCount: number;
   failureCount: number;
   startTime: Date;
@@ -39,7 +46,7 @@ export function ProgressDisplay({
     if (status === 'completed') return;
 
     const interval = setInterval(() => {
-      setDudeFrame(prev => (prev + 1) % DUDE_ANIMATION.length);
+      setDudeFrame((prev) => (prev + 1) % DUDE_ANIMATION.length);
     }, 500);
 
     return () => clearInterval(interval);
@@ -61,7 +68,7 @@ export function ProgressDisplay({
     saving: 'Saving to database',
     completed: 'Complete',
     downloading_audio: 'Downloading audio for Whisper',
-    whisper_transcribing: 'Transcribing with Whisper AI'
+    whisper_transcribing: 'Transcribing with Whisper AI',
   }[status];
 
   const littleDude = status === 'completed' ? COMPLETED_DUDE : DUDE_ANIMATION[dudeFrame];
@@ -79,7 +86,9 @@ export function ProgressDisplay({
     <Box flexDirection="column">
       {/* Header - Blue */}
       <Box marginBottom={1}>
-        <Text bold color="cyan">Starting Extraction of Playlist</Text>
+        <Text bold color="cyan">
+          Starting Extraction of Playlist
+        </Text>
       </Box>
 
       {/* Main Progress - Black/Default */}
@@ -105,13 +114,23 @@ export function ProgressDisplay({
 
       {/* Whisper Progress - Separate section with its own progress bar */}
       {whisperProgress && whisperProgress.stage !== 'complete' && (
-        <Box flexDirection="column" marginBottom={1} borderStyle="round" borderColor="cyan" paddingX={1}>
+        <Box
+          flexDirection="column"
+          marginBottom={1}
+          borderStyle="round"
+          borderColor="cyan"
+          paddingX={1}
+        >
           <Box>
-            <Text color="cyan" bold>Whisper AI Transcription</Text>
+            <Text color="cyan" bold>
+              Whisper AI Transcription
+            </Text>
           </Box>
           <Box marginTop={1}>
             <Text dimColor>
-              {whisperProgress.stage === 'downloading' ? 'Downloading audio...' : 'Transcribing audio...'}
+              {whisperProgress.stage === 'downloading'
+                ? 'Downloading audio...'
+                : 'Transcribing audio...'}
             </Text>
           </Box>
           {whisperProgress.percentage !== undefined && (

@@ -23,15 +23,28 @@ interface ExtractCommandProps {
 }
 
 export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandProps) {
-  const [status, setStatus] = useState<'initializing' | 'extracting' | 'done' | 'menu' | 'error'>('initializing');
+  const [status, setStatus] = useState<'initializing' | 'extracting' | 'done' | 'menu' | 'error'>(
+    'initializing'
+  );
   const [progress, setProgress] = useState<{
     current: number;
     total: number;
     currentVideo: string;
-    status: 'downloading' | 'downloading_audio' | 'whisper_transcribing' | 'transcribing' | 'parsing' | 'saving' | 'completed';
+    status:
+      | 'downloading'
+      | 'downloading_audio'
+      | 'whisper_transcribing'
+      | 'transcribing'
+      | 'parsing'
+      | 'saving'
+      | 'completed';
     successCount: number;
     failureCount: number;
-    whisperProgress?: { stage: 'downloading' | 'transcribing' | 'complete'; percentage?: number; message?: string; };
+    whisperProgress?: {
+      stage: 'downloading' | 'transcribing' | 'complete';
+      percentage?: number;
+      message?: string;
+    };
   }>({
     current: 0,
     total: 0,
@@ -70,7 +83,9 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
         // Resolve playlist identifier (number, title, URL, or ID)
         const resolved = await resolvePlaylistIdentifier(id, true);
         if (!resolved) {
-          setError(`Playlist not found: ${id}. Try 'metube playlist list' to see tracked playlists.`);
+          setError(
+            `Playlist not found: ${id}. Try 'metube playlist list' to see tracked playlists.`
+          );
           setStatus('error');
           return;
         }
@@ -80,14 +95,14 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
         // Initialize services
         const auth = new YouTubeAuth();
         await auth.authenticate();
-        
+
         const client = new YouTubeClient(auth);
         const db = new DatabaseManager('data/metube.db');
-        
+
         // Get playlist
         const repo = new PlaylistRepository(db);
         const playlist = repo.getById(actualPlaylistId);
-        
+
         if (!playlist) {
           setError(`Playlist not found: ${resolved.title || actualPlaylistId}`);
           setStatus('error');
@@ -117,12 +132,15 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
           onWhisperProgress: (whisperProg) => {
             setProgress((prev) => ({
               ...prev,
-              status: whisperProg.stage === 'downloading' ? 'downloading_audio' as const : 'whisper_transcribing' as const,
+              status:
+                whisperProg.stage === 'downloading'
+                  ? ('downloading_audio' as const)
+                  : ('whisper_transcribing' as const),
               whisperProgress: whisperProg,
             }));
           },
         });
-        
+
         // Use extractPlaylist which handles deduplication
         const result = await extractor.extractPlaylist(
           actualPlaylistId,
@@ -154,10 +172,12 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
         const db = new DatabaseManager('data/metube.db');
         const playlistRepo = new PlaylistRepository(db);
         const allPlaylists = playlistRepo.getAll();
-        const enabledPlaylists = allPlaylists.filter(p => p.enabled);
+        const enabledPlaylists = allPlaylists.filter((p) => p.enabled);
 
         if (enabledPlaylists.length === 0) {
-          setError('No enabled playlists found. Use "metube playlist list" to see tracked playlists.');
+          setError(
+            'No enabled playlists found. Use "metube playlist list" to see tracked playlists.'
+          );
           setStatus('error');
           db.close();
           return;
@@ -178,7 +198,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
         // Process each playlist sequentially
         for (let i = 0; i < enabledPlaylists.length; i++) {
           const playlist = enabledPlaylists[i];
-          
+
           setPlaylistTitle(`[${i + 1}/${enabledPlaylists.length}] ${playlist.title}`);
           setExtractedPlaylistId(playlist.playlist_id);
 

@@ -12,9 +12,7 @@ describe('ErrorDisplay', () => {
 
   it('should render suggestions when provided', () => {
     const suggestions = ['Try this first', 'Then try this'];
-    const { lastFrame } = render(
-      <ErrorDisplay message="Test error" suggestions={suggestions} />
-    );
+    const { lastFrame } = render(<ErrorDisplay message="Test error" suggestions={suggestions} />);
     expect(lastFrame()).toContain('Try this:');
     expect(lastFrame()).toContain('1. Try this first');
     expect(lastFrame()).toContain('2. Then try this');
@@ -22,12 +20,7 @@ describe('ErrorDisplay', () => {
 
   it('should render debug info when DEBUG env is set', () => {
     process.env.DEBUG = 'true';
-    const { lastFrame } = render(
-      <ErrorDisplay 
-        message="Test error" 
-        details="Stack trace here" 
-      />
-    );
+    const { lastFrame } = render(<ErrorDisplay message="Test error" details="Stack trace here" />);
     expect(lastFrame()).toContain('Debug info:');
     expect(lastFrame()).toContain('Stack trace here');
     delete process.env.DEBUG;
@@ -35,12 +28,7 @@ describe('ErrorDisplay', () => {
 
   it('should not render debug info when DEBUG env is not set', () => {
     delete process.env.DEBUG;
-    const { lastFrame } = render(
-      <ErrorDisplay 
-        message="Test error" 
-        details="Stack trace here" 
-      />
-    );
+    const { lastFrame } = render(<ErrorDisplay message="Test error" details="Stack trace here" />);
     expect(lastFrame()).not.toContain('Debug info:');
     expect(lastFrame()).not.toContain('Stack trace here');
   });

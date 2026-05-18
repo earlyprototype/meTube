@@ -94,10 +94,7 @@ export class GeminiParser {
    * @returns Parsed entities and analysis
    * @throws {AppError} If parsing fails
    */
-  async parseTranscript(
-    transcriptText: string,
-    videoTitle = ''
-  ): Promise<ParsedTranscript> {
+  async parseTranscript(transcriptText: string, videoTitle = ''): Promise<ParsedTranscript> {
     // Validate inputs
     if (typeof transcriptText !== 'string') {
       throw new ValidationError('transcriptText must be a string');
@@ -115,11 +112,14 @@ export class GeminiParser {
     try {
       const prompt = this.buildExtractionPrompt(transcriptText, videoTitle);
 
-      logger.info({
-        model: this.modelName,
-        videoTitle,
-        transcriptLength: transcriptText.length,
-      }, 'Calling Gemini API');
+      logger.info(
+        {
+          model: this.modelName,
+          videoTitle,
+          transcriptLength: transcriptText.length,
+        },
+        'Calling Gemini API'
+      );
 
       const model = this.genAI.getGenerativeModel({ model: this.modelName });
 
@@ -136,10 +136,13 @@ export class GeminiParser {
       const response = result.response;
       let resultText = response.text().trim();
 
-      logger.debug({
-        length: resultText.length,
-        preview: resultText.substring(0, 100),
-      }, 'Received Gemini response');
+      logger.debug(
+        {
+          length: resultText.length,
+          preview: resultText.substring(0, 100),
+        },
+        'Received Gemini response'
+      );
 
       // Remove markdown code blocks if present
       resultText = resultText.replace(/^```json\s*/i, '');
@@ -151,10 +154,13 @@ export class GeminiParser {
       try {
         parsedResult = JSON.parse(resultText);
       } catch (jsonError) {
-        logger.error({
-          error: jsonError instanceof Error ? jsonError.message : String(jsonError),
-          preview: resultText.substring(0, 200),
-        }, 'Gemini returned invalid JSON');
+        logger.error(
+          {
+            error: jsonError instanceof Error ? jsonError.message : String(jsonError),
+            preview: resultText.substring(0, 200),
+          },
+          'Gemini returned invalid JSON'
+        );
         throw new AppError('Gemini returned invalid JSON response', {
           cause: jsonError,
           code: 'GEMINI_INVALID_JSON',
@@ -164,13 +170,16 @@ export class GeminiParser {
       // Normalize and validate the result
       const normalized = this.normalizeResult(parsedResult);
 
-      logger.info({
-        topics: normalized.topics.length,
-        github_repos: normalized.github_repos.length,
-        websites: normalized.websites.length,
-        people: normalized.people.length,
-        tags: normalized.tags.length,
-      }, 'Successfully parsed transcript with Gemini');
+      logger.info(
+        {
+          topics: normalized.topics.length,
+          github_repos: normalized.github_repos.length,
+          websites: normalized.websites.length,
+          people: normalized.people.length,
+          tags: normalized.tags.length,
+        },
+        'Successfully parsed transcript with Gemini'
+      );
 
       return normalized;
     } catch (error) {
@@ -179,14 +188,16 @@ export class GeminiParser {
       }
 
       // Extract clean error message
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       const cleanMessage = errorMessage.split('\n')[0].substring(0, 200);
 
-      logger.error({
-        error: cleanMessage,
-        videoTitle,
-      }, 'Gemini API error');
+      logger.error(
+        {
+          error: cleanMessage,
+          videoTitle,
+        },
+        'Gemini API error'
+      );
 
       throw new AppError('Gemini API request failed', {
         cause: error,
@@ -202,10 +213,7 @@ export class GeminiParser {
    * @param videoTitle - Video title
    * @returns Formatted prompt
    */
-  private buildExtractionPrompt(
-    transcriptText: string,
-    videoTitle: string
-  ): string {
+  private buildExtractionPrompt(transcriptText: string, videoTitle: string): string {
     // Limit transcript to avoid token limits (approximately 8000 chars)
     const limitedTranscript = transcriptText.substring(0, 8000);
 
@@ -257,36 +265,25 @@ Return ONLY valid JSON with this exact structure:
   private normalizeResult(result: any): ParsedTranscript {
     const normalized: ParsedTranscript = {
       topics: Array.isArray(result.topics) ? result.topics.slice(0, 20) : [],
-      github_repos: Array.isArray(result.github_repos)
-        ? result.github_repos.slice(0, 10)
-        : [],
-      websites: Array.isArray(result.websites)
-        ? result.websites.slice(0, 20)
-        : [],
+      github_repos: Array.isArray(result.github_repos) ? result.github_repos.slice(0, 10) : [],
+      websites: Array.isArray(result.websites) ? result.websites.slice(0, 20) : [],
       people: Array.isArray(result.people) ? result.people.slice(0, 20) : [],
       tags: Array.isArray(result.tags)
         ? result.tags.map((t: string) => String(t).toLowerCase()).slice(0, 15)
         : [],
-      summary:
-        typeof result.summary === 'string'
-          ? result.summary.substring(0, 1000)
-          : '',
-      content_type:
-        typeof result.content_type === 'string' ? result.content_type : 'unknown',
-      sentiment:
-        typeof result.sentiment === 'string' ? result.sentiment : 'neutral',
+      summary: typeof result.summary === 'string' ? result.summary.substring(0, 1000) : '',
+      content_type: typeof result.content_type === 'string' ? result.content_type : 'unknown',
+      sentiment: typeof result.sentiment === 'string' ? result.sentiment : 'neutral',
     };
 
     // Ensure github_repos have proper structure
     normalized.github_repos = normalized.github_repos.filter(
-      (repo: any) =>
-        typeof repo === 'object' && repo !== null && typeof repo.name === 'string'
+      (repo: any) => typeof repo === 'object' && repo !== null && typeof repo.name === 'string'
     );
 
     // Ensure websites have proper structure
     normalized.websites = normalized.websites.filter(
-      (site: any) =>
-        typeof site === 'object' && site !== null && typeof site.name === 'string'
+      (site: any) => typeof site === 'object' && site !== null && typeof site.name === 'string'
     );
 
     return normalized;

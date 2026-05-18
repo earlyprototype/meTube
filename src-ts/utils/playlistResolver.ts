@@ -27,7 +27,7 @@ export interface PlaylistResolution {
 
 /**
  * Resolve playlist identifier from various input formats
- * 
+ *
  * @param input - User input (number, title, URL, or ID)
  * @param useDatabase - Whether to fallback to database lookup (default: true)
  * @returns Resolved playlist ID and metadata, or null if not found
@@ -114,10 +114,13 @@ function isValidPlaylistIdFormat(input: string): boolean {
 /**
  * Get playlist title from cache or database
  */
-async function getPlaylistTitle(playlistId: string, useDatabase: boolean): Promise<string | undefined> {
+async function getPlaylistTitle(
+  playlistId: string,
+  useDatabase: boolean
+): Promise<string | undefined> {
   // Try cache first
   const cache = loadPlaylistCache();
-  const cached = cache.find(p => p.id === playlistId);
+  const cached = cache.find((p) => p.id === playlistId);
   if (cached) {
     return cached.title;
   }
@@ -149,9 +152,8 @@ async function searchDatabase(query: string): Promise<PlaylistResolution | null>
     db.close();
 
     const lowerQuery = query.toLowerCase();
-    const matches = allPlaylists.filter(p => 
-      p.title.toLowerCase().includes(lowerQuery) ||
-      p.playlist_id === query
+    const matches = allPlaylists.filter(
+      (p) => p.title.toLowerCase().includes(lowerQuery) || p.playlist_id === query
     );
 
     if (matches.length === 1) {
@@ -188,13 +190,13 @@ export class MultipleMatchesError extends Error {
   constructor(query: string, matches: CachedPlaylist[]) {
     const matchList = matches
       .slice(0, 5)
-      .map(m => `  ${m.num}. ${m.title} (${m.id})`)
+      .map((m) => `  ${m.num}. ${m.title} (${m.id})`)
       .join('\n');
-    
+
     const message = `Multiple playlists match "${query}":\n${matchList}${
       matches.length > 5 ? `\n  ... and ${matches.length - 5} more` : ''
     }\n\nBe more specific or use the playlist number.`;
-    
+
     super(message);
     this.name = 'MultipleMatchesError';
     this.matches = matches;
@@ -203,7 +205,7 @@ export class MultipleMatchesError extends Error {
 
 /**
  * Batch resolve multiple playlist identifiers
- * 
+ *
  * @param inputs - Array of playlist identifiers
  * @param useDatabase - Whether to use database lookup
  * @returns Array of resolved playlists (null for unresolved)
@@ -212,15 +214,13 @@ export async function resolveMultiplePlaylists(
   inputs: string[],
   useDatabase: boolean = true
 ): Promise<(PlaylistResolution | null)[]> {
-  return Promise.all(
-    inputs.map(input => resolvePlaylistIdentifier(input, useDatabase))
-  );
+  return Promise.all(inputs.map((input) => resolvePlaylistIdentifier(input, useDatabase)));
 }
 
 /**
  * Resolve and validate playlist identifier
  * Throws error if not found instead of returning null
- * 
+ *
  * @param input - User input
  * @param useDatabase - Whether to use database lookup
  * @returns Resolved playlist (guaranteed non-null)
@@ -231,16 +231,16 @@ export async function resolvePlaylistOrThrow(
   useDatabase: boolean = true
 ): Promise<PlaylistResolution> {
   const result = await resolvePlaylistIdentifier(input, useDatabase);
-  
+
   if (!result) {
     throw new Error(
       `Playlist not found: "${input}"\n\n` +
-      `Suggestions:\n` +
-      `  - Run 'metube playlist list' to see tracked playlists\n` +
-      `  - Run 'metube playlist discover' to browse your playlists\n` +
-      `  - Use a valid YouTube playlist URL or ID`
+        `Suggestions:\n` +
+        `  - Run 'metube playlist list' to see tracked playlists\n` +
+        `  - Run 'metube playlist discover' to browse your playlists\n` +
+        `  - Use a valid YouTube playlist URL or ID`
     );
   }
-  
+
   return result;
 }

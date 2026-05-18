@@ -19,7 +19,7 @@ export class AppError extends Error {
     } = {}
   ) {
     super(message);
-    
+
     this.name = this.constructor.name;
     this.code = options.code || 'APP_ERROR';
     this.statusCode = options.statusCode || 500;

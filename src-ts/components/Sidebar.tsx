@@ -13,10 +13,19 @@ interface SidebarProps {
 
 export function Sidebar({ recentCommands, stats }: SidebarProps) {
   return (
-    <Box flexDirection="column" width={24} paddingX={1} paddingY={1} borderStyle="single" borderColor={inkColors.grey}>
+    <Box
+      flexDirection="column"
+      width={24}
+      paddingX={1}
+      paddingY={1}
+      borderStyle="single"
+      borderColor={inkColors.grey}
+    >
       {/* Navigation */}
       <Box flexDirection="column" marginBottom={1}>
-        <Text bold color={inkColors.orange} backgroundColor={inkColors.greyDark}>COMMANDS</Text>
+        <Text bold color={inkColors.orange} backgroundColor={inkColors.greyDark}>
+          COMMANDS
+        </Text>
         <Box marginLeft={1} flexDirection="column">
           <Text dimColor>init</Text>
           <Text dimColor>discover</Text>
@@ -29,13 +38,18 @@ export function Sidebar({ recentCommands, stats }: SidebarProps) {
       {/* Recent Commands */}
       {recentCommands.length > 0 && (
         <Box flexDirection="column" marginBottom={1}>
-          <Text bold color={inkColors.orange} backgroundColor={inkColors.greyDark}>RECENT</Text>
+          <Text bold color={inkColors.orange} backgroundColor={inkColors.greyDark}>
+            RECENT
+          </Text>
           <Box marginLeft={1} flexDirection="column">
-            {recentCommands.slice(-4).reverse().map((cmd, i) => (
-              <Text key={i} dimColor>
-                {cmd.length > 16 ? cmd.substring(0, 16) + '...' : cmd}
-              </Text>
-            ))}
+            {recentCommands
+              .slice(-4)
+              .reverse()
+              .map((cmd, i) => (
+                <Text key={i} dimColor>
+                  {cmd.length > 16 ? cmd.substring(0, 16) + '...' : cmd}
+                </Text>
+              ))}
           </Box>
         </Box>
       )}
@@ -43,11 +57,11 @@ export function Sidebar({ recentCommands, stats }: SidebarProps) {
       {/* Status */}
       {stats && (
         <Box flexDirection="column">
-          <Text bold color={inkColors.orange} backgroundColor={inkColors.greyDark}>STATUS</Text>
+          <Text bold color={inkColors.orange} backgroundColor={inkColors.greyDark}>
+            STATUS
+          </Text>
           <Box marginLeft={1} flexDirection="column">
-            <Text dimColor>
-              {stats.authenticated ? 'Auth: Yes' : 'Auth: No'}
-            </Text>
+            <Text dimColor>{stats.authenticated ? 'Auth: Yes' : 'Auth: No'}</Text>
             <Text dimColor>{stats.playlistCount} Lists</Text>
             <Text dimColor>{stats.videoCount} Vids</Text>
           </Box>

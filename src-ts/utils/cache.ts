@@ -50,28 +50,28 @@ function ensureCacheDir(): void {
 
 /**
  * Save videos for a playlist to cache
- * 
+ *
  * @param playlistId - Playlist ID
  * @param videos - Array of videos with metadata
  */
 export function saveVideoCache(playlistId: string, videos: CachedVideo[]): void {
   try {
     ensureCacheDir();
-    
+
     let cache: VideoCache = {};
-    
+
     // Load existing cache
     if (fs.existsSync(VIDEO_CACHE_FILE)) {
       const data = fs.readFileSync(VIDEO_CACHE_FILE, 'utf-8');
       cache = JSON.parse(data);
     }
-    
+
     // Update cache for this playlist
     cache[playlistId] = videos;
-    
+
     // Write back to file
     fs.writeFileSync(VIDEO_CACHE_FILE, JSON.stringify(cache, null, 2));
-    
+
     logger.info({ playlistId, count: videos.length }, 'Video cache saved');
   } catch (error) {
     logger.error({ error, playlistId }, 'Failed to save video cache');
@@ -81,7 +81,7 @@ export function saveVideoCache(playlistId: string, videos: CachedVideo[]): void 
 
 /**
  * Load cached videos for a playlist
- * 
+ *
  * @param playlistId - Playlist ID
  * @returns Array of cached videos or null if not found
  */
@@ -90,10 +90,10 @@ export function loadVideoCache(playlistId: string): CachedVideo[] | null {
     if (!fs.existsSync(VIDEO_CACHE_FILE)) {
       return null;
     }
-    
+
     const data = fs.readFileSync(VIDEO_CACHE_FILE, 'utf-8');
     const cache: VideoCache = JSON.parse(data);
-    
+
     return cache[playlistId] || null;
   } catch (error) {
     logger.error({ error, playlistId }, 'Failed to load video cache');
@@ -103,7 +103,7 @@ export function loadVideoCache(playlistId: string): CachedVideo[] | null {
 
 /**
  * Get video by position number from cache
- * 
+ *
  * @param playlistId - Playlist ID
  * @param videoNum - Video position number (1-indexed)
  * @returns Cached video or null if not found
@@ -113,13 +113,13 @@ export function getVideoByNumber(playlistId: string, videoNum: number): CachedVi
   if (!videos) {
     return null;
   }
-  
-  return videos.find(v => v.num === videoNum) || null;
+
+  return videos.find((v) => v.num === videoNum) || null;
 }
 
 /**
  * Save playlists to cache with numbered references
- * 
+ *
  * @param playlists - Array of playlists
  */
 export function savePlaylistCache(playlists: CachedPlaylist[]): void {
@@ -135,7 +135,7 @@ export function savePlaylistCache(playlists: CachedPlaylist[]): void {
 
 /**
  * Load cached playlists
- * 
+ *
  * @returns Array of cached playlists or empty array if not found
  */
 export function loadPlaylistCache(): CachedPlaylist[] {
@@ -143,7 +143,7 @@ export function loadPlaylistCache(): CachedPlaylist[] {
     if (!fs.existsSync(PLAYLIST_CACHE_FILE)) {
       return [];
     }
-    
+
     const data = fs.readFileSync(PLAYLIST_CACHE_FILE, 'utf-8');
     return JSON.parse(data);
   } catch (error) {
@@ -154,25 +154,25 @@ export function loadPlaylistCache(): CachedPlaylist[] {
 
 /**
  * Get playlist by number from cache
- * 
+ *
  * @param playlistNum - Playlist position number (1-indexed)
  * @returns Cached playlist or null if not found
  */
 export function getPlaylistByNumber(playlistNum: number): CachedPlaylist | null {
   const playlists = loadPlaylistCache();
-  return playlists.find(p => p.num === playlistNum) || null;
+  return playlists.find((p) => p.num === playlistNum) || null;
 }
 
 /**
  * Search playlists by partial title match
- * 
+ *
  * @param query - Search query
  * @returns Array of matching playlists
  */
 export function searchPlaylistsByTitle(query: string): CachedPlaylist[] {
   const playlists = loadPlaylistCache();
   const lowerQuery = query.toLowerCase();
-  return playlists.filter(p => p.title.toLowerCase().includes(lowerQuery));
+  return playlists.filter((p) => p.title.toLowerCase().includes(lowerQuery));
 }
 
 /**

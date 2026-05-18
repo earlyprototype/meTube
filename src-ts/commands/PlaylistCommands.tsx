@@ -10,7 +10,12 @@ import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { ExtractCommand } from './ExtractCommand.js';
 import { inkColors, symbols } from '../utils/colors.js';
 import { safeTitle } from '../utils/terminal.js';
-import { saveVideoCache, savePlaylistCache, type CachedVideo, type CachedPlaylist } from '../utils/cache.js';
+import {
+  saveVideoCache,
+  savePlaylistCache,
+  type CachedVideo,
+  type CachedPlaylist,
+} from '../utils/cache.js';
 import type { Playlist } from '../database/models.js';
 import { VideoRepository } from '../database/repositories.js';
 import { resolvePlaylistIdentifier } from '../utils/playlistResolver.js';
@@ -27,7 +32,15 @@ export function PlaylistCommands({ subcommand, args, flags, onComplete }: Playli
     return (
       <ErrorDisplay
         message="No playlist subcommand specified"
-        suggestions={['list', 'discover', 'add <id>', 'add-mine', 'sync', 'remove <id>', 'videos <id>']}
+        suggestions={[
+          'list',
+          'discover',
+          'add <id>',
+          'add-mine',
+          'sync',
+          'remove <id>',
+          'videos <id>',
+        ]}
       />
     );
   }
@@ -75,7 +88,7 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
       }));
       savePlaylistCache(cached);
     }
-    
+
     // In REPL mode, call onComplete; in direct mode, exit after 2 seconds
     if (onComplete) {
       onComplete();
@@ -87,7 +100,9 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
   if (loading) {
     return (
       <Box padding={1}>
-        <Text><Spinner type="dots" /> Loading playlists...</Text>
+        <Text>
+          <Spinner type="dots" /> Loading playlists...
+        </Text>
       </Box>
     );
   }
@@ -104,13 +119,21 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       <Box marginBottom={1}>
-        <Text bold color="cyan" backgroundColor={inkColors.greyDark}>Saved Playlists ({playlists.length})</Text>
+        <Text bold color="cyan" backgroundColor={inkColors.greyDark}>
+          Saved Playlists ({playlists.length})
+        </Text>
       </Box>
       {playlists.map((p, i) => (
         <Box key={p.id} marginY={0}>
-          <Box width={4}><Text>{i + 1}</Text></Box>
-          <Box width={50}><Text>{safeTitle(p.title)}</Text></Box>
-          <Box width={10}><Text dimColor>({p.video_count || 0} videos)</Text></Box>
+          <Box width={4}>
+            <Text>{i + 1}</Text>
+          </Box>
+          <Box width={50}>
+            <Text>{safeTitle(p.title)}</Text>
+          </Box>
+          <Box width={10}>
+            <Text dimColor>({p.video_count || 0} videos)</Text>
+          </Box>
         </Box>
       ))}
     </Box>
@@ -119,7 +142,9 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
 
 // Subcommand: Discover (interactive)
 function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
-  const [status, setStatus] = useState<'loading' | 'picking' | 'adding' | 'done' | 'prompt_extract' | 'error'>('loading');
+  const [status, setStatus] = useState<
+    'loading' | 'picking' | 'adding' | 'done' | 'prompt_extract' | 'error'
+  >('loading');
   const [playlists, setPlaylists] = useState<any[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -129,10 +154,10 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
       try {
         const auth = new YouTubeAuth();
         await auth.authenticate();
-        
+
         const client = new YouTubeClient(auth);
         const { playlists: ytPlaylists } = await client.getPlaylists();
-        
+
         setPlaylists(ytPlaylists);
         setStatus('picking');
       } catch (err) {
@@ -150,7 +175,7 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
     try {
       const db = new DatabaseManager('data/metube.db');
       const repo = new PlaylistRepository(db);
-      
+
       repo.createOrUpdate({
         playlist_id: playlist.id,
         title: playlist.title,
@@ -158,7 +183,7 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
         video_count: playlist.itemCount,
         enabled: true,
       });
-      
+
       db.close();
       setStatus('prompt_extract');
     } catch (err) {
@@ -174,7 +199,9 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
   if (status === 'loading') {
     return (
       <Box padding={1}>
-        <Text><Spinner type="dots" /> Fetching your YouTube playlists...</Text>
+        <Text>
+          <Spinner type="dots" /> Fetching your YouTube playlists...
+        </Text>
       </Box>
     );
   }
@@ -184,27 +211,24 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
   }
 
   if (status === 'picking') {
-    return (
-      <PlaylistPicker
-        playlists={playlists}
-        onSelect={handleSelect}
-        onCancel={handleCancel}
-      />
-    );
+    return <PlaylistPicker playlists={playlists} onSelect={handleSelect} onCancel={handleCancel} />;
   }
 
   if (status === 'adding') {
     return (
       <Box padding={1}>
-        <Text><Spinner type="dots" /> Adding playlist: {selected?.title != null ? safeTitle(selected.title) : ''}</Text>
+        <Text>
+          <Spinner type="dots" /> Adding playlist:{' '}
+          {selected?.title != null ? safeTitle(selected.title) : ''}
+        </Text>
       </Box>
     );
   }
 
   if (status === 'prompt_extract') {
     return (
-      <ExtractPrompt 
-        playlistId={selected?.id} 
+      <ExtractPrompt
+        playlistId={selected?.id}
         playlistTitle={selected?.title}
         videoCount={selected?.itemCount || 0}
         onComplete={onComplete}
@@ -216,10 +240,15 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
     return (
       <Box flexDirection="column" paddingX={1} paddingY={1}>
         <Box marginBottom={1}>
-          <Text bold color="cyan" backgroundColor={inkColors.greyDark}>OK Playlist Added</Text>
+          <Text bold color="cyan" backgroundColor={inkColors.greyDark}>
+            OK Playlist Added
+          </Text>
         </Box>
         <Box>
-          <Text>{selected?.title != null ? safeTitle(selected.title) : ''} ({selected?.itemCount || 0} videos)</Text>
+          <Text>
+            {selected?.title != null ? safeTitle(selected.title) : ''} ({selected?.itemCount || 0}{' '}
+            videos)
+          </Text>
         </Box>
       </Box>
     );
@@ -229,14 +258,14 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
 }
 
 // Extract prompt after adding playlist
-function ExtractPrompt({ 
-  playlistId, 
-  playlistTitle, 
-  videoCount, 
-  onComplete 
-}: { 
-  playlistId: string; 
-  playlistTitle: string; 
+function ExtractPrompt({
+  playlistId,
+  playlistTitle,
+  videoCount,
+  onComplete,
+}: {
+  playlistId: string;
+  playlistTitle: string;
   videoCount: number;
   onComplete?: () => void;
 }) {
@@ -259,12 +288,7 @@ function ExtractPrompt({
         <Box marginBottom={1}>
           <Text color="green">Starting extraction of {safeTitle(playlistTitle)}...</Text>
         </Box>
-        <ExtractCommand
-          type="playlist"
-          id={playlistId}
-          flags={{}}
-          onComplete={onComplete}
-        />
+        <ExtractCommand type="playlist" id={playlistId} flags={{}} onComplete={onComplete} />
       </Box>
     );
   }
@@ -273,10 +297,14 @@ function ExtractPrompt({
     return (
       <Box flexDirection="column" paddingX={1} paddingY={1}>
         <Box marginBottom={1}>
-          <Text bold color="cyan" backgroundColor={inkColors.greyDark}>OK Playlist Added</Text>
+          <Text bold color="cyan" backgroundColor={inkColors.greyDark}>
+            OK Playlist Added
+          </Text>
         </Box>
         <Box>
-          <Text>{safeTitle(playlistTitle)} ({videoCount} videos)</Text>
+          <Text>
+            {safeTitle(playlistTitle)} ({videoCount} videos)
+          </Text>
         </Box>
         <Box marginTop={1}>
           <Text dimColor>To extract later, type: extract playlist {playlistId}</Text>
@@ -288,13 +316,19 @@ function ExtractPrompt({
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       <Box marginBottom={1}>
-        <Text bold color="cyan" backgroundColor={inkColors.greyDark}>OK Playlist Added</Text>
+        <Text bold color="cyan" backgroundColor={inkColors.greyDark}>
+          OK Playlist Added
+        </Text>
       </Box>
       <Box>
-        <Text>{safeTitle(playlistTitle)} ({videoCount} videos)</Text>
+        <Text>
+          {safeTitle(playlistTitle)} ({videoCount} videos)
+        </Text>
       </Box>
       <Box marginTop={1}>
-        <Text bold color="cyan" backgroundColor={inkColors.greyDark}>Extract videos now? (y/n)</Text>
+        <Text bold color="cyan" backgroundColor={inkColors.greyDark}>
+          Extract videos now? (y/n)
+        </Text>
       </Box>
       <Box>
         <Text dimColor>Press Y to start extraction, N to skip</Text>
@@ -306,7 +340,9 @@ function ExtractPrompt({
 // Subcommand: Add by ID
 function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComplete?: () => void }) {
   const { exit } = useApp();
-  const [status, setStatus] = useState<'validating' | 'fetching' | 'saving' | 'done' | 'error'>('validating');
+  const [status, setStatus] = useState<'validating' | 'fetching' | 'saving' | 'done' | 'error'>(
+    'validating'
+  );
   const [error, setError] = useState<string | null>(null);
   const [playlistData, setPlaylistData] = useState<any>(null);
 
@@ -337,7 +373,7 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
         // Fetch from YouTube
         const auth = new YouTubeAuth();
         const client = new YouTubeClient(auth);
-        
+
         const playlist = await client.getPlaylistById(playlistId);
 
         setStatus('saving');
@@ -388,9 +424,7 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
           </Text>
         </Box>
         <Box marginTop={1}>
-          <Text dimColor>
-            To extract: metube extract playlist {playlistId}
-          </Text>
+          <Text dimColor>To extract: metube extract playlist {playlistId}</Text>
         </Box>
       </Box>
     );
@@ -400,8 +434,7 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
   return (
     <Box padding={1}>
       <Text>
-        <Spinner type="dots" />{' '}
-        {status === 'validating' && 'Validating...'}
+        <Spinner type="dots" /> {status === 'validating' && 'Validating...'}
         {status === 'fetching' && 'Fetching playlist from YouTube...'}
         {status === 'saving' && 'Saving to database...'}
       </Text>
@@ -410,9 +443,17 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
 }
 
 // Subcommand: Remove
-function PlaylistRemove({ playlistId, onComplete }: { playlistId?: string; onComplete?: () => void }) {
+function PlaylistRemove({
+  playlistId,
+  onComplete,
+}: {
+  playlistId?: string;
+  onComplete?: () => void;
+}) {
   const { exit } = useApp();
-  const [status, setStatus] = useState<'loading' | 'confirming' | 'removing' | 'done' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'confirming' | 'removing' | 'done' | 'error'>(
+    'loading'
+  );
   const [error, setError] = useState<string | null>(null);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [videoCount, setVideoCount] = useState<number>(0);
@@ -430,7 +471,9 @@ function PlaylistRemove({ playlistId, onComplete }: { playlistId?: string; onCom
         // Resolve playlist identifier (number, title, URL, or ID)
         const resolved = await resolvePlaylistIdentifier(playlistId, true);
         if (!resolved) {
-          setError(`Playlist not found: ${playlistId}. Try 'metube playlist list' to see tracked playlists.`);
+          setError(
+            `Playlist not found: ${playlistId}. Try 'metube playlist list' to see tracked playlists.`
+          );
           setStatus('error');
           return;
         }
@@ -444,7 +487,9 @@ function PlaylistRemove({ playlistId, onComplete }: { playlistId?: string; onCom
 
         const pl = playlistRepo.getById(actualPlaylistId);
         if (!pl) {
-          setError(`Playlist not found: ${resolved.title || actualPlaylistId}. Use 'metube playlist list' to see tracked playlists.`);
+          setError(
+            `Playlist not found: ${resolved.title || actualPlaylistId}. Use 'metube playlist list' to see tracked playlists.`
+          );
           setStatus('error');
           db.close();
           return;
@@ -486,10 +531,10 @@ function PlaylistRemove({ playlistId, onComplete }: { playlistId?: string; onCom
     try {
       const db = new DatabaseManager('data/metube.db');
       const playlistRepo = new PlaylistRepository(db);
-      
+
       // Delete playlist (videos remain - user can manually delete if needed)
       playlistRepo.delete(resolvedPlaylistId);
-      
+
       setStatus('done');
       db.close();
 
@@ -527,15 +572,17 @@ function PlaylistRemove({ playlistId, onComplete }: { playlistId?: string; onCom
           </Text>
         </Box>
         <Box marginBottom={1}>
-          <Text>Playlist: <Text bold>{safeTitle(playlist.title)}</Text></Text>
-        </Box>
-        <Box marginBottom={1}>
-          <Text dimColor>
-            Associated videos in database: {videoCount} (will be kept)
+          <Text>
+            Playlist: <Text bold>{safeTitle(playlist.title)}</Text>
           </Text>
         </Box>
         <Box marginBottom={1}>
-          <Text bold color="yellow">Remove this playlist from tracking? (y/n)</Text>
+          <Text dimColor>Associated videos in database: {videoCount} (will be kept)</Text>
+        </Box>
+        <Box marginBottom={1}>
+          <Text bold color="yellow">
+            Remove this playlist from tracking? (y/n)
+          </Text>
         </Box>
         <Box>
           <Text dimColor>Press Y to confirm, N to cancel</Text>
@@ -564,15 +611,11 @@ function PlaylistRemove({ playlistId, onComplete }: { playlistId?: string; onCom
             </Text>
           </Box>
           <Box>
-            <Text>
-              {safeTitle(playlist.title)} is no longer being tracked
-            </Text>
+            <Text>{safeTitle(playlist.title)} is no longer being tracked</Text>
           </Box>
           {videoCount > 0 && (
             <Box marginTop={1}>
-              <Text dimColor>
-                {videoCount} associated videos remain in database
-              </Text>
+              <Text dimColor>{videoCount} associated videos remain in database</Text>
             </Box>
           )}
         </Box>
@@ -590,9 +633,17 @@ function PlaylistRemove({ playlistId, onComplete }: { playlistId?: string; onCom
 }
 
 // Subcommand: Add-Mine (bulk add all user playlists)
-function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; onComplete?: () => void }) {
+function PlaylistAddMine({
+  flags,
+  onComplete,
+}: {
+  flags: Record<string, any>;
+  onComplete?: () => void;
+}) {
   const { exit } = useApp();
-  const [status, setStatus] = useState<'loading' | 'selecting' | 'adding' | 'done' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'selecting' | 'adding' | 'done' | 'error'>(
+    'loading'
+  );
   const [error, setError] = useState<string | null>(null);
   const [playlists, setPlaylists] = useState<any[]>([]);
   const [existingIds, setExistingIds] = useState<Set<string>>(new Set());
@@ -611,13 +662,13 @@ function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; on
 
         // Get existing playlists
         const existing = repo.getAll();
-        const existingSet = new Set(existing.map(p => p.playlist_id));
+        const existingSet = new Set(existing.map((p) => p.playlist_id));
         setExistingIds(existingSet);
 
         // Fetch all user playlists (pagination loop)
         let allPlaylists: any[] = [];
         let pageToken: string | undefined = undefined;
-        
+
         do {
           const result = await client.getPlaylists(50, pageToken);
           allPlaylists = allPlaylists.concat(result.playlists);
@@ -627,10 +678,10 @@ function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; on
         // Filter by privacy if specified
         const privacyFilter = flags.privacy?.toLowerCase();
         let filtered = allPlaylists;
-        
+
         if (privacyFilter && privacyFilter !== 'all') {
-          filtered = allPlaylists.filter((p: any) => 
-            p.privacyStatus?.toLowerCase() === privacyFilter
+          filtered = allPlaylists.filter(
+            (p: any) => p.privacyStatus?.toLowerCase() === privacyFilter
           );
         }
 
@@ -647,7 +698,7 @@ function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; on
         }
 
         setPlaylists(filtered);
-        
+
         // Auto-select all non-existing playlists
         const autoSelected = new Set<number>();
         filtered.forEach((p: any, i: number) => {
@@ -707,7 +758,7 @@ function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; on
 
       for (const index of selectedIndices) {
         const playlist = playlists[index];
-        
+
         // Skip if already exists
         if (existingIds.has(playlist.playlistId)) {
           skipped++;
@@ -766,7 +817,8 @@ function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; on
         </Box>
         <Box marginBottom={1}>
           <Text dimColor>
-            {selectedIndices.size} selected | A = select all | N = none | Enter = confirm | Esc = cancel
+            {selectedIndices.size} selected | A = select all | N = none | Enter = confirm | Esc =
+            cancel
           </Text>
         </Box>
         {playlists.slice(0, 20).map((p, i) => {
@@ -775,8 +827,7 @@ function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; on
           return (
             <Box key={p.playlistId} marginY={0}>
               <Text color={isSelected ? 'cyan' : 'white'}>
-                {isSelected ? symbols.check : ' '}{' '}
-                {safeTitle(p.title)}
+                {isSelected ? symbols.check : ' '} {safeTitle(p.title)}
                 {isExisting && <Text dimColor> (already tracked)</Text>}
               </Text>
             </Box>
@@ -811,7 +862,11 @@ function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; on
         </Box>
         <Box>
           <Text>
-            Added: <Text bold color="cyan">{addedCount}</Text> playlists
+            Added:{' '}
+            <Text bold color="cyan">
+              {addedCount}
+            </Text>{' '}
+            playlists
           </Text>
         </Box>
         {skippedCount > 0 && (
@@ -822,9 +877,7 @@ function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; on
           </Box>
         )}
         <Box marginTop={1}>
-          <Text dimColor>
-            Use 'metube playlist list' to see all tracked playlists
-          </Text>
+          <Text dimColor>Use 'metube playlist list' to see all tracked playlists</Text>
         </Box>
       </Box>
     );
@@ -834,9 +887,17 @@ function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; on
 }
 
 // Subcommand: Sync (detect changes with YouTube)
-function PlaylistSync({ flags, onComplete }: { flags: Record<string, any>; onComplete?: () => void }) {
+function PlaylistSync({
+  flags,
+  onComplete,
+}: {
+  flags: Record<string, any>;
+  onComplete?: () => void;
+}) {
   const { exit } = useApp();
-  const [status, setStatus] = useState<'loading' | 'reviewing' | 'syncing' | 'done' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'reviewing' | 'syncing' | 'done' | 'error'>(
+    'loading'
+  );
   const [error, setError] = useState<string | null>(null);
   const [newPlaylists, setNewPlaylists] = useState<any[]>([]);
   const [deletedPlaylists, setDeletedPlaylists] = useState<any[]>([]);
@@ -855,12 +916,12 @@ function PlaylistSync({ flags, onComplete }: { flags: Record<string, any>; onCom
 
         // Get tracked playlists
         const tracked = repo.getAll();
-        const trackedIds = new Set(tracked.map(p => p.playlist_id));
+        const trackedIds = new Set(tracked.map((p) => p.playlist_id));
 
         // Fetch current YouTube playlists (pagination loop)
         let youtubePlaylists: any[] = [];
         let pageToken: string | undefined = undefined;
-        
+
         do {
           const result = await client.getPlaylists(50, pageToken);
           youtubePlaylists = youtubePlaylists.concat(result.playlists);
@@ -874,11 +935,11 @@ function PlaylistSync({ flags, onComplete }: { flags: Record<string, any>; onCom
         setNewPlaylists(newOnes);
 
         // Find deleted playlists (tracked but not on YouTube)
-        const deletedOnes = tracked.filter(p => !youtubeIds.has(p.playlist_id));
+        const deletedOnes = tracked.filter((p) => !youtubeIds.has(p.playlist_id));
         setDeletedPlaylists(deletedOnes);
 
         // Count unchanged
-        const unchanged = tracked.filter(p => youtubeIds.has(p.playlist_id)).length;
+        const unchanged = tracked.filter((p) => youtubeIds.has(p.playlist_id)).length;
         setUnchangedCount(unchanged);
 
         setStatus('reviewing');
@@ -978,9 +1039,7 @@ function PlaylistSync({ flags, onComplete }: { flags: Record<string, any>; onCom
             </Text>
           </Box>
           <Box>
-            <Text>
-              All {unchangedCount} tracked playlists are in sync with YouTube
-            </Text>
+            <Text>All {unchangedCount} tracked playlists are in sync with YouTube</Text>
           </Box>
         </Box>
       );
@@ -1004,11 +1063,11 @@ function PlaylistSync({ flags, onComplete }: { flags: Record<string, any>; onCom
             </Text>
             {newPlaylists.slice(0, 5).map((p: any) => (
               <Text key={p.playlistId} dimColor>
-                  + {safeTitle(p.title)}
+                + {safeTitle(p.title)}
               </Text>
             ))}
             {newPlaylists.length > 5 && (
-              <Text dimColor>  ... and {newPlaylists.length - 5} more</Text>
+              <Text dimColor> ... and {newPlaylists.length - 5} more</Text>
             )}
           </Box>
         )}
@@ -1020,11 +1079,11 @@ function PlaylistSync({ flags, onComplete }: { flags: Record<string, any>; onCom
             </Text>
             {deletedPlaylists.slice(0, 5).map((p: any) => (
               <Text key={p.playlist_id} dimColor>
-                  - {safeTitle(p.title)}
+                - {safeTitle(p.title)}
               </Text>
             ))}
             {deletedPlaylists.length > 5 && (
-              <Text dimColor>  ... and {deletedPlaylists.length - 5} more</Text>
+              <Text dimColor> ... and {deletedPlaylists.length - 5} more</Text>
             )}
           </Box>
         )}
@@ -1065,21 +1124,27 @@ function PlaylistSync({ flags, onComplete }: { flags: Record<string, any>; onCom
         {addCount > 0 && (
           <Box>
             <Text>
-              Added: <Text bold color="cyan">{addCount}</Text> new playlists
+              Added:{' '}
+              <Text bold color="cyan">
+                {addCount}
+              </Text>{' '}
+              new playlists
             </Text>
           </Box>
         )}
         {removeCount > 0 && (
           <Box>
             <Text>
-              Removed: <Text bold color="red">{removeCount}</Text> deleted playlists
+              Removed:{' '}
+              <Text bold color="red">
+                {removeCount}
+              </Text>{' '}
+              deleted playlists
             </Text>
           </Box>
         )}
         <Box marginTop={1}>
-          <Text dimColor>
-            Use 'metube playlist list' to see all tracked playlists
-          </Text>
+          <Text dimColor>Use 'metube playlist list' to see all tracked playlists</Text>
         </Box>
       </Box>
     );
@@ -1089,7 +1154,13 @@ function PlaylistSync({ flags, onComplete }: { flags: Record<string, any>; onCom
 }
 
 // Subcommand: Videos (show numbered list of videos in a playlist)
-function PlaylistVideos({ playlistId, onComplete }: { playlistId?: string; onComplete?: () => void }) {
+function PlaylistVideos({
+  playlistId,
+  onComplete,
+}: {
+  playlistId?: string;
+  onComplete?: () => void;
+}) {
   const { exit } = useApp();
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -1108,7 +1179,9 @@ function PlaylistVideos({ playlistId, onComplete }: { playlistId?: string; onCom
         // Resolve playlist identifier (number, title, URL, or ID)
         const resolved = await resolvePlaylistIdentifier(playlistId, true);
         if (!resolved) {
-          setError(`Playlist not found: ${playlistId}. Try 'metube playlist list' to see tracked playlists.`);
+          setError(
+            `Playlist not found: ${playlistId}. Try 'metube playlist list' to see tracked playlists.`
+          );
           setStatus('error');
           return;
         }
@@ -1123,7 +1196,9 @@ function PlaylistVideos({ playlistId, onComplete }: { playlistId?: string; onCom
         // Get playlist info
         const pl = playlistRepo.getById(actualPlaylistId);
         if (!pl) {
-          setError(`Playlist not found: ${resolved.title || actualPlaylistId}. Run 'metube playlist add ${actualPlaylistId}' first.`);
+          setError(
+            `Playlist not found: ${resolved.title || actualPlaylistId}. Run 'metube playlist add ${actualPlaylistId}' first.`
+          );
           setStatus('error');
           db.close();
           return;
@@ -1133,9 +1208,11 @@ function PlaylistVideos({ playlistId, onComplete }: { playlistId?: string; onCom
 
         // Get videos for this playlist
         const playlistVideos = videoRepo.getByPlaylist(actualPlaylistId);
-        
+
         if (playlistVideos.length === 0) {
-          setError(`No videos found in playlist. Extract the playlist first using: metube extract playlist ${actualPlaylistId}`);
+          setError(
+            `No videos found in playlist. Extract the playlist first using: metube extract playlist ${actualPlaylistId}`
+          );
           setStatus('error');
           db.close();
           return;
@@ -1179,7 +1256,9 @@ function PlaylistVideos({ playlistId, onComplete }: { playlistId?: string; onCom
   if (status === 'loading') {
     return (
       <Box padding={1}>
-        <Text><Spinner type="dots" /> Loading videos...</Text>
+        <Text>
+          <Spinner type="dots" /> Loading videos...
+        </Text>
       </Box>
     );
   }
@@ -1188,16 +1267,37 @@ function PlaylistVideos({ playlistId, onComplete }: { playlistId?: string; onCom
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       <Box marginBottom={1}>
         <Text bold color="cyan" backgroundColor={inkColors.greyDark}>
-          {symbols.bullet} Videos in "{playlist?.title != null ? safeTitle(playlist.title) : ''}" ({videos.length} videos)
+          {symbols.bullet} Videos in "{playlist?.title != null ? safeTitle(playlist.title) : ''}" (
+          {videos.length} videos)
         </Text>
       </Box>
-      
+
       <Box marginBottom={1}>
-        <Box width={6}><Text bold dimColor>#</Text></Box>
-        <Box width={50}><Text bold dimColor>Title</Text></Box>
-        <Box width={12}><Text bold dimColor>Duration</Text></Box>
-        <Box width={15}><Text bold dimColor>Video ID</Text></Box>
-        <Box width={12}><Text bold dimColor>Transcript</Text></Box>
+        <Box width={6}>
+          <Text bold dimColor>
+            #
+          </Text>
+        </Box>
+        <Box width={50}>
+          <Text bold dimColor>
+            Title
+          </Text>
+        </Box>
+        <Box width={12}>
+          <Text bold dimColor>
+            Duration
+          </Text>
+        </Box>
+        <Box width={15}>
+          <Text bold dimColor>
+            Video ID
+          </Text>
+        </Box>
+        <Box width={12}>
+          <Text bold dimColor>
+            Transcript
+          </Text>
+        </Box>
       </Box>
 
       {videos.map((video) => (
@@ -1223,9 +1323,7 @@ function PlaylistVideos({ playlistId, onComplete }: { playlistId?: string; onCom
       ))}
 
       <Box marginTop={1}>
-        <Text dimColor>
-          Videos cached for easy reference. Use video numbers in other commands.
-        </Text>
+        <Text dimColor>Videos cached for easy reference. Use video numbers in other commands.</Text>
       </Box>
     </Box>
   );

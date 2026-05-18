@@ -21,7 +21,7 @@ export interface Video {
   licensed_content?: boolean;
   created_at?: string; // ISO date string
   updated_at?: string; // ISO date string
-  
+
   // Relationships (optional, loaded when needed)
   transcript?: Transcript;
   statistics?: VideoStatistic[];
@@ -81,7 +81,7 @@ export interface Playlist {
   enabled: boolean;
   created_at?: string; // ISO date string
   updated_at?: string; // ISO date string
-  
+
   // Relationships (optional, loaded when needed)
   playlist_items?: PlaylistItem[];
   extraction_jobs?: ExtractionJob[];
@@ -93,7 +93,7 @@ export interface PlaylistItem {
   video_id: string;
   position?: number;
   added_at: string; // ISO date string
-  
+
   // Relationships (optional)
   playlist?: Playlist;
   video?: Video;
@@ -128,17 +128,13 @@ export interface AIAnalysis {
  */
 export function isVideo(obj: any): obj is Video {
   return (
-    typeof obj === 'object' &&
-    typeof obj.video_id === 'string' &&
-    typeof obj.title === 'string'
+    typeof obj === 'object' && typeof obj.video_id === 'string' && typeof obj.title === 'string'
   );
 }
 
 export function isPlaylist(obj: any): obj is Playlist {
   return (
-    typeof obj === 'object' &&
-    typeof obj.playlist_id === 'string' &&
-    typeof obj.title === 'string'
+    typeof obj === 'object' && typeof obj.playlist_id === 'string' && typeof obj.title === 'string'
   );
 }
 

@@ -127,9 +127,12 @@ export class VideoExtractor {
         onProgress: config.onWhisperProgress,
       });
       if (!whisperExtractor.isAvailable()) {
-        logger.warn({
-          reason: whisperExtractor.getUnavailableReason(),
-        }, 'Whisper enabled but not available');
+        logger.warn(
+          {
+            reason: whisperExtractor.getUnavailableReason(),
+          },
+          'Whisper enabled but not available'
+        );
       }
     }
 
@@ -148,9 +151,12 @@ export class VideoExtractor {
       try {
         this.llmParser = new GeminiParser(config.geminiApiKey);
       } catch (error) {
-        logger.warn({
-          error: error instanceof Error ? error.message : String(error),
-        }, 'Failed to initialize GeminiParser');
+        logger.warn(
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Failed to initialize GeminiParser'
+        );
         logger.warn('LLM parsing will be disabled');
         this.llmParser = null;
       }
@@ -158,11 +164,14 @@ export class VideoExtractor {
       this.llmParser = null;
     }
 
-    logger.info({
-      autoTranscript: this.autoTranscript,
-      autoLlmParse: this.autoLlmParse && this.llmParser !== null,
-      hasWhisper: !!whisperExtractor,
-    }, 'VideoExtractor initialized');
+    logger.info(
+      {
+        autoTranscript: this.autoTranscript,
+        autoLlmParse: this.autoLlmParse && this.llmParser !== null,
+        hasWhisper: !!whisperExtractor,
+      },
+      'VideoExtractor initialized'
+    );
   }
 
   /**
@@ -200,12 +209,16 @@ export class VideoExtractor {
         return null;
       }
 
-      logger.info({
-        videoId,
-        title: videoData.title?.substring(0, 60) || videoData.title || 'No title',
-        channelTitle: videoData.channelTitle?.substring(0, 40) || videoData.channelTitle || 'No channel',
-        duration: videoData.duration,
-      }, 'Fetched video metadata');
+      logger.info(
+        {
+          videoId,
+          title: videoData.title?.substring(0, 60) || videoData.title || 'No title',
+          channelTitle:
+            videoData.channelTitle?.substring(0, 40) || videoData.channelTitle || 'No channel',
+          duration: videoData.duration,
+        },
+        'Fetched video metadata'
+      );
 
       // Step 2: Save video to database
       await this.saveVideoToDatabase(videoData);
@@ -241,11 +254,14 @@ export class VideoExtractor {
         parsedEntities,
       };
     } catch (error) {
-      logger.error({
-        videoId,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      }, 'Failed to extract video');
+      logger.error(
+        {
+          videoId,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        'Failed to extract video'
+      );
 
       throw new AppError('Video extraction failed', {
         cause: error,
@@ -284,26 +300,29 @@ export class VideoExtractor {
         throw new ValidationError('Playlist not found');
       }
 
-      logger.info({
-        playlistId,
-        title: playlist.title.substring(0, 60),
-        videoCount: playlist.itemCount,
-      }, 'Found playlist');
+      logger.info(
+        {
+          playlistId,
+          title: playlist.title.substring(0, 60),
+          videoCount: playlist.itemCount,
+        },
+        'Found playlist'
+      );
 
       // Save playlist to database
       await this.savePlaylistToDatabase(playlist);
 
       // Get all videos from playlist
       logger.debug({ playlistId }, 'Fetching playlist videos');
-      const playlistResponse2 = await this.youtubeClient.getPlaylistVideos(
-        playlistId,
-        maxVideos
-      );
+      const playlistResponse2 = await this.youtubeClient.getPlaylistVideos(playlistId, maxVideos);
       const playlistVideos = playlistResponse2.items;
-      logger.info({
-        playlistId,
-        videoCount: playlistVideos.length,
-      }, 'Fetched playlist videos');
+      logger.info(
+        {
+          playlistId,
+          videoCount: playlistVideos.length,
+        },
+        'Fetched playlist videos'
+      );
 
       // Filter out existing videos if requested
       let videosToProcess = playlistVideos;
@@ -314,10 +333,10 @@ export class VideoExtractor {
 
         for (const video of playlistVideos) {
           const existing = this.videoRepository.getByVideoId(video.videoId);
-          const hasTranscript = existing 
-            ? this.transcriptRepository.getByVideoId(video.videoId) 
+          const hasTranscript = existing
+            ? this.transcriptRepository.getByVideoId(video.videoId)
             : null;
-          
+
           // Only skip if BOTH video AND transcript exist
           if (existing && hasTranscript) {
             existingVideos.add(video.videoId);
@@ -326,16 +345,17 @@ export class VideoExtractor {
           }
         }
 
-        videosToProcess = playlistVideos.filter(
-          (v) => !existingVideos.has(v.videoId)
-        );
+        videosToProcess = playlistVideos.filter((v) => !existingVideos.has(v.videoId));
         skippedCount = playlistVideos.length - videosToProcess.length;
 
-        logger.info({
-          total: playlistVideos.length,
-          toProcess: videosToProcess.length,
-          skipped: skippedCount,
-        }, 'Filtered existing videos (with transcripts)');
+        logger.info(
+          {
+            total: playlistVideos.length,
+            toProcess: videosToProcess.length,
+            skipped: skippedCount,
+          },
+          'Filtered existing videos (with transcripts)'
+        );
       }
 
       // Process videos
@@ -351,12 +371,15 @@ export class VideoExtractor {
         const video = videosToProcess[idx];
         const videoId = video.videoId;
 
-        logger.info({
-          index: idx + 1,
-          total: videosToProcess.length,
-          videoId,
-          title: video.title?.substring(0, 50),
-        }, 'Processing video');
+        logger.info(
+          {
+            index: idx + 1,
+            total: videosToProcess.length,
+            videoId,
+            title: video.title?.substring(0, 50),
+          },
+          'Processing video'
+        );
 
         // Report progress - processing
         if (this.onProgress) {
@@ -389,10 +412,13 @@ export class VideoExtractor {
             });
           }
         } catch (error) {
-          logger.error({
-            videoId,
-            error: error instanceof Error ? error.message : String(error),
-          }, 'Failed to process video');
+          logger.error(
+            {
+              videoId,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            'Failed to process video'
+          );
           results.failed++;
 
           // Report progress - failed
@@ -412,10 +438,13 @@ export class VideoExtractor {
 
       return results;
     } catch (error) {
-      logger.error({
-        playlistId,
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to extract playlist');
+      logger.error(
+        {
+          playlistId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to extract playlist'
+      );
 
       throw new AppError('Playlist extraction failed', {
         cause: error,
@@ -481,19 +510,26 @@ export class VideoExtractor {
         );
       }
 
-      logger.debug({
-        video_id: videoId,
-      }, 'Saved video to database');
+      logger.debug(
+        {
+          video_id: videoId,
+        },
+        'Saved video to database'
+      );
     } catch (error) {
-      const errorDetails = error instanceof Error 
-        ? { message: error.message, stack: error.stack, cause: (error as any).cause }
-        : String(error);
-      
-      logger.error({
-        video_id: videoData.id || videoData.video_id,
-        error: errorDetails,
-      }, 'Failed to save video to database');
-      
+      const errorDetails =
+        error instanceof Error
+          ? { message: error.message, stack: error.stack, cause: (error as any).cause }
+          : String(error);
+
+      logger.error(
+        {
+          video_id: videoData.id || videoData.video_id,
+          error: errorDetails,
+        },
+        'Failed to save video to database'
+      );
+
       console.error('\n=== FULL DATABASE ERROR ===');
       console.error('Video ID:', videoData.id || videoData.video_id);
       console.error('Error:', error);
@@ -540,22 +576,21 @@ export class VideoExtractor {
 
       const descriptionParsed = this.descriptionParser.parse(title, description);
 
-      if (
-        descriptionParsed.github_repos.length > 0 ||
-        descriptionParsed.websites.length > 0
-      ) {
-        logger.info({
-          videoId,
-          github_repos: descriptionParsed.github_repos.length,
-          websites: descriptionParsed.websites.length,
-        }, 'Found entities in description');
+      if (descriptionParsed.github_repos.length > 0 || descriptionParsed.websites.length > 0) {
+        logger.info(
+          {
+            videoId,
+            github_repos: descriptionParsed.github_repos.length,
+            websites: descriptionParsed.websites.length,
+          },
+          'Found entities in description'
+        );
 
         // Add entities from description
-        const descEntities =
-          this.descriptionParser.extractEntitiesForDatabase(descriptionParsed);
+        const descEntities = this.descriptionParser.extractEntitiesForDatabase(descriptionParsed);
         if (descEntities.length > 0) {
           // Convert null to undefined for url field
-          const entities = descEntities.map(e => ({
+          const entities = descEntities.map((e) => ({
             ...e,
             url: e.url || undefined,
           }));
@@ -565,10 +600,13 @@ export class VideoExtractor {
         logger.debug({ videoId }, 'No links found in description');
       }
     } catch (error) {
-      logger.error({
-        videoId,
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to parse description');
+      logger.error(
+        {
+          videoId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to parse description'
+      );
       // Don't throw - continue with extraction
     }
   }
@@ -576,9 +614,7 @@ export class VideoExtractor {
   /**
    * Extract transcript for video
    */
-  private async extractTranscript(
-    videoId: string
-  ): Promise<TranscriptData | null> {
+  private async extractTranscript(videoId: string): Promise<TranscriptData | null> {
     try {
       logger.debug({ videoId }, 'Extracting transcript');
 
@@ -586,12 +622,15 @@ export class VideoExtractor {
 
       if (transcriptData) {
         const source = transcriptData.from_whisper ? 'Whisper' : 'YouTube';
-        logger.info({
-          videoId,
-          source,
-          length: transcriptData.full_text.length,
-          segments: transcriptData.segments.length,
-        }, 'Transcript extracted');
+        logger.info(
+          {
+            videoId,
+            source,
+            length: transcriptData.full_text.length,
+            segments: transcriptData.segments.length,
+          },
+          'Transcript extracted'
+        );
 
         // Save transcript to database
         this.transcriptRepository.create(videoId, transcriptData);
@@ -602,10 +641,13 @@ export class VideoExtractor {
         return null;
       }
     } catch (error) {
-      logger.error({
-        videoId,
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to extract transcript');
+      logger.error(
+        {
+          videoId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to extract transcript'
+      );
       return null;
     }
   }
@@ -630,22 +672,24 @@ export class VideoExtractor {
         videoTitle
       );
 
-      logger.info({
-        videoId,
-        topics: parsedEntities.topics.length,
-        github_repos: parsedEntities.github_repos.length,
-        websites: parsedEntities.websites.length,
-        people: parsedEntities.people.length,
-      }, 'Parsed transcript with Gemini');
+      logger.info(
+        {
+          videoId,
+          topics: parsedEntities.topics.length,
+          github_repos: parsedEntities.github_repos.length,
+          websites: parsedEntities.websites.length,
+          people: parsedEntities.people.length,
+        },
+        'Parsed transcript with Gemini'
+      );
 
       // Delete old entities
       this.entityRepository.deleteByVideo(videoId);
 
       // Add new entities
-      const entities =
-        this.llmParser.extractEntitiesForDatabase(parsedEntities);
+      const entities = this.llmParser.extractEntitiesForDatabase(parsedEntities);
       // Convert null to undefined for url field
-      const entitiesFixed = entities.map(e => ({
+      const entitiesFixed = entities.map((e) => ({
         ...e,
         url: e.url || undefined,
       }));
@@ -653,10 +697,13 @@ export class VideoExtractor {
 
       return parsedEntities;
     } catch (error) {
-      logger.error({
-        videoId,
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to parse transcript with LLM');
+      logger.error(
+        {
+          videoId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to parse transcript with LLM'
+      );
       return null;
     }
   }
@@ -676,14 +723,20 @@ export class VideoExtractor {
 
       this.playlistRepository.createOrUpdate(playlistRecord);
 
-      logger.debug({
-        playlist_id: playlist.id,
-      }, 'Saved playlist to database');
+      logger.debug(
+        {
+          playlist_id: playlist.id,
+        },
+        'Saved playlist to database'
+      );
     } catch (error) {
-      logger.error({
-        playlist_id: playlist.id,
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to save playlist to database');
+      logger.error(
+        {
+          playlist_id: playlist.id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to save playlist to database'
+      );
 
       throw new DatabaseError('Failed to save playlist', { cause: error });
     }
@@ -696,16 +749,22 @@ export class VideoExtractor {
     try {
       // This would use PlaylistItemRepository.addVideoToPlaylist
       // For now, just log
-      logger.debug({
-        playlist_id: playlistId,
-        video_id: video.video_id,
-      }, 'Saved playlist item');
+      logger.debug(
+        {
+          playlist_id: playlistId,
+          video_id: video.video_id,
+        },
+        'Saved playlist item'
+      );
     } catch (error) {
-      logger.error({
-        playlist_id: playlistId,
-        video_id: video.video_id,
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to save playlist item');
+      logger.error(
+        {
+          playlist_id: playlistId,
+          video_id: video.video_id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to save playlist item'
+      );
       // Don't throw - continue
     }
   }

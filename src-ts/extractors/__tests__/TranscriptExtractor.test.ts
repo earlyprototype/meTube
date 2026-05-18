@@ -90,9 +90,7 @@ describe('TranscriptExtractor', () => {
     });
 
     it('should return null when transcript is disabled', async () => {
-      mockFetchTranscript.mockRejectedValue(
-        new Error('Transcript is disabled on this video')
-      );
+      mockFetchTranscript.mockRejectedValue(new Error('Transcript is disabled on this video'));
 
       const result = await extractor.extract('dQw4w9WgXcQ');
 
@@ -271,9 +269,7 @@ describe('TranscriptExtractor', () => {
     });
 
     it('should throw ValidationError for non-array input', async () => {
-      await expect(extractor.extractBatch('not-array' as any)).rejects.toThrow(
-        ValidationError
-      );
+      await expect(extractor.extractBatch('not-array' as any)).rejects.toThrow(ValidationError);
     });
   });
 

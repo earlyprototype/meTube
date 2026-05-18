@@ -54,7 +54,9 @@ export function PostExtractionMenu({
     <Box flexDirection="column">
       {/* Completion Summary */}
       <Box marginBottom={1}>
-        <Text bold color="cyan">{symbols.check} Extraction Complete</Text>
+        <Text bold color="cyan">
+          {symbols.check} Extraction Complete
+        </Text>
       </Box>
 
       {playlistTitle && (
@@ -79,7 +81,9 @@ export function PostExtractionMenu({
 
       {/* Menu */}
       <Box marginBottom={1}>
-        <Text bold color="cyan">What would you like to do next?</Text>
+        <Text bold color="cyan">
+          What would you like to do next?
+        </Text>
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>

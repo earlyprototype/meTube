@@ -50,14 +50,10 @@ export class DescriptionParser {
    */
   private static readonly GITHUB_REPO_PATTERN =
     /github\.com\/([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)/gi;
-  private static readonly URL_PATTERN =
-    /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+  private static readonly URL_PATTERN = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
 
   constructor() {
-    this.githubRegex = new RegExp(
-      DescriptionParser.GITHUB_REPO_PATTERN.source,
-      'gi'
-    );
+    this.githubRegex = new RegExp(DescriptionParser.GITHUB_REPO_PATTERN.source, 'gi');
     this.urlRegex = new RegExp(DescriptionParser.URL_PATTERN.source, 'gi');
   }
 
@@ -90,11 +86,7 @@ export class DescriptionParser {
       const allUrls = this.extractUrls(combinedText);
 
       // Filter out GitHub URLs from general websites
-      const githubDomains = new Set([
-        'github.com',
-        'raw.githubusercontent.com',
-        'gist.github.com',
-      ]);
+      const githubDomains = new Set(['github.com', 'raw.githubusercontent.com', 'gist.github.com']);
 
       const websites = allUrls.filter((url) => {
         try {
@@ -105,10 +97,13 @@ export class DescriptionParser {
         }
       });
 
-      logger.debug({
-        github_repos_count: github_repos.length,
-        websites_count: websites.length,
-      }, 'Parsed description');
+      logger.debug(
+        {
+          github_repos_count: github_repos.length,
+          websites_count: websites.length,
+        },
+        'Parsed description'
+      );
 
       return {
         github_repos,
@@ -123,9 +118,12 @@ export class DescriptionParser {
         throw error;
       }
 
-      logger.error({
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to parse description');
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to parse description'
+      );
 
       throw new ValidationError('Failed to parse description', {
         cause: error,
@@ -241,9 +239,12 @@ export class DescriptionParser {
 
       return entities;
     } catch (error) {
-      logger.error({
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to extract entities for database');
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to extract entities for database'
+      );
 
       throw new ValidationError('Failed to extract entities for database', {
         cause: error,
@@ -267,26 +268,23 @@ export class DescriptionParser {
 
     try {
       // Add 'github' tag if repos found
-      if (
-        Array.isArray(parsedData.github_repos) &&
-        parsedData.github_repos.length > 0
-      ) {
+      if (Array.isArray(parsedData.github_repos) && parsedData.github_repos.length > 0) {
         tags.push('github');
       }
 
       // Add 'has-links' tag if websites found
-      if (
-        Array.isArray(parsedData.websites) &&
-        parsedData.websites.length > 0
-      ) {
+      if (Array.isArray(parsedData.websites) && parsedData.websites.length > 0) {
         tags.push('has-links');
       }
 
       return tags;
     } catch (error) {
-      logger.error({
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to extract tags');
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to extract tags'
+      );
 
       return [];
     }

@@ -1,6 +1,6 @@
 /**
  * CommandExecutor - Returns command components without rendering them
- * 
+ *
  * This module separates command routing logic from rendering concerns.
  * It returns React elements that can be displayed inline in REPL mode
  * or rendered as separate instances in direct command mode.
@@ -24,7 +24,7 @@ interface ExecuteCommandOptions {
 
 /**
  * Execute command logic and return a React element
- * 
+ *
  * @param options - Command execution options
  * @returns React element representing the command output
  */
@@ -36,12 +36,12 @@ export function executeCommandLogic({
   onComplete,
 }: ExecuteCommandOptions): React.ReactElement {
   if (cmd === 'init') {
-    return React.createElement(InitCommand, { 
+    return React.createElement(InitCommand, {
       force: flags.force,
       onComplete,
     });
   }
-  
+
   if (cmd === 'playlist') {
     return React.createElement(PlaylistCommands, {
       subcommand: sub || '',
@@ -50,7 +50,7 @@ export function executeCommandLogic({
       onComplete,
     });
   }
-  
+
   if (cmd === 'video') {
     return React.createElement(VideoCommands, {
       subcommand: sub || '',
@@ -59,7 +59,7 @@ export function executeCommandLogic({
       onComplete,
     });
   }
-  
+
   if (cmd === 'extract') {
     return React.createElement(ExtractCommand, {
       type: sub || '',
@@ -68,7 +68,7 @@ export function executeCommandLogic({
       onComplete,
     });
   }
-  
+
   if (cmd === 'report') {
     // Handle --all flag: Generate reports for all videos
     if (flags.all) {
@@ -79,7 +79,7 @@ export function executeCommandLogic({
         onComplete,
       });
     }
-    
+
     return React.createElement(ReportCommand, {
       type: sub || '',
       id: args[0],
@@ -87,7 +87,7 @@ export function executeCommandLogic({
       onComplete,
     });
   }
-  
+
   return React.createElement(ErrorDisplay, {
     message: `Unknown command: ${cmd}`,
     suggestions: ['init', 'playlist', 'video', 'extract', 'report'],

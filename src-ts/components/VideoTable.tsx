@@ -36,19 +36,46 @@ export function VideoTable({ videos, title }: VideoTableProps) {
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Box borderStyle="round" borderColor={status.border.normal} padding={1} flexDirection="column">
+      <Box
+        borderStyle="round"
+        borderColor={status.border.normal}
+        padding={1}
+        flexDirection="column"
+      >
         {title && (
           <Box marginBottom={1}>
-            <Text bold color={inkColors.orange}>{title}</Text>
+            <Text bold color={inkColors.orange}>
+              {title}
+            </Text>
           </Box>
         )}
 
         <Box>
-          <Box width={4}><Text bold color={inkColors.orange}>#</Text></Box>
-          <Box width={40}><Text bold color={inkColors.orange}>Title</Text></Box>
-          <Box width={20}><Text bold color={inkColors.orange}>Channel</Text></Box>
-          <Box width={10}><Text bold color={inkColors.orange}>Duration</Text></Box>
-          <Box width={8}><Text bold color={inkColors.orange}>Status</Text></Box>
+          <Box width={4}>
+            <Text bold color={inkColors.orange}>
+              #
+            </Text>
+          </Box>
+          <Box width={40}>
+            <Text bold color={inkColors.orange}>
+              Title
+            </Text>
+          </Box>
+          <Box width={20}>
+            <Text bold color={inkColors.orange}>
+              Channel
+            </Text>
+          </Box>
+          <Box width={10}>
+            <Text bold color={inkColors.orange}>
+              Duration
+            </Text>
+          </Box>
+          <Box width={8}>
+            <Text bold color={inkColors.orange}>
+              Status
+            </Text>
+          </Box>
         </Box>
 
         <Box marginY={0}>
@@ -57,10 +84,18 @@ export function VideoTable({ videos, title }: VideoTableProps) {
 
         {videos.map((video, index) => (
           <Box key={video.video_id}>
-            <Box width={4}><Text dimColor>{index + 1}</Text></Box>
-            <Box width={40}><Text>{truncate(safeTitle(video.title), 37)}</Text></Box>
-            <Box width={20}><Text dimColor>{truncate(video.channel_title || '', 17)}</Text></Box>
-            <Box width={10}><Text dimColor>{formatDuration(video.duration)}</Text></Box>
+            <Box width={4}>
+              <Text dimColor>{index + 1}</Text>
+            </Box>
+            <Box width={40}>
+              <Text>{truncate(safeTitle(video.title), 37)}</Text>
+            </Box>
+            <Box width={20}>
+              <Text dimColor>{truncate(video.channel_title || '', 17)}</Text>
+            </Box>
+            <Box width={10}>
+              <Text dimColor>{formatDuration(video.duration)}</Text>
+            </Box>
             <Box width={8}>
               <Text color={video.has_transcript ? 'green' : inkColors.orange}>
                 {video.has_transcript ? `${symbols.check} Done` : '... Pending'}

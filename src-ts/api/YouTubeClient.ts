@@ -32,11 +32,7 @@ export class YouTubeClient {
    * @param retryHandler - Optional custom retry handler (defaults to 3 retries)
    * @throws {ValidationError} If auth is invalid
    */
-  constructor(
-    auth: YouTubeAuth,
-    rateLimiter?: RateLimiter,
-    retryHandler?: RetryHandler
-  ) {
+  constructor(auth: YouTubeAuth, rateLimiter?: RateLimiter, retryHandler?: RetryHandler) {
     if (!auth) {
       throw new ValidationError('YouTubeAuth instance is required');
     }
@@ -302,7 +298,10 @@ export class YouTubeClient {
     await this.ensureAuthenticated();
 
     // Apply rate limiting
-    await this.rateLimiter.waitForToken('playlistItems.list', YOUTUBE_API_COSTS['playlistItems.list']);
+    await this.rateLimiter.waitForToken(
+      'playlistItems.list',
+      YOUTUBE_API_COSTS['playlistItems.list']
+    );
 
     // Execute with retry logic
     return this.retryHandler.execute('getPlaylistVideos', async () => {
@@ -321,21 +320,18 @@ export class YouTubeClient {
           return { items: [], nextPageToken: undefined };
         }
 
-      const items: YouTubePlaylistItem[] = response.data.items
-        .filter((item) => !!item.contentDetails?.videoId)
-        .map((item, index) => ({
-          videoId: item.contentDetails!.videoId!,
-          playlistId,
-          position: item.snippet?.position ?? index,
-          title: item.snippet?.title || undefined,
-          description: item.snippet?.description || undefined,
-          thumbnailUrl: item.snippet?.thumbnails?.default?.url || undefined,
-        }));
+        const items: YouTubePlaylistItem[] = response.data.items
+          .filter((item) => !!item.contentDetails?.videoId)
+          .map((item, index) => ({
+            videoId: item.contentDetails!.videoId!,
+            playlistId,
+            position: item.snippet?.position ?? index,
+            title: item.snippet?.title || undefined,
+            description: item.snippet?.description || undefined,
+            thumbnailUrl: item.snippet?.thumbnails?.default?.url || undefined,
+          }));
 
-        logger.info(
-          { playlistId, count: items.length },
-          'Playlist videos fetched successfully'
-        );
+        logger.info({ playlistId, count: items.length }, 'Playlist videos fetched successfully');
 
         return {
           items,
@@ -493,10 +489,7 @@ export class YouTubeClient {
       pageToken = result.nextPageToken;
       pageCount++;
 
-      logger.debug(
-        { playlistId, pageCount, totalItems: allItems.length },
-        'Fetched playlist page'
-      );
+      logger.debug({ playlistId, pageCount, totalItems: allItems.length }, 'Fetched playlist page');
 
       // Safety limit: prevent infinite loops
       if (pageCount > 100) {

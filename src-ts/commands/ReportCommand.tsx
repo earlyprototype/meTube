@@ -54,7 +54,9 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         if (type === 'playlist') {
           const resolved = await resolvePlaylistIdentifier(id, true);
           if (!resolved) {
-            setError(`Playlist not found: ${id}. Try 'metube playlist list' to see tracked playlists.`);
+            setError(
+              `Playlist not found: ${id}. Try 'metube playlist list' to see tracked playlists.`
+            );
             setStatus('error');
             return;
           }
@@ -85,7 +87,9 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
           if (err.message.includes('not found')) {
             setError(`${type} not found: ${id}. Make sure the ${type} has been extracted first.`);
           } else if (err.message.includes('No videos found')) {
-            setError(`Playlist has no videos. Extract the playlist first using: metube extract playlist ${id}`);
+            setError(
+              `Playlist has no videos. Extract the playlist first using: metube extract playlist ${id}`
+            );
           } else if (err.message.includes('Template not found')) {
             setError('Report templates not found. This is a configuration error.');
           } else {
@@ -101,12 +105,12 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
     async function generateAllReports() {
       try {
         setReportType('all');
-        
+
         // Get all videos from database
         const db = new DatabaseManager('data/metube.db');
         const videoRepo = new VideoRepository(db);
         const allVideos = videoRepo.getAll();
-        
+
         if (allVideos.length === 0) {
           setError('No videos found in database. Extract some videos first.');
           setStatus('error');
@@ -115,7 +119,7 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         }
 
         setTotalReports(allVideos.length);
-        
+
         // Initialize generator
         const generator = new HTMLReportGenerator(db, {
           autoOpen: false, // Don't open each report (would be chaos)
@@ -124,11 +128,11 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         // Generate report for each video
         let successCount = 0;
         let failCount = 0;
-        
+
         for (let i = 0; i < allVideos.length; i++) {
           const video = allVideos[i];
           setCurrentReport(i + 1);
-          
+
           try {
             await generator.generateVideoReport(video.video_id, { autoOpen: false });
             successCount++;
@@ -139,12 +143,11 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         }
 
         db.close();
-        
+
         setFilepath(`Generated ${successCount} reports (${failCount} failed)`);
         setStatus('done');
-        
+
         if (onComplete) onComplete();
-        
       } catch (err) {
         if (err instanceof Error) {
           setError(`Batch report generation failed: ${err.message}`);
@@ -174,7 +177,10 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
           </Box>
           <Box marginBottom={1}>
             <Text>
-              Total reports: <Text bold color={inkColors.orange}>{totalReports}</Text>
+              Total reports:{' '}
+              <Text bold color={inkColors.orange}>
+                {totalReports}
+              </Text>
             </Text>
           </Box>
           <Box>
@@ -194,7 +200,10 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         </Box>
         <Box marginBottom={1}>
           <Text>
-            Report type: <Text bold color={inkColors.orange}>{reportType}</Text>
+            Report type:{' '}
+            <Text bold color={inkColors.orange}>
+              {reportType}
+            </Text>
           </Text>
         </Box>
         <Box marginBottom={1}>
@@ -226,9 +235,7 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
           </Text>
         </Box>
         <Box marginTop={1}>
-          <Text dimColor>
-            Reports will not auto-open (batch mode)
-          </Text>
+          <Text dimColor>Reports will not auto-open (batch mode)</Text>
         </Box>
       </Box>
     );
@@ -242,9 +249,7 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         </Text>
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>
-          Gathering data from database...
-        </Text>
+        <Text dimColor>Gathering data from database...</Text>
       </Box>
     </Box>
   );
