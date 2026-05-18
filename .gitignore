@@ -63,7 +63,7 @@ playwright-report/
 # --- Project runtime data -----------------------------------
 data/
 logs/
-reports/
+/reports/
 *.db
 *.db-journal
 *.sqlite
