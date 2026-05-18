@@ -29,6 +29,7 @@
 *   [ ] [QA] G1 leftover polish: Handlebars helper typing (HIGH 5 from the original review), console.error → Pino (MED 7), unused import + switch-case scoping + prettier (LOWs) - commit `842cebb`
 *   [ ] [Posture] Add `CLAUDE.md` for AI sessions: project posture, conventions, Whisper-subprocess irony, sensitive-files allowlist, kanban discipline - commit `84ddf8e`
 *   [ ] [Style] Prettier sweep across src-ts/ — formatting-only, 43 files, no logic diffs - commit `73478b0`
+*   [ ] [Bug fix] OAuth init was broken — two latent bugs found via live `init --force` testing - commit `3a35462`: (1) port 80 → 3000 (Windows admin-bind issue, LOCAL_AUTH_FAILED before browser opens), (2) explicit `response_type='code'` (googleapis no longer auto-sets it, Google returns "Required parameter is missing"). Both exactly the kind of thing `docs/internal/MIGRATION_COMPARISON.md` warned about as "Required multiple debugging sessions"
 
 ## DONE
 
