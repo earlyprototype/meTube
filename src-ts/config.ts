@@ -99,20 +99,33 @@ function substituteEnvVars(value: unknown): unknown {
 }
 
 /**
- * Deep merge two objects
+ * Deep merge two objects. `source` overrides `target` on collision;
+ * nested objects are recursively merged, arrays are replaced wholesale.
  */
-function deepMerge(target: any, source: any): any {
-  const result = { ...target };
-  
-  for (const key in source) {
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      result[key] = deepMerge(target[key] || {}, source[key]);
+function deepMerge<T extends object>(target: T, source: object): T {
+  const result: Record<string, unknown> = { ...(target as Record<string, unknown>) };
+
+  for (const key of Object.keys(source)) {
+    const sourceVal = (source as Record<string, unknown>)[key];
+    const targetVal = result[key];
+    if (
+      sourceVal !== null &&
+      typeof sourceVal === 'object' &&
+      !Array.isArray(sourceVal) &&
+      targetVal !== null &&
+      typeof targetVal === 'object' &&
+      !Array.isArray(targetVal)
+    ) {
+      result[key] = deepMerge(
+        targetVal as Record<string, unknown>,
+        sourceVal as Record<string, unknown>,
+      );
     } else {
-      result[key] = source[key];
+      result[key] = sourceVal;
     }
   }
-  
-  return result;
+
+  return result as T;
 }
 
 /**
@@ -141,16 +154,21 @@ export function loadConfig(): MeTubeConfig {
 }
 
 /**
- * Get a specific config value by path (e.g., 'api.gemini_api_key')
+ * Get a specific config value by dotted path (e.g., 'api.gemini_api_key').
+ * Returns `unknown` — callers must narrow before use.
  */
-export function getConfigValue(configPath: string): any {
+export function getConfigValue(configPath: string): unknown {
   const config = loadConfig();
   const keys = configPath.split('.');
-  let value: any = config;
-  
+  let value: unknown = config;
+
   for (const key of keys) {
-    value = value?.[key];
+    if (value !== null && typeof value === 'object') {
+      value = (value as Record<string, unknown>)[key];
+    } else {
+      return undefined;
+    }
   }
-  
+
   return value;
 }

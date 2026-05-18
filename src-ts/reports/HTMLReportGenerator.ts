@@ -8,6 +8,7 @@ import * as path from 'path';
 import Handlebars from 'handlebars';
 import open from 'open';
 import { DatabaseManager } from '../database/connection.js';
+import type { Video } from '../database/models.js';
 import {
   VideoRepository,
   PlaylistRepository,
@@ -296,17 +297,21 @@ export class HTMLReportGenerator {
     const transcript = this.transcriptRepository.getByVideoId(videoId);
     if (!transcript) return undefined;
 
-    let segments = [];
+    interface RawTranscriptSegment {
+      start: number;
+      text: string;
+    }
+    let segments: Array<{ start: number; timestamp: string; text: string }> = [];
     try {
       if (transcript.segments_json) {
-        const parsedSegments = JSON.parse(transcript.segments_json);
-        segments = parsedSegments.map((seg: any) => ({
+        const parsedSegments = JSON.parse(transcript.segments_json) as RawTranscriptSegment[];
+        segments = parsedSegments.map((seg) => ({
           start: seg.start,
           timestamp: this.formatTimestamp(seg.start),
           text: seg.text,
         }));
       }
-    } catch (error) {
+    } catch {
       logger.warn({ videoId }, 'Failed to parse transcript segments');
     }
 
@@ -411,7 +416,7 @@ export class HTMLReportGenerator {
   /**
    * Aggregate playlist data for report
    */
-  private async aggregatePlaylistData(playlistId: string, videos: any[]): Promise<CompletePlaylistReportData> {
+  private async aggregatePlaylistData(playlistId: string, videos: Video[]): Promise<CompletePlaylistReportData> {
     const playlist = this.playlistRepository.getById(playlistId)!;
 
     // Aggregate statistics
