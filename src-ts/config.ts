@@ -71,20 +71,25 @@ const DEFAULT_CONFIG: MeTubeConfig = {
 };
 
 /**
- * Recursively substitute ${VAR_NAME} with environment variable values
+ * Recursively substitute ${VAR_NAME} with environment variable values.
+ * Mirrors legacy/python/src/cli.py:184-208.
+ * - Strings: replace ${VAR_NAME} with process.env.VAR_NAME; if undefined, leave literal
+ * - Arrays: recursively substitute each element
+ * - Objects: recursively substitute each value
+ * - Other types: return as-is
  */
-function substituteEnvVars(value: any): any {
+function substituteEnvVars(value: unknown): unknown {
   if (typeof value === 'string') {
     // Match ${VAR_NAME} pattern
     const pattern = /\$\{([^}]+)\}/g;
-    return value.replace(pattern, (match, varName) => {
+    return value.replace(pattern, (match, varName: string) => {
       const envValue = process.env[varName];
       return envValue !== undefined ? envValue : match;
     });
   } else if (Array.isArray(value)) {
     return value.map((item) => substituteEnvVars(item));
   } else if (typeof value === 'object' && value !== null) {
-    const result: any = {};
+    const result: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(value)) {
       result[key] = substituteEnvVars(val);
     }
