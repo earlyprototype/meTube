@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { symbols, inkColors } from '../utils/colors.js';
+import { safeTitle } from '../utils/terminal.js';
 
 interface PostExtractionMenuProps {
   playlistId: string;
@@ -59,7 +60,7 @@ export function PostExtractionMenu({
       {playlistTitle && (
         <Box marginBottom={1}>
           <Text dimColor>Playlist: </Text>
-          <Text>{playlistTitle}</Text>
+          <Text>{safeTitle(playlistTitle)}</Text>
         </Box>
       )}
 

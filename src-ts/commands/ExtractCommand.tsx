@@ -9,6 +9,7 @@ import { ProgressDisplay } from '../components/ProgressDisplay.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { PostExtractionMenu } from '../components/PostExtractionMenu.js';
 import { resolvePlaylistIdentifier } from '../utils/playlistResolver.js';
+import { safeTitle } from '../utils/terminal.js';
 
 interface ExtractCommandProps {
   type: string;
@@ -195,7 +196,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
             setProgress({
               current: i + 1,
               total: enabledPlaylists.length,
-              currentVideo: `Completed: ${playlist.title}`,
+              currentVideo: `Completed: ${safeTitle(playlist.title)}`,
               status: 'completed',
               successCount: totalNew,
               failureCount: totalFailed,

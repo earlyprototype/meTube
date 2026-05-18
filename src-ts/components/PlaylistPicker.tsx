@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Playlist } from '../database/models.js';
 import { symbols, inkColors, status } from '../utils/colors.js';
+import { safeTitle } from '../utils/terminal.js';
 
 interface PlaylistPickerProps {
   playlists: any[]; // Accept both DB playlists and YouTube API playlists
@@ -62,7 +63,7 @@ export function PlaylistPicker({ playlists, onSelect, onCancel }: PlaylistPicker
               bold={index === selectedIndex}
             >
               {index === selectedIndex ? `${symbols.selected} ` : '  '}
-              [{index + 1}] {playlist.title}{' '}
+              [{index + 1}] {safeTitle(playlist.title)}{' '}
               <Text dimColor>({videoCount} videos)</Text>
             </Text>
           </Box>

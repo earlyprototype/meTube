@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { symbols, inkColors, status } from '../utils/colors.js';
+import { safeTitle } from '../utils/terminal.js';
 
 interface Video {
   id?: number;
@@ -57,7 +58,7 @@ export function VideoTable({ videos, title }: VideoTableProps) {
         {videos.map((video, index) => (
           <Box key={video.video_id}>
             <Box width={4}><Text dimColor>{index + 1}</Text></Box>
-            <Box width={40}><Text>{truncate(video.title, 37)}</Text></Box>
+            <Box width={40}><Text>{truncate(safeTitle(video.title), 37)}</Text></Box>
             <Box width={20}><Text dimColor>{truncate(video.channel_title || '', 17)}</Text></Box>
             <Box width={10}><Text dimColor>{formatDuration(video.duration)}</Text></Box>
             <Box width={8}>

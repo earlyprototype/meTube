@@ -9,6 +9,7 @@ import { PlaylistPicker } from '../components/PlaylistPicker.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { ExtractCommand } from './ExtractCommand.js';
 import { inkColors, symbols } from '../utils/colors.js';
+import { safeTitle } from '../utils/terminal.js';
 import { saveVideoCache, savePlaylistCache, type CachedVideo, type CachedPlaylist } from '../utils/cache.js';
 import type { Playlist } from '../database/models.js';
 import { VideoRepository } from '../database/repositories.js';
@@ -108,7 +109,7 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
       {playlists.map((p, i) => (
         <Box key={p.id} marginY={0}>
           <Box width={4}><Text>{i + 1}</Text></Box>
-          <Box width={50}><Text>{p.title}</Text></Box>
+          <Box width={50}><Text>{safeTitle(p.title)}</Text></Box>
           <Box width={10}><Text dimColor>({p.video_count || 0} videos)</Text></Box>
         </Box>
       ))}
@@ -195,7 +196,7 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
   if (status === 'adding') {
     return (
       <Box padding={1}>
-        <Text><Spinner type="dots" /> Adding playlist: {selected?.title}</Text>
+        <Text><Spinner type="dots" /> Adding playlist: {selected?.title != null ? safeTitle(selected.title) : ''}</Text>
       </Box>
     );
   }
@@ -218,7 +219,7 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
           <Text bold color="cyan" backgroundColor={inkColors.greyDark}>OK Playlist Added</Text>
         </Box>
         <Box>
-          <Text>{selected?.title} ({selected?.itemCount || 0} videos)</Text>
+          <Text>{selected?.title != null ? safeTitle(selected.title) : ''} ({selected?.itemCount || 0} videos)</Text>
         </Box>
       </Box>
     );
@@ -256,7 +257,7 @@ function ExtractPrompt({
     return (
       <Box flexDirection="column">
         <Box marginBottom={1}>
-          <Text color="green">Starting extraction of {playlistTitle}...</Text>
+          <Text color="green">Starting extraction of {safeTitle(playlistTitle)}...</Text>
         </Box>
         <ExtractCommand
           type="playlist"
@@ -275,7 +276,7 @@ function ExtractPrompt({
           <Text bold color="cyan" backgroundColor={inkColors.greyDark}>OK Playlist Added</Text>
         </Box>
         <Box>
-          <Text>{playlistTitle} ({videoCount} videos)</Text>
+          <Text>{safeTitle(playlistTitle)} ({videoCount} videos)</Text>
         </Box>
         <Box marginTop={1}>
           <Text dimColor>To extract later, type: extract playlist {playlistId}</Text>
@@ -290,7 +291,7 @@ function ExtractPrompt({
         <Text bold color="cyan" backgroundColor={inkColors.greyDark}>OK Playlist Added</Text>
       </Box>
       <Box>
-        <Text>{playlistTitle} ({videoCount} videos)</Text>
+        <Text>{safeTitle(playlistTitle)} ({videoCount} videos)</Text>
       </Box>
       <Box marginTop={1}>
         <Text bold color="cyan" backgroundColor={inkColors.greyDark}>Extract videos now? (y/n)</Text>
@@ -383,7 +384,7 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
         </Box>
         <Box>
           <Text>
-            {playlistData.title} ({playlistData.itemCount || 0} videos)
+            {safeTitle(playlistData.title)} ({playlistData.itemCount || 0} videos)
           </Text>
         </Box>
         <Box marginTop={1}>
@@ -526,7 +527,7 @@ function PlaylistRemove({ playlistId, onComplete }: { playlistId?: string; onCom
           </Text>
         </Box>
         <Box marginBottom={1}>
-          <Text>Playlist: <Text bold>{playlist.title}</Text></Text>
+          <Text>Playlist: <Text bold>{safeTitle(playlist.title)}</Text></Text>
         </Box>
         <Box marginBottom={1}>
           <Text dimColor>
@@ -564,7 +565,7 @@ function PlaylistRemove({ playlistId, onComplete }: { playlistId?: string; onCom
           </Box>
           <Box>
             <Text>
-              {playlist.title} is no longer being tracked
+              {safeTitle(playlist.title)} is no longer being tracked
             </Text>
           </Box>
           {videoCount > 0 && (
@@ -775,7 +776,7 @@ function PlaylistAddMine({ flags, onComplete }: { flags: Record<string, any>; on
             <Box key={p.playlistId} marginY={0}>
               <Text color={isSelected ? 'cyan' : 'white'}>
                 {isSelected ? symbols.check : ' '}{' '}
-                {p.title}
+                {safeTitle(p.title)}
                 {isExisting && <Text dimColor> (already tracked)</Text>}
               </Text>
             </Box>
@@ -1003,7 +1004,7 @@ function PlaylistSync({ flags, onComplete }: { flags: Record<string, any>; onCom
             </Text>
             {newPlaylists.slice(0, 5).map((p: any) => (
               <Text key={p.playlistId} dimColor>
-                  + {p.title}
+                  + {safeTitle(p.title)}
               </Text>
             ))}
             {newPlaylists.length > 5 && (
@@ -1019,7 +1020,7 @@ function PlaylistSync({ flags, onComplete }: { flags: Record<string, any>; onCom
             </Text>
             {deletedPlaylists.slice(0, 5).map((p: any) => (
               <Text key={p.playlist_id} dimColor>
-                  - {p.title}
+                  - {safeTitle(p.title)}
               </Text>
             ))}
             {deletedPlaylists.length > 5 && (
@@ -1187,7 +1188,7 @@ function PlaylistVideos({ playlistId, onComplete }: { playlistId?: string; onCom
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       <Box marginBottom={1}>
         <Text bold color="cyan" backgroundColor={inkColors.greyDark}>
-          {symbols.bullet} Videos in "{playlist?.title}" ({videos.length} videos)
+          {symbols.bullet} Videos in "{playlist?.title != null ? safeTitle(playlist.title) : ''}" ({videos.length} videos)
         </Text>
       </Box>
       
@@ -1205,7 +1206,7 @@ function PlaylistVideos({ playlistId, onComplete }: { playlistId?: string; onCom
             <Text color={inkColors.orange}>{video.num}</Text>
           </Box>
           <Box width={50}>
-            <Text>{truncate(video.title, 48)}</Text>
+            <Text>{truncate(safeTitle(video.title), 48)}</Text>
           </Box>
           <Box width={12}>
             <Text dimColor>{video.duration || 'N/A'}</Text>
