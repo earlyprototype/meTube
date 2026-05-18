@@ -7,7 +7,6 @@
 ## BACKLOG
 
 *   [ ] [Tier 4] Performance benchmark TS vs Python on a 60-video playlist extraction (called out in MIGRATION_COMPARISON.md as a todo, never done)
-*   [ ] [Tier 4] Move the 11 root `.bat` files + 4 root ad-hoc `.ts` scripts into `scripts/dev/` or delete obsolete ones
 *   [ ] [Tier 4] Write `docs/MIGRATION_NOTES.md` — 1-page honest accounting of what TS gained, what it traded away, what's still TODO
 *   [ ] [Tier 4] Add GitHub Actions CI: `npm run build` on push + green badge
 *   [ ] [Tier 4] Record a 30-second asciinema/loom of the CLI in action for the README
@@ -30,6 +29,9 @@
 ## DOING
 
 ## REVIEW
+
+*   [ ] [Tier 4] Move the 11 root `.bat` files + 4 root ad-hoc `.ts` scripts into `scripts/dev/` or delete obsolete ones (commit `dfb297d`: 3 keepers moved to scripts/dev/, 22 throwaways deleted, build still green)
+*   [ ] [Tier 1] Portfolio-grade `.gitignore` rewrite — secrets, build, AI-assistant state, kanbanger state, OS noise (commit `ca4516d`)
 
 ## DONE
 
