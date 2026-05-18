@@ -1,51 +1,11 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+# ============================================================
+# MeTube .gitignore
+#
+# Portfolio-grade: only source, README, kanban, license,
+# config templates, and tests ship. Everything else is local.
+# ============================================================
 
-# Virtual environments
-venv/
-ENV/
-env/
-.venv
-
-# Node.js / TypeScript
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-dist/
-*.tsbuildinfo
-.npm
-.eslintcache
-coverage/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Secrets — DO NOT COMMIT
+# --- Secrets (never commit) ---------------------------------
 client_secret.json
 client_secret*.json
 tokens.json
@@ -54,33 +14,139 @@ token.json
 .env
 .env.*
 !env.example
+.envrc
 
-# Project data
+# --- Dependencies & build output ----------------------------
+node_modules/
+dist/
+build/
+out/
+*.tsbuildinfo
+.next/
+.nuxt/
+.parcel-cache/
+
+# Python (legacy/python/ still references these)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.eggs/
+.installed.cfg
+develop-eggs/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# --- Test, coverage, profiling ------------------------------
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+.vitest-cache/
+
+# --- Project runtime data -----------------------------------
 data/
 logs/
 reports/
 *.db
 *.db-journal
+*.sqlite
+*.sqlite-journal
 *.log
 
-# Stray Windows redirect artifact
-nul
-
-# Internal planning / IDE assistant context
-.cursor/
-.claude/
-
-# Whisper temporary audio files
-data/temp_audio/
+# --- Whisper / yt-dlp scratch -------------------------------
 *.m4a
 *.mp3
 *.wav
+*.opus
+*.webm
+*.part
+data/temp_audio/
 
-# OS
-.DS_Store
-Thumbs.db
+# --- AI assistant / IDE planning state ----------------------
+.cursor/
+.claude/
+.aider/
+.continue/
+.windsurf/
+.copilot/
 
-# Backups
+# Kanbanger local sync + worker state
+.kanban.json
+worker-notes.md
+worker-notes.archive/
+active-task.txt
+session-handover-*.md
+WORKER_REPORT_*.md
+
+# --- IDE / editor -------------------------------------------
+.vscode/
+.idea/
+.fleet/
+.zed/
+.history/
+.cache/
+*.swp
+*.swo
+*~
 *.bak
 *.backup
+*.tmp
+*.temp
+.~lock.*
+
+# Lint / format caches
+.eslintcache
+.stylelintcache
+.prettiercache
+
+# --- Logs & package-manager debug ---------------------------
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm
+.yarn/cache
+.yarn/install-state.gz
+.pnpm-store/
+
+# --- OS noise -----------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# --- Local scratch / private notes --------------------------
+# Anything matching these stays off GitHub.
+NOTES.md
+SCRATCH.md
+TODO.local.md
+*_LOCAL.md
+*_local.md
+*.scratch.*
+
+# --- Stray Windows redirect artifact ------------------------
+nul
+
+# --- Data backups -------------------------------------------
 data/backups/
