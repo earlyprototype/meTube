@@ -1,0 +1,28 @@
+{
+  "kind": "youtube#playlistListResponse",
+  "etag": "test-etag",
+  "items": [
+    {
+      "kind": "youtube#playlist",
+      "etag": "playlist-etag",
+      "id": "PLtest123456789",
+      "snippet": {
+        "publishedAt": "2024-01-01T00:00:00Z",
+        "channelId": "UCtest123456789",
+        "title": "Test Playlist",
+        "description": "This is a test playlist for integration testing",
+        "thumbnails": {
+          "default": {
+            "url": "https://i.ytimg.com/vi/test/default.jpg",
+            "width": 120,
+            "height": 90
+          }
+        },
+        "channelTitle": "Test Channel"
+      },
+      "contentDetails": {
+        "itemCount": 5
+      }
+    }
+  ]
+}

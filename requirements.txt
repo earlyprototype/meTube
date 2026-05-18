@@ -1,0 +1,29 @@
+# Core YouTube & Auth
+google-api-python-client==2.111.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+
+# Transcript extraction
+youtube-transcript-api==0.6.2
+openai-whisper>=20240930
+coverage>=7.2  # Required by numba for Python 3.12
+yt-dlp>=2023.12.30
+
+# LLM Integration (Gemini)
+google-generativeai==0.3.2
+
+# Database
+SQLAlchemy==2.0.25
+alembic==1.13.1
+
+# CLI & Output
+click==8.1.7
+rich==13.7.0
+jinja2==3.1.3
+
+# Configuration
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# Utilities
+requests==2.31.0

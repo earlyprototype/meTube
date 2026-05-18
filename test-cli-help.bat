@@ -1,0 +1,3 @@
+@echo off
+echo Testing CLI help output...
+npx tsx src-ts/cli.tsx --help

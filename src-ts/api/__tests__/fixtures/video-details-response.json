@@ -1,0 +1,38 @@
+{
+  "kind": "youtube#videoListResponse",
+  "etag": "test-etag",
+  "items": [
+    {
+      "kind": "youtube#video",
+      "etag": "video-etag",
+      "id": "video1test123",
+      "snippet": {
+        "publishedAt": "2024-01-01T00:00:00Z",
+        "channelId": "UCtest123456789",
+        "title": "Test Video 1",
+        "description": "First test video with detailed information",
+        "thumbnails": {
+          "default": {
+            "url": "https://i.ytimg.com/vi/video1/default.jpg",
+            "width": 120,
+            "height": 90
+          }
+        },
+        "channelTitle": "Test Channel",
+        "tags": ["test", "video", "youtube"],
+        "categoryId": "28"
+      },
+      "contentDetails": {
+        "duration": "PT10M30S",
+        "dimension": "2d",
+        "definition": "hd",
+        "caption": "false"
+      },
+      "statistics": {
+        "viewCount": "1000",
+        "likeCount": "50",
+        "commentCount": "10"
+      }
+    }
+  ]
+}

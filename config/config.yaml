@@ -1,0 +1,46 @@
+# YouTube Shorts Extractor Configuration
+
+api:
+  youtube_credentials: client_secret.json
+  token_file: token.json
+  gemini_api_key: ${GEMINI_API_KEY}  # From .env
+  gemini_model: gemini-3-flash-preview       # Latest: gemini-3-flash-preview, gemini-2.5-pro
+  rate_limit_delay: 0.3
+  max_retries: 3
+
+database:
+  path: data/metube.db
+  backup_enabled: true
+  backup_path: data/backups/
+  auto_vacuum: true
+
+extraction:
+  auto_transcript: true
+  auto_llm_parse: true
+  filter_shorts_only: false
+  languages:
+    - en
+    - en-GB
+    - en-US
+  batch_size: 50
+  
+  # Whisper fallback settings
+  whisper:
+    enabled: true                    # Enable Whisper fallback
+    model: base                      # Model size: tiny, base, small, medium, large
+    audio_format: m4a               # Audio format: m4a, mp3, wav
+    temp_dir: data/temp_audio/      # Temporary audio storage
+    cleanup_audio: true             # Delete audio after transcription
+
+reports:
+  output_dir: reports/
+  template: default.html
+  auto_generate: true
+  include_thumbnails: true
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+logging:
+  level: INFO
+  file: logs/metube.log
+  max_size_mb: 10
+  backup_count: 5

@@ -1,0 +1,86 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# Node.js / TypeScript
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+*.tsbuildinfo
+.npm
+.eslintcache
+coverage/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Secrets — DO NOT COMMIT
+client_secret.json
+client_secret*.json
+tokens.json
+token.json
+*credentials*.json
+.env
+.env.*
+!env.example
+
+# Project data
+data/
+logs/
+reports/
+*.db
+*.db-journal
+*.log
+
+# Stray Windows redirect artifact
+nul
+
+# Internal planning / IDE assistant context
+.cursor/
+.claude/
+
+# Whisper temporary audio files
+data/temp_audio/
+*.m4a
+*.mp3
+*.wav
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+*.bak
+*.backup
+data/backups/

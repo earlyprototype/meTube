@@ -1,0 +1,56 @@
+{
+  "kind": "youtube#playlistItemListResponse",
+  "etag": "test-etag",
+  "items": [
+    {
+      "kind": "youtube#playlistItem",
+      "etag": "item-etag-1",
+      "id": "PLitem1",
+      "snippet": {
+        "publishedAt": "2024-01-01T00:00:00Z",
+        "channelId": "UCtest123456789",
+        "title": "Test Video 1",
+        "description": "First test video",
+        "thumbnails": {
+          "default": {
+            "url": "https://i.ytimg.com/vi/video1/default.jpg",
+            "width": 120,
+            "height": 90
+          }
+        },
+        "channelTitle": "Test Channel",
+        "playlistId": "PLtest123456789",
+        "position": 0
+      },
+      "contentDetails": {
+        "videoId": "video1test123",
+        "videoPublishedAt": "2024-01-01T00:00:00Z"
+      }
+    },
+    {
+      "kind": "youtube#playlistItem",
+      "etag": "item-etag-2",
+      "id": "PLitem2",
+      "snippet": {
+        "publishedAt": "2024-01-02T00:00:00Z",
+        "channelId": "UCtest123456789",
+        "title": "Test Video 2",
+        "description": "Second test video",
+        "thumbnails": {
+          "default": {
+            "url": "https://i.ytimg.com/vi/video2/default.jpg",
+            "width": 120,
+            "height": 90
+          }
+        },
+        "channelTitle": "Test Channel",
+        "playlistId": "PLtest123456789",
+        "position": 1
+      },
+      "contentDetails": {
+        "videoId": "video2test456",
+        "videoPublishedAt": "2024-01-02T00:00:00Z"
+      }
+    }
+  ]
+}
