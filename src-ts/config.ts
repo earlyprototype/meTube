@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import dotenv from 'dotenv';
+import logger from './utils/logger.js';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -118,7 +119,7 @@ function deepMerge<T extends object>(target: T, source: object): T {
     ) {
       result[key] = deepMerge(
         targetVal as Record<string, unknown>,
-        sourceVal as Record<string, unknown>,
+        sourceVal as Record<string, unknown>
       );
     } else {
       result[key] = sourceVal;
@@ -133,23 +134,26 @@ function deepMerge<T extends object>(target: T, source: object): T {
  */
 export function loadConfig(): MeTubeConfig {
   const configPath = path.join(process.cwd(), 'config', 'config.yaml');
-  
+
   if (fs.existsSync(configPath)) {
     try {
       const fileContents = fs.readFileSync(configPath, 'utf8');
       const loadedConfig = yaml.load(fileContents) as Partial<MeTubeConfig>;
-      
+
       // Merge with defaults
       const merged = deepMerge(DEFAULT_CONFIG, loadedConfig);
-      
+
       // Substitute environment variables
       return substituteEnvVars(merged) as MeTubeConfig;
     } catch (error) {
-      console.error(`Error loading config file: ${error}`);
+      logger.error(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Error loading config file'
+      );
       return DEFAULT_CONFIG;
     }
   }
-  
+
   return DEFAULT_CONFIG;
 }
 

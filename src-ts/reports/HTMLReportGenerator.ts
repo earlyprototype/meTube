@@ -19,7 +19,6 @@ import {
 import type {
   VideoReportData,
   CompletePlaylistReportData,
-  ReportVideoData,
   ReportTranscriptData,
   ReportEntities,
   ReportAnalysisData,
@@ -30,6 +29,8 @@ import type {
 } from './types.js';
 import logger from '../utils/logger.js';
 import { ValidationError, AppError } from '../errors/index.js';
+
+type HelperOptions = Handlebars.HelperOptions;
 
 /**
  * Configuration for HTML report generator
@@ -77,11 +78,14 @@ export class HTMLReportGenerator {
     // Register Handlebars helpers
     this.registerHelpers();
 
-    logger.info({
-      templateDir: this.templateDir,
-      outputDir: this.outputDir,
-      autoOpen: this.autoOpen,
-    }, 'HTMLReportGenerator initialized');
+    logger.info(
+      {
+        templateDir: this.templateDir,
+        outputDir: this.outputDir,
+        autoOpen: this.autoOpen,
+      },
+      'HTMLReportGenerator initialized'
+    );
   }
 
   /**
@@ -106,19 +110,25 @@ export class HTMLReportGenerator {
     });
 
     // Equality comparison for templates
-    Handlebars.registerHelper('ifEquals', function (this: any, arg1: any, arg2: any, options: any) {
-      return arg1 === arg2 ? options.fn(this) : options.inverse(this);
-    });
+    Handlebars.registerHelper(
+      'ifEquals',
+      function (this: unknown, arg1: unknown, arg2: unknown, options: HelperOptions) {
+        return arg1 === arg2 ? options.fn(this as object) : options.inverse(this as object);
+      }
+    );
 
     // Greater than comparison
-    Handlebars.registerHelper('ifGreater', function (this: any, arg1: number, arg2: number, options: any) {
-      return arg1 > arg2 ? options.fn(this) : options.inverse(this);
-    });
+    Handlebars.registerHelper(
+      'ifGreater',
+      function (this: unknown, arg1: number, arg2: number, options: HelperOptions) {
+        return arg1 > arg2 ? options.fn(this as object) : options.inverse(this as object);
+      }
+    );
 
     // Array/object length helper for templates
-    Handlebars.registerHelper('length', (value: any) => {
+    Handlebars.registerHelper('length', (value: unknown): number => {
       if (Array.isArray(value)) return value.length;
-      if (value && typeof value === 'object') return Object.keys(value).length;
+      if (value !== null && typeof value === 'object') return Object.keys(value).length;
       return 0;
     });
 
@@ -133,7 +143,7 @@ export class HTMLReportGenerator {
    */
   private loadTemplate(templateName: string): HandlebarsTemplateDelegate {
     const templatePath = path.join(this.templateDir, `${templateName}.html`);
-    
+
     if (!fs.existsSync(templatePath)) {
       throw new AppError(`Template not found: ${templatePath}`, {
         code: 'TEMPLATE_NOT_FOUND',
@@ -147,7 +157,10 @@ export class HTMLReportGenerator {
   /**
    * Generate video report
    */
-  async generateVideoReport(videoId: string, options: { autoOpen?: boolean } = {}): Promise<string> {
+  async generateVideoReport(
+    videoId: string,
+    options: { autoOpen?: boolean } = {}
+  ): Promise<string> {
     if (!videoId || typeof videoId !== 'string') {
       throw new ValidationError('videoId must be a non-empty string');
     }
@@ -222,10 +235,13 @@ export class HTMLReportGenerator {
 
       return filepath;
     } catch (error) {
-      logger.error({
-        videoId,
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to generate video report');
+      logger.error(
+        {
+          videoId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to generate video report'
+      );
       throw error;
     }
   }
@@ -233,7 +249,10 @@ export class HTMLReportGenerator {
   /**
    * Generate playlist report
    */
-  async generatePlaylistReport(playlistId: string, options: { autoOpen?: boolean } = {}): Promise<string> {
+  async generatePlaylistReport(
+    playlistId: string,
+    options: { autoOpen?: boolean } = {}
+  ): Promise<string> {
     if (!playlistId || typeof playlistId !== 'string') {
       throw new ValidationError('playlistId must be a non-empty string');
     }
@@ -282,10 +301,13 @@ export class HTMLReportGenerator {
 
       return filepath;
     } catch (error) {
-      logger.error({
-        playlistId,
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to generate playlist report');
+      logger.error(
+        {
+          playlistId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to generate playlist report'
+      );
       throw error;
     }
   }
@@ -320,7 +342,7 @@ export class HTMLReportGenerator {
       is_auto_generated: transcript.is_auto_generated,
       full_text: transcript.full_text,
       segments,
-      word_count: transcript.full_text.split(/\s+/).filter(w => w).length,
+      word_count: transcript.full_text.split(/\s+/).filter((w) => w).length,
     };
   }
 
@@ -366,7 +388,7 @@ export class HTMLReportGenerator {
   /**
    * Get AI analysis data (stub for now - would query ai_analysis table)
    */
-  private getAnalysisData(videoId: string): ReportAnalysisData | undefined {
+  private getAnalysisData(_videoId: string): ReportAnalysisData | undefined {
     // TODO: Query ai_analysis table when it's populated
     return undefined;
   }
@@ -416,7 +438,10 @@ export class HTMLReportGenerator {
   /**
    * Aggregate playlist data for report
    */
-  private async aggregatePlaylistData(playlistId: string, videos: Video[]): Promise<CompletePlaylistReportData> {
+  private async aggregatePlaylistData(
+    playlistId: string,
+    videos: Video[]
+  ): Promise<CompletePlaylistReportData> {
     const playlist = this.playlistRepository.getById(playlistId)!;
 
     // Aggregate statistics
@@ -425,10 +450,22 @@ export class HTMLReportGenerator {
     let videosWithTranscripts = 0;
 
     // Track entities across all videos
-    const topicsMap = new Map<string, { count: number; videos: Array<{ video_id: string; title: string }> }>();
-    const reposMap = new Map<string, { name: string; url?: string; videos: Array<{ video_id: string; title: string }> }>();
-    const websitesMap = new Map<string, { name: string; url?: string; videos: Array<{ video_id: string; title: string }> }>();
-    const peopleMap = new Map<string, { count: number; videos: Array<{ video_id: string; title: string }> }>();
+    const topicsMap = new Map<
+      string,
+      { count: number; videos: Array<{ video_id: string; title: string }> }
+    >();
+    const reposMap = new Map<
+      string,
+      { name: string; url?: string; videos: Array<{ video_id: string; title: string }> }
+    >();
+    const websitesMap = new Map<
+      string,
+      { name: string; url?: string; videos: Array<{ video_id: string; title: string }> }
+    >();
+    const peopleMap = new Map<
+      string,
+      { count: number; videos: Array<{ video_id: string; title: string }> }
+    >();
 
     const videoSummaries: PlaylistVideoSummary[] = [];
 
@@ -455,7 +492,7 @@ export class HTMLReportGenerator {
 
       for (const entity of entities) {
         switch (entity.entity_type) {
-          case 'topic':
+          case 'topic': {
             const topicKey = entity.entity_value.toLowerCase();
             if (!topicsMap.has(topicKey)) {
               topicsMap.set(topicKey, { count: 0, videos: [] });
@@ -464,24 +501,35 @@ export class HTMLReportGenerator {
             topic.count++;
             topic.videos.push(videoRef);
             break;
+          }
 
-          case 'github_repo':
+          case 'github_repo': {
             const repoKey = entity.entity_url || entity.entity_value;
             if (!reposMap.has(repoKey)) {
-              reposMap.set(repoKey, { name: entity.entity_value, url: entity.entity_url, videos: [] });
+              reposMap.set(repoKey, {
+                name: entity.entity_value,
+                url: entity.entity_url,
+                videos: [],
+              });
             }
             reposMap.get(repoKey)!.videos.push(videoRef);
             break;
+          }
 
-          case 'website':
+          case 'website': {
             const siteKey = entity.entity_url || entity.entity_value;
             if (!websitesMap.has(siteKey)) {
-              websitesMap.set(siteKey, { name: entity.entity_value, url: entity.entity_url, videos: [] });
+              websitesMap.set(siteKey, {
+                name: entity.entity_value,
+                url: entity.entity_url,
+                videos: [],
+              });
             }
             websitesMap.get(siteKey)!.videos.push(videoRef);
             break;
+          }
 
-          case 'person':
+          case 'person': {
             const personKey = entity.entity_value.toLowerCase();
             if (!peopleMap.has(personKey)) {
               peopleMap.set(personKey, { count: 0, videos: [] });
@@ -490,6 +538,7 @@ export class HTMLReportGenerator {
             person.count++;
             person.videos.push(videoRef);
             break;
+          }
         }
       }
 
@@ -505,7 +554,7 @@ export class HTMLReportGenerator {
         has_transcript: hasTranscript,
         thumbnail_url: this.getThumbnailUrl(video.video_id),
         summary: undefined, // Would come from AI analysis
-        topics: entities.filter(e => e.entity_type === 'topic').map(e => e.entity_value),
+        topics: entities.filter((e) => e.entity_type === 'topic').map((e) => e.entity_value),
       });
     }
 
@@ -515,15 +564,16 @@ export class HTMLReportGenerator {
       .sort((a, b) => b.count - a.count)
       .slice(0, 20);
 
-    const githubRepos: AggregatedEntity[] = Array.from(reposMap.values())
-      .sort((a, b) => b.videos.length - a.videos.length);
+    const githubRepos: AggregatedEntity[] = Array.from(reposMap.values()).sort(
+      (a, b) => b.videos.length - a.videos.length
+    );
 
     // Enrich each GitHub repo with its description from api.github.com.
     // Sequential loop with 100ms throttle between request starts — matches
     // the Python legacy behaviour (html_generator.py:409-416).
     for (let i = 0; i < githubRepos.length; i++) {
       if (i > 0) {
-        await new Promise<void>(r => setTimeout(r, 100));
+        await new Promise<void>((r) => setTimeout(r, 100));
       }
       const repo = githubRepos[i];
       if (repo.url) {
@@ -534,8 +584,9 @@ export class HTMLReportGenerator {
       }
     }
 
-    const websites: AggregatedEntity[] = Array.from(websitesMap.values())
-      .sort((a, b) => b.videos.length - a.videos.length);
+    const websites: AggregatedEntity[] = Array.from(websitesMap.values()).sort(
+      (a, b) => b.videos.length - a.videos.length
+    );
 
     const people: AggregatedPerson[] = Array.from(peopleMap.entries())
       .map(([name, data]) => ({ name, count: data.count, videos: data.videos }))
@@ -600,11 +651,11 @@ export class HTMLReportGenerator {
   private sanitizeFilename(filename: string, maxLength: number = 50): string {
     const validChars = /[^a-zA-Z0-9\-_.() ]/g;
     let sanitized = filename.replace(validChars, '_');
-    
+
     if (sanitized.length > maxLength) {
       sanitized = sanitized.substring(0, maxLength);
     }
-    
+
     return sanitized.trim().replace(/^_+|_+$/g, '');
   }
 
@@ -616,10 +667,13 @@ export class HTMLReportGenerator {
       await open(filepath);
       logger.info({ filepath }, 'Opened report in browser');
     } catch (error) {
-      logger.warn({
-        filepath,
-        error: error instanceof Error ? error.message : String(error),
-      }, 'Failed to open report in browser');
+      logger.warn(
+        {
+          filepath,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to open report in browser'
+      );
     }
   }
 }
