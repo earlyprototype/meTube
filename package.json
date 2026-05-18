@@ -35,7 +35,7 @@
     "terminal-ui"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@inkjs/ui": "^2.0.0",

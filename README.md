@@ -73,4 +73,4 @@ In-repo kanban: [`_kanban.md`](_kanban.md)
 
 ## License
 
-ISC — see `package.json`.
+MIT — see [`LICENSE`](LICENSE) at repo root.
