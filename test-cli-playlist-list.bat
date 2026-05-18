@@ -1,3 +1,0 @@
-@echo off
-echo Testing playlist list command...
-npx tsx src-ts/cli.tsx playlist list

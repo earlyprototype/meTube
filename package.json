@@ -17,7 +17,7 @@
     "start": "node dist/cli.js",
     "watch": "tsc --watch",
     "test": "vitest run",
-    "test:backend": "tsx test-backend-integration.ts",
+    "test:backend": "tsx scripts/dev/test-backend-integration.ts",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",

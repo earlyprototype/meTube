@@ -1,3 +1,0 @@
-@echo off
-echo Testing init command...
-npx tsx src-ts/cli.tsx init

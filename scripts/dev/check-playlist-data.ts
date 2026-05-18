@@ -2,10 +2,10 @@
  * Check if playlist video_count is cached or actual
  */
 
-import { DatabaseManager } from './src-ts/database/connection.js';
-import { PlaylistRepository } from './src-ts/database/repositories.js';
-import { YouTubeAuth } from './src-ts/auth/YouTubeAuth.js';
-import { YouTubeClient } from './src-ts/api/YouTubeClient.js';
+import { DatabaseManager } from '../../src-ts/database/connection.js';
+import { PlaylistRepository } from '../../src-ts/database/repositories.js';
+import { YouTubeAuth } from '../../src-ts/auth/YouTubeAuth.js';
+import { YouTubeClient } from '../../src-ts/api/YouTubeClient.js';
 
 async function checkPlaylistData() {
   console.log('\n=== Playlist Data Verification ===\n');

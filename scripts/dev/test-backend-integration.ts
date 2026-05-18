@@ -3,12 +3,12 @@
  * Tests that all Phase 5 CLI commands can properly connect to Phase 2-4 backend
  */
 
-import { YouTubeAuth } from './src-ts/auth/YouTubeAuth.js';
-import { YouTubeClient } from './src-ts/api/YouTubeClient.js';
-import { DatabaseManager } from './src-ts/database/connection.js';
-import { PlaylistRepository, VideoRepository, TranscriptRepository } from './src-ts/database/repositories.js';
-import { VideoExtractor } from './src-ts/extractors/VideoExtractor.js';
-import { WhisperExtractor } from './src-ts/extractors/WhisperExtractor.js';
+import { YouTubeAuth } from '../../src-ts/auth/YouTubeAuth.js';
+import { YouTubeClient } from '../../src-ts/api/YouTubeClient.js';
+import { DatabaseManager } from '../../src-ts/database/connection.js';
+import { PlaylistRepository, VideoRepository, TranscriptRepository } from '../../src-ts/database/repositories.js';
+import { VideoExtractor } from '../../src-ts/extractors/VideoExtractor.js';
+import { WhisperExtractor } from '../../src-ts/extractors/WhisperExtractor.js';
 
 console.log('\n=== Backend Integration Test ===\n');
 
