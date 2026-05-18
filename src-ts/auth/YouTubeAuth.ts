@@ -357,21 +357,26 @@ export class YouTubeAuth {
    * @returns True if authentication successful
    * @throws {AppError} If authentication fails
    */
-  async authenticateWithLocalServer(port = 80): Promise<boolean> {
+  async authenticateWithLocalServer(port = 3000): Promise<boolean> {
     try {
       logger.info({ port }, 'Starting local server authentication');
       console.log('\n=== YouTube OAuth Authentication ===');
       console.log('Starting local authentication server...\n');
 
-      // Generate auth URL with localhost redirect (no port for :80)
-      const redirectUri = 'http://localhost';
+      // Generate auth URL with localhost redirect on port 3000.
+      // Was port 80 (no port suffix in redirect URI), but port 80 is
+      // privileged on Windows - binding without admin fails silently.
+      // Port 3000 is already in client_secret.json's redirect_uris.
+      const redirectUri = `http://localhost:${port}`;
       const authUrl = this.oauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: this.scopes,
         prompt: 'consent', // Force consent to get refresh token
         redirect_uri: redirectUri,
-        // Note: response_type is NOT included for Desktop/installed apps
-        // The googleapis library sets it automatically based on client type
+        response_type: 'code', // Required by Google: "Required parameter is
+        // missing: response_type". The library no longer auto-sets this for
+        // Desktop/installed clients (regressed at some version; observed in
+        // googleapis v170 / 2026-05-18). Explicit is safe across versions.
       });
 
       // Start the capture process (this starts the server)
