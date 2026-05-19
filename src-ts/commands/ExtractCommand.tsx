@@ -194,6 +194,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
         let totalProcessed = 0;
         let totalNew = 0;
         let totalFailed = 0;
+        let totalSkipped = 0;
         let playlistsFailed = 0;
 
         setStatus('extracting');
@@ -215,6 +216,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
             totalProcessed += result.processed;
             totalNew += result.new;
             totalFailed += result.failed;
+            totalSkipped += result.skipped;
 
             setProgress({
               current: i + 1,
@@ -223,6 +225,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
               status: 'completed',
               successCount: totalNew,
               failureCount: totalFailed,
+              skippedCount: totalSkipped,
               whisperProgress: undefined,
             });
           } catch (err) {
@@ -239,6 +242,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
           status: 'completed',
           successCount: totalNew,
           failureCount: totalFailed,
+          skippedCount: totalSkipped,
           whisperProgress: undefined,
         });
 
