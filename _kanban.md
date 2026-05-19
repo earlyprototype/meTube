@@ -6,6 +6,10 @@
 
 ## BACKLOG
 
+*   [ ] [v2/Conditional] Wave 1 — Contract layer (Zod schemas, branded types, `withTransaction<T>`, schema bootstrap). Conditional on ADR 0001 approval. See `docs/PORT_PLAN.md`. ~Week 1 effort.
+*   [ ] [v2/Conditional] Wave 2 — Data layer (9 repositories, transaction-discipline test). **KILL-CRITERION CHECKPOINT** end of Week 2. See `docs/PORT_PLAN.md`.
+*   [ ] [v2/Conditional] Wave 3 — Pipeline (extractPlaylist end-to-end + live test against real YouTube account). See `docs/PORT_PLAN.md`.
+*   [ ] [v2/Conditional] Wave 4 — Reports + ship v1.0.0 (HTMLReportGenerator with real getAnalysisData; archive src-ts/ → archive/src-ts-v1/; README/version bump). See `docs/PORT_PLAN.md`.
 *   [ ] [Tier 4] Performance benchmark TS vs Python on a 60-video playlist extraction (called out in MIGRATION_COMPARISON.md as a todo, never done)
 *   [ ] [Tier 4] Record a 30-second asciinema/loom of the CLI in action for the README
 
@@ -23,6 +27,10 @@
 
 ## REVIEW
 
+*   [ ] [Audit] Platform-native rewrite-vs-patch audit completed 2026-05-19 — `docs/REWRITE_AUDIT.md` (operational), `docs/adr/0001-rewrite-vs-patch.md` (decision record), `docs/PORT_PLAN.md` (executable port plan if accepted). 14 agent invocations across 6 phases. Recommendation: **scoped rewrite of backend into `src-ts-v2/` with 2-week kill-criterion**. Patch fallback documented if kill-criterion fires. Awaiting owner approval of ADR.
+*   [ ] [Audit/CRITICAL] New stub bomb surfaced: `PlaylistAddMine` and `PlaylistSync` (`src-ts/commands/PlaylistCommands.tsx:663-998`) read `p.playlistId` on `YouTubePlaylist` shape, but the field is `p.id` (api/types.ts). All objects typed `any`, so TS doesn't catch. Both commands silently produce broken DB rows (`playlist_id: undefined`). Independent of rewrite-vs-patch decision — ~5-line fix. Worth a standalone commit.
+*   [ ] [Audit/HIGH] `getAnalysisData` stub at `src-ts/reports/HTMLReportGenerator.ts:391-394` returns `undefined` unconditionally. AI analysis section silently empty in every video report. Companion stub at line 556. Independent of rewrite — could ship as standalone commit (~30 LOC + new `AIAnalysisRepository`).
+*   [ ] [Audit/HIGH] `getPlaylists()` truncation gap at `src-ts/extractors/VideoExtractor.ts:299-300` AND `src-ts/commands/PlaylistCommands.tsx:155-162` (PlaylistDiscover). Same class as the recently-fixed `getPlaylistVideos` pagination bug. `getPlaylistById()` already exists on YouTubeClient — 1-line fix in each of 2 sites.
 *   [ ] [Tier 4] Write `docs/MIGRATION_NOTES.md` — 1-page honest accounting of what TS gained, what it traded away, what's still TODO - commit `45e64d7`: 332 lines, file:line evidence throughout; agent caught that DB auto-rollback wasn't fully lost (DatabaseManager.transaction exists at connection.ts:182 but repos don't go through it)
 *   [ ] [Tier 4] Add GitHub Actions CI: `npm run build` on push + green badge - commit `6432acf`: ubuntu-latest, Node 22, npm ci + build + test, cached node_modules
 *   [ ] [Housekeeping] License drift fix — align LICENSE (MIT) / package.json / README on MIT - commit `1bb3d65`
