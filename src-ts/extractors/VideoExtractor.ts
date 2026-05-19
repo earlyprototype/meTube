@@ -12,6 +12,7 @@ import { GeminiParser } from '../parsers/GeminiParser.js';
 import {
   VideoRepository,
   PlaylistRepository,
+  PlaylistItemRepository,
   TranscriptRepository,
   EntityRepository,
 } from '../database/repositories.js';
@@ -92,6 +93,7 @@ export class VideoExtractor {
   private readonly videoRepository: VideoRepository;
   private readonly transcriptRepository: TranscriptRepository;
   private readonly entityRepository: EntityRepository;
+  private readonly playlistItemRepository: PlaylistItemRepository;
   private readonly playlistRepository: PlaylistRepository;
   private readonly onProgress?: PlaylistProgressCallback;
 
@@ -118,6 +120,7 @@ export class VideoExtractor {
     this.transcriptRepository = new TranscriptRepository(db);
     this.entityRepository = new EntityRepository(db);
     this.playlistRepository = new PlaylistRepository(db);
+    this.playlistItemRepository = new PlaylistItemRepository(db);
 
     // Initialize Whisper if enabled
     let whisperExtractor: WhisperExtractor | undefined;
@@ -312,14 +315,37 @@ export class VideoExtractor {
       // Save playlist to database
       await this.savePlaylistToDatabase(playlist);
 
-      // Get all videos from playlist
-      logger.debug({ playlistId }, 'Fetching playlist videos');
-      const playlistResponse2 = await this.youtubeClient.getPlaylistVideos(playlistId, maxVideos);
-      const playlistVideos = playlistResponse2.items;
+      // Get all videos from playlist — paginate until YouTube returns no more.
+      // YouTube's playlistItems.list maxResults caps at 50 per page, so a playlist
+      // with >50 videos needs multiple calls. Without pagination we silently dropped
+      // tail videos (observed on the meTube Ai playlist: 86 in YouTube, 50 received).
+      logger.debug({ playlistId, maxVideos }, 'Fetching playlist videos (paginating)');
+      const PAGE_SIZE = 50;
+      const allItems: typeof playlist.itemCount extends never
+        ? never[]
+        : Awaited<ReturnType<typeof this.youtubeClient.getPlaylistVideos>>['items'] = [];
+      let pageToken: string | undefined = undefined;
+      let pages = 0;
+      do {
+        const remaining = maxVideos !== undefined ? maxVideos - allItems.length : PAGE_SIZE;
+        if (maxVideos !== undefined && remaining <= 0) break;
+        const pageSize = Math.min(PAGE_SIZE, remaining > 0 ? remaining : PAGE_SIZE);
+        const pageResponse = await this.youtubeClient.getPlaylistVideos(
+          playlistId,
+          pageSize,
+          pageToken
+        );
+        allItems.push(...pageResponse.items);
+        pageToken = pageResponse.nextPageToken;
+        pages += 1;
+      } while (pageToken);
+      const playlistVideos = maxVideos !== undefined ? allItems.slice(0, maxVideos) : allItems;
       logger.info(
         {
           playlistId,
-          videoCount: playlistVideos.length,
+          pages,
+          fetched: allItems.length,
+          considered: playlistVideos.length,
         },
         'Fetched playlist videos'
       );
@@ -745,27 +771,23 @@ export class VideoExtractor {
   /**
    * Save playlist item to database
    */
-  private async savePlaylistItem(playlistId: string, video: any): Promise<void> {
+  private async savePlaylistItem(
+    playlistId: string,
+    video: { videoId: string; position?: number }
+  ): Promise<void> {
     try {
-      // This would use PlaylistItemRepository.addVideoToPlaylist
-      // For now, just log
-      logger.debug(
-        {
-          playlist_id: playlistId,
-          video_id: video.video_id,
-        },
-        'Saved playlist item'
-      );
+      this.playlistItemRepository.addVideoToPlaylist(playlistId, video.videoId, video.position);
+      logger.debug({ playlistId, videoId: video.videoId }, 'Saved playlist_items linkage');
     } catch (error) {
       logger.error(
         {
-          playlist_id: playlistId,
-          video_id: video.video_id,
+          playlistId,
+          videoId: video.videoId,
           error: error instanceof Error ? error.message : String(error),
         },
-        'Failed to save playlist item'
+        'Failed to save playlist_items linkage'
       );
-      // Don't throw - continue
+      // Don't throw - a playlist-link failure shouldn't kill the whole extraction.
     }
   }
 }
