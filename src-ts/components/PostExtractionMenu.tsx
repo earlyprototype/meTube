@@ -11,9 +11,18 @@ import { safeTitle } from '../utils/terminal.js';
 interface PostExtractionMenuProps {
   playlistId: string;
   playlistTitle?: string;
+  /** Videos that ran through the extraction loop and produced a new video row. */
   successCount: number;
+  /** Videos where the extraction loop threw. */
   failureCount: number;
+  /** Total videos in the playlist as returned by YouTube. */
   totalVideos: number;
+  /**
+   * Videos filtered out before the loop because they already have video + transcript
+   * rows. Was previously hidden from the UI, leading to misleading "Processed: N /
+   * Success: 0 / Failed: 0" output that read as "did nothing."
+   */
+  skippedCount?: number;
   onViewPlaylistInfo?: () => void;
   onExtractMore?: () => void;
   onMainMenu?: () => void;
@@ -25,6 +34,7 @@ export function PostExtractionMenu({
   successCount,
   failureCount,
   totalVideos,
+  skippedCount = 0,
   onViewPlaylistInfo,
   onExtractMore,
   onMainMenu,
@@ -68,12 +78,17 @@ export function PostExtractionMenu({
 
       <Box flexDirection="column" marginBottom={2}>
         <Box>
-          <Text>Processed: </Text>
+          <Text>Found in playlist: </Text>
           <Text bold>{totalVideos}</Text>
           <Text> videos</Text>
         </Box>
+        {skippedCount > 0 && (
+          <Box>
+            <Text dimColor>Already extracted (skipped): {skippedCount}</Text>
+          </Box>
+        )}
         <Box>
-          <Text color="cyan">Success: {successCount}</Text>
+          <Text color="cyan">Newly extracted: {successCount}</Text>
           <Text dimColor> {symbols.bullet} </Text>
           <Text color="red">Failed: {failureCount}</Text>
         </Box>

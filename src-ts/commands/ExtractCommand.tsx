@@ -40,6 +40,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
       | 'completed';
     successCount: number;
     failureCount: number;
+    skippedCount: number;
     whisperProgress?: {
       stage: 'downloading' | 'transcribing' | 'complete';
       percentage?: number;
@@ -52,6 +53,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
     status: 'downloading',
     successCount: 0,
     failureCount: 0,
+    skippedCount: 0,
     whisperProgress: undefined,
   });
   const [startTime] = useState(new Date());
@@ -155,6 +157,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
           status: 'completed',
           successCount: result.new,
           failureCount: result.failed,
+          skippedCount: result.skipped,
           whisperProgress: undefined,
         });
 
@@ -265,6 +268,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
         playlistTitle={playlistTitle}
         successCount={progress.successCount}
         failureCount={progress.failureCount}
+        skippedCount={progress.skippedCount}
         totalVideos={progress.total}
         onViewPlaylistInfo={() => {
           // TODO: Navigate to playlist videos command
