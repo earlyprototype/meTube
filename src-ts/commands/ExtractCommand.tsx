@@ -128,6 +128,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
               status: 'downloading',
               successCount: prog.status === 'complete' ? prog.current : prev.successCount,
               failureCount: prog.status === 'failed' ? prev.failureCount + 1 : prev.failureCount,
+              skippedCount: prev.skippedCount,
               whisperProgress: prev.whisperProgress,
             }));
           },
