@@ -7,7 +7,7 @@
     "jsxFactory": "React.createElement",
     "jsxFragmentFactory": "React.Fragment",
     "outDir": "./dist",
-    "rootDir": "./src-ts",
+    "rootDir": "./",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -19,6 +19,6 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src-ts/**/*"],
-  "exclude": ["node_modules", "dist", "src", "venv", "src-ts/**/__tests__/**", "src-ts/**/*.test.ts"]
+  "include": ["src-ts/**/*", "src-ts-v2/**/*"],
+  "exclude": ["node_modules", "dist", "src", "venv", "src-ts/**/__tests__/**", "src-ts/**/*.test.ts", "src-ts-v2/**/__tests__/**", "src-ts-v2/**/*.test.ts"]
 }
