@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
-import { YouTubeAuth } from '../auth/YouTubeAuth.js';
-import { YouTubeClient } from '../api/YouTubeClient.js';
-import { DatabaseManager } from '../database/connection.js';
-import { PlaylistRepository } from '../database/repositories.js';
+import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
+import { YouTubeClient } from '../../src-ts-v2/api/YouTubeClient.js';
+import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
+import { PlaylistRepository } from '../../src-ts-v2/database/PlaylistRepository.js';
+import { VideoRepository } from '../../src-ts-v2/database/VideoRepository.js';
 import { PlaylistPicker } from '../components/PlaylistPicker.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { ExtractCommand } from './ExtractCommand.js';
@@ -15,10 +16,10 @@ import {
   savePlaylistCache,
   type CachedVideo,
   type CachedPlaylist,
-} from '../utils/cache.js';
-import type { Playlist } from '../database/models.js';
-import { VideoRepository } from '../database/repositories.js';
-import { resolvePlaylistIdentifier } from '../utils/playlistResolver.js';
+} from '../../src-ts-v2/utils/cache.js';
+import type { Playlist } from '../../src-ts-v2/database/PlaylistRepository.js';
+import { asPlaylistId } from '../../src-ts-v2/types/branded.js';
+import { resolvePlaylistIdentifier } from '../../src-ts-v2/utils/playlistResolver.js';
 
 interface PlaylistCommandsProps {
   subcommand?: string;
@@ -73,18 +74,22 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
   useEffect(() => {
     const db = new DatabaseManager('data/metube.db');
     const repo = new PlaylistRepository(db);
-    const all = repo.getAll();
+    // v2 findAll defaults to enabledOnly: true; the listing UI wants all
+    // tracked playlists regardless of enabled status.
+    const all = repo.findAll({ enabledOnly: false });
     setPlaylists(all);
     setLoading(false);
     db.close();
 
-    // Save to cache for numbered access
+    // Save to cache for numbered access — v2 domain shape uses camelCase
+    // (`playlistId`, `videoCount`); the cache schema kept snake_case so
+    // we translate at the boundary.
     if (all.length > 0) {
       const cached: CachedPlaylist[] = all.map((p, i) => ({
         num: i + 1,
-        id: p.playlist_id,
+        id: p.playlistId,
         title: p.title,
-        video_count: p.video_count,
+        video_count: p.videoCount,
       }));
       savePlaylistCache(cached);
     }
@@ -124,7 +129,7 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
         </Text>
       </Box>
       {playlists.map((p, i) => (
-        <Box key={p.id} marginY={0}>
+        <Box key={p.playlistId} marginY={0}>
           <Box width={4}>
             <Text>{i + 1}</Text>
           </Box>
@@ -132,7 +137,7 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
             <Text>{safeTitle(p.title)}</Text>
           </Box>
           <Box width={10}>
-            <Text dimColor>({p.video_count || 0} videos)</Text>
+            <Text dimColor>({p.videoCount || 0} videos)</Text>
           </Box>
         </Box>
       ))}
@@ -152,11 +157,14 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
   useEffect(() => {
     async function fetch() {
       try {
+        // v2 YouTubeClient takes an authenticated OAuth2Client, not the
+        // YouTubeAuth wrapper. authenticate() returns the client directly.
         const auth = new YouTubeAuth();
-        await auth.authenticate();
+        const oauthClient = await auth.authenticate();
 
-        const client = new YouTubeClient(auth);
-        const { playlists: ytPlaylists } = await client.getPlaylists();
+        const client = new YouTubeClient(oauthClient);
+        // v2 getMyPlaylists paginates internally; no need for the v1 loop.
+        const ytPlaylists = await client.getMyPlaylists();
 
         setPlaylists(ytPlaylists);
         setStatus('picking');
@@ -176,11 +184,16 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
       const db = new DatabaseManager('data/metube.db');
       const repo = new PlaylistRepository(db);
 
+      // v2 PlaylistRepository uses camelCase domain shape and branded
+      // PlaylistId. YouTube API result `playlist.playlistId` is already
+      // branded by YouTubeClient; the v1 cache fallback `playlist.id`
+      // remains for backwards compatibility with discover-flow shape.
+      const rawId = playlist.playlistId ?? playlist.id;
       repo.createOrUpdate({
-        playlist_id: playlist.id,
+        playlistId: asPlaylistId(rawId),
         title: playlist.title,
         description: playlist.description,
-        video_count: playlist.itemCount,
+        videoCount: playlist.itemCount,
         enabled: true,
       });
 
@@ -228,7 +241,7 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
   if (status === 'prompt_extract') {
     return (
       <ExtractPrompt
-        playlistId={selected?.id}
+        playlistId={selected?.playlistId ?? selected?.id}
         playlistTitle={selected?.title}
         videoCount={selected?.itemCount || 0}
         onComplete={onComplete}
@@ -355,12 +368,17 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
           return;
         }
 
+        // Brand the raw CLI string at the boundary. asPlaylistId throws
+        // ValidationError on malformed input; the try/catch below surfaces
+        // it as a user-readable error.
+        const brandedId = asPlaylistId(playlistId);
+
         // Initialize services
         const db = new DatabaseManager('data/metube.db');
         const repo = new PlaylistRepository(db);
 
-        // Check if already exists
-        const existing = repo.getById(playlistId);
+        // Check if already exists — v2 uses findById, returns null on miss.
+        const existing = repo.findById(brandedId);
         if (existing) {
           setError(`Playlist already tracked: "${existing.title}"`);
           setStatus('error');
@@ -370,20 +388,27 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
 
         setStatus('fetching');
 
-        // Fetch from YouTube
+        // Fetch from YouTube — v2 YouTubeClient takes an OAuth2Client.
         const auth = new YouTubeAuth();
-        const client = new YouTubeClient(auth);
+        const oauthClient = await auth.authenticate();
+        const client = new YouTubeClient(oauthClient);
 
-        const playlist = await client.getPlaylistById(playlistId);
+        const playlist = await client.getPlaylistById(brandedId);
+        if (!playlist) {
+          setError(`Playlist not found on YouTube: ${playlistId}`);
+          setStatus('error');
+          db.close();
+          return;
+        }
 
         setStatus('saving');
 
-        // Save to database
+        // Save to database — v2 createOrUpdate uses camelCase + branded ID.
         repo.createOrUpdate({
-          playlist_id: playlistId,
+          playlistId: brandedId,
           title: playlist.title,
           description: playlist.description || '',
-          video_count: playlist.itemCount || 0,
+          videoCount: playlist.itemCount || 0,
           enabled: true,
         });
 
@@ -457,6 +482,8 @@ function PlaylistRemove({
   const [error, setError] = useState<string | null>(null);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [videoCount, setVideoCount] = useState<number>(0);
+  // Branded PlaylistId stored as a string brand; v2's playlistRepo.delete
+  // requires the brand. We initialize with empty + brand-on-set.
   const [resolvedPlaylistId, setResolvedPlaylistId] = useState<string>('');
 
   useEffect(() => {
@@ -468,9 +495,14 @@ function PlaylistRemove({
           return;
         }
 
-        // Resolve playlist identifier (number, title, URL, or ID)
-        const resolved = await resolvePlaylistIdentifier(playlistId, true);
+        // v2 resolver takes a context object; injecting db enables the
+        // database-fallback step. Note: each command owns its DB handle.
+        const dbForResolve = new DatabaseManager('data/metube.db');
+        const resolved = await resolvePlaylistIdentifier(playlistId, {
+          db: dbForResolve,
+        });
         if (!resolved) {
+          dbForResolve.close();
           setError(
             `Playlist not found: ${playlistId}. Try 'metube playlist list' to see tracked playlists.`
           );
@@ -478,30 +510,30 @@ function PlaylistRemove({
           return;
         }
 
+        // v2 resolver returns branded PlaylistId already.
         const actualPlaylistId = resolved.id;
         setResolvedPlaylistId(actualPlaylistId);
 
-        const db = new DatabaseManager('data/metube.db');
-        const playlistRepo = new PlaylistRepository(db);
-        const videoRepo = new VideoRepository(db);
+        const playlistRepo = new PlaylistRepository(dbForResolve);
+        const videoRepo = new VideoRepository(dbForResolve);
 
-        const pl = playlistRepo.getById(actualPlaylistId);
+        const pl = playlistRepo.findById(actualPlaylistId);
         if (!pl) {
           setError(
             `Playlist not found: ${resolved.title || actualPlaylistId}. Use 'metube playlist list' to see tracked playlists.`
           );
           setStatus('error');
-          db.close();
+          dbForResolve.close();
           return;
         }
 
-        // Count associated videos
-        const videos = videoRepo.getByPlaylist(actualPlaylistId);
+        // Count associated videos — v2 method is findByPlaylist.
+        const videos = videoRepo.findByPlaylist(actualPlaylistId);
         setVideoCount(videos.length);
 
         setPlaylist(pl);
         setStatus('confirming');
-        db.close();
+        dbForResolve.close();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
@@ -532,8 +564,9 @@ function PlaylistRemove({
       const db = new DatabaseManager('data/metube.db');
       const playlistRepo = new PlaylistRepository(db);
 
-      // Delete playlist (videos remain - user can manually delete if needed)
-      playlistRepo.delete(resolvedPlaylistId);
+      // Delete playlist (videos remain - user can manually delete if
+      // needed). v2 delete requires branded PlaylistId — re-brand here.
+      playlistRepo.delete(asPlaylistId(resolvedPlaylistId));
 
       setStatus('done');
       db.close();
@@ -654,26 +687,22 @@ function PlaylistAddMine({
   useEffect(() => {
     async function fetchPlaylists() {
       try {
-        // Initialize services
+        // Initialize services — v2 YouTubeClient takes the live
+        // OAuth2Client returned by authenticate().
         const auth = new YouTubeAuth();
-        const client = new YouTubeClient(auth);
+        const oauthClient = await auth.authenticate();
+        const client = new YouTubeClient(oauthClient);
         const db = new DatabaseManager('data/metube.db');
         const repo = new PlaylistRepository(db);
 
-        // Get existing playlists
-        const existing = repo.getAll();
-        const existingSet = new Set(existing.map((p) => p.playlist_id));
+        // Get existing playlists — v2 findAll + camelCase playlistId.
+        const existing = repo.findAll({ enabledOnly: false });
+        const existingSet = new Set(existing.map((p) => p.playlistId as string));
         setExistingIds(existingSet);
 
-        // Fetch all user playlists (pagination loop)
-        let allPlaylists: any[] = [];
-        let pageToken: string | undefined = undefined;
-
-        do {
-          const result = await client.getPlaylists(50, pageToken);
-          allPlaylists = allPlaylists.concat(result.playlists);
-          pageToken = result.nextPageToken;
-        } while (pageToken && allPlaylists.length < 1000);
+        // v2 getMyPlaylists handles pagination internally and returns
+        // every playlist in one call. No more do/while.
+        const allPlaylists = await client.getMyPlaylists();
 
         // Filter by privacy if specified
         const privacyFilter = flags.privacy?.toLowerCase();
@@ -681,13 +710,13 @@ function PlaylistAddMine({
 
         if (privacyFilter && privacyFilter !== 'all') {
           filtered = allPlaylists.filter(
-            (p: any) => p.privacyStatus?.toLowerCase() === privacyFilter
+            (p) => p.privacyStatus?.toLowerCase() === privacyFilter
           );
         }
 
         // Filter out existing if --skip-existing
         if (flags.skipExisting) {
-          filtered = filtered.filter((p: any) => !existingSet.has(p.playlistId));
+          filtered = filtered.filter((p) => !existingSet.has(p.playlistId as string));
         }
 
         if (filtered.length === 0) {
@@ -701,8 +730,8 @@ function PlaylistAddMine({
 
         // Auto-select all non-existing playlists
         const autoSelected = new Set<number>();
-        filtered.forEach((p: any, i: number) => {
-          if (!existingSet.has(p.playlistId)) {
+        filtered.forEach((p, i) => {
+          if (!existingSet.has(p.playlistId as string)) {
             autoSelected.add(i);
           }
         });
@@ -759,18 +788,19 @@ function PlaylistAddMine({
       for (const index of selectedIndices) {
         const playlist = playlists[index];
 
-        // Skip if already exists
-        if (existingIds.has(playlist.playlistId)) {
+        // Skip if already exists — playlistId is branded by YouTubeClient.
+        if (existingIds.has(playlist.playlistId as string)) {
           skipped++;
           continue;
         }
 
-        // Add to database
+        // Add to database — v2 createOrUpdate uses camelCase shape; the
+        // playlistId from YouTubeClient is already branded.
         repo.createOrUpdate({
-          playlist_id: playlist.playlistId,
+          playlistId: playlist.playlistId,
           title: playlist.title,
           description: playlist.description || '',
-          video_count: playlist.itemCount || 0,
+          videoCount: playlist.itemCount || 0,
           enabled: true,
         });
 
@@ -823,7 +853,7 @@ function PlaylistAddMine({
         </Box>
         {playlists.slice(0, 20).map((p, i) => {
           const isSelected = selectedIndices.has(i);
-          const isExisting = existingIds.has(p.playlistId);
+          const isExisting = existingIds.has(p.playlistId as string);
           return (
             <Box key={p.playlistId} marginY={0}>
               <Text color={isSelected ? 'cyan' : 'white'}>
@@ -908,38 +938,32 @@ function PlaylistSync({
   useEffect(() => {
     async function detectChanges() {
       try {
-        // Initialize services
+        // Initialize services — v2 YouTubeClient takes OAuth2Client.
         const auth = new YouTubeAuth();
-        const client = new YouTubeClient(auth);
+        const oauthClient = await auth.authenticate();
+        const client = new YouTubeClient(oauthClient);
         const db = new DatabaseManager('data/metube.db');
         const repo = new PlaylistRepository(db);
 
-        // Get tracked playlists
-        const tracked = repo.getAll();
-        const trackedIds = new Set(tracked.map((p) => p.playlist_id));
+        // Get tracked playlists — v2 findAll + camelCase playlistId.
+        const tracked = repo.findAll({ enabledOnly: false });
+        const trackedIds = new Set(tracked.map((p) => p.playlistId as string));
 
-        // Fetch current YouTube playlists (pagination loop)
-        let youtubePlaylists: any[] = [];
-        let pageToken: string | undefined = undefined;
+        // v2 getMyPlaylists handles pagination internally.
+        const youtubePlaylists = await client.getMyPlaylists();
 
-        do {
-          const result = await client.getPlaylists(50, pageToken);
-          youtubePlaylists = youtubePlaylists.concat(result.playlists);
-          pageToken = result.nextPageToken;
-        } while (pageToken && youtubePlaylists.length < 1000);
-
-        const youtubeIds = new Set(youtubePlaylists.map((p: any) => p.playlistId));
+        const youtubeIds = new Set(youtubePlaylists.map((p) => p.playlistId as string));
 
         // Find new playlists (on YouTube but not tracked)
-        const newOnes = youtubePlaylists.filter((p: any) => !trackedIds.has(p.playlistId));
+        const newOnes = youtubePlaylists.filter((p) => !trackedIds.has(p.playlistId as string));
         setNewPlaylists(newOnes);
 
         // Find deleted playlists (tracked but not on YouTube)
-        const deletedOnes = tracked.filter((p) => !youtubeIds.has(p.playlist_id));
+        const deletedOnes = tracked.filter((p) => !youtubeIds.has(p.playlistId as string));
         setDeletedPlaylists(deletedOnes);
 
         // Count unchanged
-        const unchanged = tracked.filter((p) => youtubeIds.has(p.playlist_id)).length;
+        const unchanged = tracked.filter((p) => youtubeIds.has(p.playlistId as string)).length;
         setUnchangedCount(unchanged);
 
         setStatus('reviewing');
@@ -977,22 +1001,22 @@ function PlaylistSync({
       let added = 0;
       let removed = 0;
 
-      // Add new playlists
+      // Add new playlists — v2 createOrUpdate uses camelCase + branded ID.
       for (const playlist of newPlaylists) {
         repo.createOrUpdate({
-          playlist_id: playlist.playlistId,
+          playlistId: playlist.playlistId,
           title: playlist.title,
           description: playlist.description || '',
-          video_count: playlist.itemCount || 0,
+          videoCount: playlist.itemCount || 0,
           enabled: true,
         });
         added++;
       }
 
-      // Remove deleted playlists if flag set
+      // Remove deleted playlists if flag set — v2 delete takes branded ID.
       if (flags.removeDeleted) {
         for (const playlist of deletedPlaylists) {
-          repo.delete(playlist.playlist_id);
+          repo.delete(playlist.playlistId);
           removed++;
         }
       }
@@ -1078,7 +1102,7 @@ function PlaylistSync({
               Deleted ({deletedPlaylists.length}):
             </Text>
             {deletedPlaylists.slice(0, 5).map((p: any) => (
-              <Text key={p.playlist_id} dimColor>
+              <Text key={p.playlistId} dimColor>
                 - {safeTitle(p.title)}
               </Text>
             ))}
@@ -1176,9 +1200,16 @@ function PlaylistVideos({
           return;
         }
 
-        // Resolve playlist identifier (number, title, URL, or ID)
-        const resolved = await resolvePlaylistIdentifier(playlistId, true);
+        // Initialize services
+        const db = new DatabaseManager('data/metube.db');
+        const playlistRepo = new PlaylistRepository(db);
+        const videoRepo = new VideoRepository(db);
+
+        // v2 resolver takes a context object; inject the DB handle for
+        // database-fallback lookups.
+        const resolved = await resolvePlaylistIdentifier(playlistId, { db });
         if (!resolved) {
+          db.close();
           setError(
             `Playlist not found: ${playlistId}. Try 'metube playlist list' to see tracked playlists.`
           );
@@ -1186,15 +1217,11 @@ function PlaylistVideos({
           return;
         }
 
+        // Branded PlaylistId — flows through v2 repos directly.
         const actualPlaylistId = resolved.id;
 
-        // Initialize services
-        const db = new DatabaseManager('data/metube.db');
-        const playlistRepo = new PlaylistRepository(db);
-        const videoRepo = new VideoRepository(db);
-
-        // Get playlist info
-        const pl = playlistRepo.getById(actualPlaylistId);
+        // Get playlist info — v2 findById, returns null on miss.
+        const pl = playlistRepo.findById(actualPlaylistId);
         if (!pl) {
           setError(
             `Playlist not found: ${resolved.title || actualPlaylistId}. Run 'metube playlist add ${actualPlaylistId}' first.`
@@ -1206,8 +1233,8 @@ function PlaylistVideos({
 
         setPlaylist(pl);
 
-        // Get videos for this playlist
-        const playlistVideos = videoRepo.getByPlaylist(actualPlaylistId);
+        // Get videos for this playlist — v2 findByPlaylist.
+        const playlistVideos = videoRepo.findByPlaylist(actualPlaylistId);
 
         if (playlistVideos.length === 0) {
           setError(
@@ -1218,13 +1245,19 @@ function PlaylistVideos({
           return;
         }
 
-        // Format as cached videos with numbers
-        const cachedVideos: CachedVideo[] = playlistVideos.map((video: any, index: number) => ({
+        // Format as cached videos with numbers — v2 VideoRecord keeps
+        // snake_case column names; duration_seconds is the numeric column.
+        // The v1 code passed `video.duration` (a string like "PT10M3S") to
+        // formatDuration which expects seconds, which would have been a
+        // type bug in v1 too. Use duration_seconds for v2.
+        const cachedVideos: CachedVideo[] = playlistVideos.map((video, index) => ({
           num: index + 1,
           video_id: video.video_id,
           title: video.title,
-          duration: video.duration ? formatDuration(video.duration) : undefined,
-          has_transcript: video.has_transcript,
+          duration: video.duration_seconds
+            ? formatDuration(video.duration_seconds)
+            : undefined,
+          has_transcript: undefined,
         }));
 
         // Save to cache for future reference

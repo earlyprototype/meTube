@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { Playlist } from '../database/models.js';
+import type { Playlist } from '../../src-ts-v2/database/PlaylistRepository.js';
 import { symbols, inkColors, status } from '../utils/colors.js';
 import { safeTitle } from '../utils/terminal.js';
 

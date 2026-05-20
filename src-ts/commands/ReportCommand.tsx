@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
-import { DatabaseManager } from '../database/connection.js';
-import { VideoRepository } from '../database/repositories.js';
-import { HTMLReportGenerator } from '../reports/HTMLReportGenerator.js';
+import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
+import { VideoRepository } from '../../src-ts-v2/database/VideoRepository.js';
+import { HTMLReportGenerator } from '../../src-ts-v2/reports/HTMLReportGenerator.js';
+import { asVideoId } from '../../src-ts-v2/types/branded.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { symbols, inkColors } from '../utils/colors.js';
-import { resolvePlaylistIdentifier } from '../utils/playlistResolver.js';
+import { resolvePlaylistIdentifier } from '../../src-ts-v2/utils/playlistResolver.js';
 
 interface ReportCommandProps {
   type: string;
@@ -49,32 +50,33 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
 
         setReportType(type);
 
-        // Resolve playlist ID if needed (for numbered/title access)
-        let actualId = id;
-        if (type === 'playlist') {
-          const resolved = await resolvePlaylistIdentifier(id, true);
+        // Initialize services up-front so the resolver can use the DB.
+        const db = new DatabaseManager('data/metube.db');
+
+        // v2 generator takes only templatesDir in config; output goes
+        // through the second method argument. autoOpen is not part of
+        // the v2 surface — the --no-open flag now only suppresses the
+        // "Opening in browser..." copy in the done view.
+        const generator = new HTMLReportGenerator(db, {});
+
+        // Generate report — v2 generator takes branded IDs and outputDir.
+        const outputDir = 'reports';
+        let path: string;
+        if (type === 'video') {
+          path = await generator.generateVideoReport(asVideoId(id), outputDir);
+        } else {
+          // Resolve playlist ID for numbered / title / URL access; resolver
+          // returns a branded PlaylistId already.
+          const resolved = await resolvePlaylistIdentifier(id, { db });
           if (!resolved) {
+            db.close();
             setError(
               `Playlist not found: ${id}. Try 'metube playlist list' to see tracked playlists.`
             );
             setStatus('error');
             return;
           }
-          actualId = resolved.id;
-        }
-
-        // Initialize services
-        const db = new DatabaseManager('data/metube.db');
-        const generator = new HTMLReportGenerator(db, {
-          autoOpen: !flags.noOpen,
-        });
-
-        // Generate report
-        let path: string;
-        if (type === 'video') {
-          path = await generator.generateVideoReport(actualId, { autoOpen: !flags.noOpen });
-        } else {
-          path = await generator.generatePlaylistReport(actualId, { autoOpen: !flags.noOpen });
+          path = await generator.generatePlaylistReport(resolved.id, outputDir);
         }
 
         setFilepath(path);
@@ -106,10 +108,10 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
       try {
         setReportType('all');
 
-        // Get all videos from database
+        // Get all videos from database — v2 method is findAll.
         const db = new DatabaseManager('data/metube.db');
         const videoRepo = new VideoRepository(db);
-        const allVideos = videoRepo.getAll();
+        const allVideos = videoRepo.findAll();
 
         if (allVideos.length === 0) {
           setError('No videos found in database. Extract some videos first.');
@@ -120,12 +122,12 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
 
         setTotalReports(allVideos.length);
 
-        // Initialize generator
-        const generator = new HTMLReportGenerator(db, {
-          autoOpen: false, // Don't open each report (would be chaos)
-        });
+        // Initialize generator — v2 takes only templatesDir.
+        const generator = new HTMLReportGenerator(db, {});
 
-        // Generate report for each video
+        // Generate report for each video — v2 VideoRecord.video_id is
+        // branded already. outputDir is the second positional arg.
+        const outputDir = 'reports';
         let successCount = 0;
         let failCount = 0;
 
@@ -134,10 +136,12 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
           setCurrentReport(i + 1);
 
           try {
-            await generator.generateVideoReport(video.video_id, { autoOpen: false });
+            await generator.generateVideoReport(video.video_id, outputDir);
             successCount++;
           } catch (err) {
-            console.error(`Failed to generate report for ${video.video_id}:`, err);
+            // No `console.*` in production code — surface as state.
+            // Per-video failures roll into the failCount; the user sees
+            // the aggregate on the done screen.
             failCount++;
           }
         }

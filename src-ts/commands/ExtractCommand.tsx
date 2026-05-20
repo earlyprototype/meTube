@@ -1,15 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
-import { YouTubeAuth } from '../auth/YouTubeAuth.js';
-import { YouTubeClient } from '../api/YouTubeClient.js';
-import { VideoExtractor } from '../extractors/VideoExtractor.js';
-import { DatabaseManager } from '../database/connection.js';
-import { PlaylistRepository } from '../database/repositories.js';
+import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
+import { YouTubeClient } from '../../src-ts-v2/api/YouTubeClient.js';
+import {
+  VideoExtractor,
+  type ExtractProgressEvent,
+  type YouTubeClientLike,
+  type PlaylistInfo,
+  type VideoDetails,
+  type PlaylistVideoItem,
+  type PlaylistVideoOptions,
+} from '../../src-ts-v2/extractors/VideoExtractor.js';
+import { DescriptionParser } from '../../src-ts-v2/parsers/DescriptionParser.js';
+import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
+import { PlaylistRepository } from '../../src-ts-v2/database/PlaylistRepository.js';
 import { ProgressDisplay } from '../components/ProgressDisplay.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { PostExtractionMenu } from '../components/PostExtractionMenu.js';
-import { resolvePlaylistIdentifier } from '../utils/playlistResolver.js';
+import { resolvePlaylistIdentifier } from '../../src-ts-v2/utils/playlistResolver.js';
 import { safeTitle } from '../utils/terminal.js';
+import type { VideoId, PlaylistId } from '../../src-ts-v2/types/branded.js';
 
 interface ExtractCommandProps {
   type: string;
@@ -59,6 +69,8 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
   const [startTime] = useState(new Date());
   const [error, setError] = useState<string | null>(null);
   const [playlistTitle, setPlaylistTitle] = useState<string>('');
+  // Stored as a string brand — the PostExtractionMenu accepts a raw
+  // string. We brand at the boundary when calling v2 repository methods.
   const [extractedPlaylistId, setExtractedPlaylistId] = useState<string>('');
 
   useEffect(() => {
@@ -82,9 +94,15 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
           return;
         }
 
-        // Resolve playlist identifier (number, title, URL, or ID)
-        const resolved = await resolvePlaylistIdentifier(id, true);
+        // Initialize services up-front; v2 resolver needs a DB handle for
+        // the database-fallback step.
+        const db = new DatabaseManager('data/metube.db');
+
+        // Resolve playlist identifier (number, title, URL, or ID) — v2
+        // resolver returns branded PlaylistId.
+        const resolved = await resolvePlaylistIdentifier(id, { db });
         if (!resolved) {
+          db.close();
           setError(
             `Playlist not found: ${id}. Try 'metube playlist list' to see tracked playlists.`
           );
@@ -94,18 +112,17 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
 
         const actualPlaylistId = resolved.id;
 
-        // Initialize services
+        // v2 YouTubeClient takes the OAuth2Client returned by authenticate.
         const auth = new YouTubeAuth();
-        await auth.authenticate();
+        const oauthClient = await auth.authenticate();
+        const youTubeClient = new YouTubeClient(oauthClient);
 
-        const client = new YouTubeClient(auth);
-        const db = new DatabaseManager('data/metube.db');
-
-        // Get playlist
+        // Get playlist — v2 findById, returns null on miss.
         const repo = new PlaylistRepository(db);
-        const playlist = repo.getById(actualPlaylistId);
+        const playlist = repo.findById(actualPlaylistId);
 
         if (!playlist) {
+          db.close();
           setError(`Playlist not found: ${resolved.title || actualPlaylistId}`);
           setStatus('error');
           return;
@@ -115,48 +132,42 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
         setExtractedPlaylistId(actualPlaylistId);
         setStatus('extracting');
 
-        // Extract playlist using proper method (with deduplication and progress)
-        const extractor = new VideoExtractor(client, db, {
-          autoTranscript: true,
-          autoLlmParse: false,
-          enableWhisper: true,
-          onProgress: (prog) => {
-            setProgress((prev) => ({
-              current: prog.current,
-              total: prog.total,
-              currentVideo: prog.videoTitle,
-              status: 'downloading',
-              successCount: prog.status === 'complete' ? prog.current : prev.successCount,
-              failureCount: prog.status === 'failed' ? prev.failureCount + 1 : prev.failureCount,
-              skippedCount: prev.skippedCount,
-              whisperProgress: prev.whisperProgress,
-            }));
+        // v2 VideoExtractor expects a YouTubeClientLike shape with methods
+        // (getPlaylistInfo, getPlaylistVideos, getVideoDetails) that differ
+        // from the actual YouTubeClient (getPlaylistById, getPlaylistItems,
+        // getVideoById). Adapter bridges the names + result shapes.
+        const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient);
+
+        const extractor = new VideoExtractor(
+          db,
+          ytAdapter,
+          {
+            autoTranscript: true,
+            autoLlmParse: false,
+            enableWhisper: true,
+            skipExisting: !flags.reprocess,
+            maxVideos: flags.maxVideos,
           },
-          onWhisperProgress: (whisperProg) => {
-            setProgress((prev) => ({
-              ...prev,
-              status:
-                whisperProg.stage === 'downloading'
-                  ? ('downloading_audio' as const)
-                  : ('whisper_transcribing' as const),
-              whisperProgress: whisperProg,
-            }));
+          {
+            descriptionParser: new DescriptionParser(),
+          }
+        );
+
+        // v2 extractPlaylist signature: (playlistId, { onProgress }).
+        // Progress events are a discriminated union — map onto the
+        // existing ProgressDisplay state.
+        const result = await extractor.extractPlaylist(actualPlaylistId, {
+          onProgress: (event: ExtractProgressEvent) => {
+            mapEventToProgress(event, setProgress);
           },
         });
-
-        // Use extractPlaylist which handles deduplication
-        const result = await extractor.extractPlaylist(
-          actualPlaylistId,
-          !flags.reprocess, // skipExisting = true (unless --reprocess flag)
-          flags.maxVideos
-        );
 
         setProgress({
           current: result.processed,
           total: result.total,
           currentVideo: 'Complete',
           status: 'completed',
-          successCount: result.new,
+          successCount: result.processed,
           failureCount: result.failed,
           skippedCount: result.skipped,
           whisperProgress: undefined,
@@ -172,11 +183,11 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
 
     async function extractAllPlaylists() {
       try {
-        // Get all enabled playlists
+        // Get all enabled playlists — v2 findAll default is enabledOnly:
+        // true, which is what we want here.
         const db = new DatabaseManager('data/metube.db');
         const playlistRepo = new PlaylistRepository(db);
-        const allPlaylists = playlistRepo.getAll();
-        const enabledPlaylists = allPlaylists.filter((p) => p.enabled);
+        const enabledPlaylists = playlistRepo.findAll({ enabledOnly: true });
 
         if (enabledPlaylists.length === 0) {
           setError(
@@ -187,35 +198,44 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
           return;
         }
 
-        // Initialize extractor
+        // Initialize extractor — v2 YouTubeClient takes OAuth2Client; the
+        // VideoExtractor takes (db, youtubeClient, config, deps) with the
+        // adapter for the differing client surface and an injected
+        // descriptionParser.
         const auth = new YouTubeAuth();
-        const client = new YouTubeClient(auth);
-        const extractor = new VideoExtractor(client, db);
+        const oauthClient = await auth.authenticate();
+        const youTubeClient = new YouTubeClient(oauthClient);
+        const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient);
+        const extractor = new VideoExtractor(
+          db,
+          ytAdapter,
+          {
+            skipExisting: !flags.reprocess,
+            maxVideos: flags.maxVideos,
+          },
+          {
+            descriptionParser: new DescriptionParser(),
+          }
+        );
 
         let totalProcessed = 0;
-        let totalNew = 0;
         let totalFailed = 0;
         let totalSkipped = 0;
         let playlistsFailed = 0;
 
         setStatus('extracting');
 
-        // Process each playlist sequentially
+        // Process each playlist sequentially — v2 playlistId is branded.
         for (let i = 0; i < enabledPlaylists.length; i++) {
           const playlist = enabledPlaylists[i];
 
           setPlaylistTitle(`[${i + 1}/${enabledPlaylists.length}] ${playlist.title}`);
-          setExtractedPlaylistId(playlist.playlist_id);
+          setExtractedPlaylistId(playlist.playlistId);
 
           try {
-            const result = await extractor.extractPlaylist(
-              playlist.playlist_id,
-              !flags.reprocess,
-              flags.maxVideos
-            );
+            const result = await extractor.extractPlaylist(playlist.playlistId);
 
             totalProcessed += result.processed;
-            totalNew += result.new;
             totalFailed += result.failed;
             totalSkipped += result.skipped;
 
@@ -224,7 +244,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
               total: enabledPlaylists.length,
               currentVideo: `Completed: ${safeTitle(playlist.title)}`,
               status: 'completed',
-              successCount: totalNew,
+              successCount: totalProcessed,
               failureCount: totalFailed,
               skippedCount: totalSkipped,
               whisperProgress: undefined,
@@ -241,7 +261,7 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
           total: enabledPlaylists.length,
           currentVideo: 'All playlists processed',
           status: 'completed',
-          successCount: totalNew,
+          successCount: totalProcessed,
           failureCount: totalFailed,
           skippedCount: totalSkipped,
           whisperProgress: undefined,
@@ -302,4 +322,168 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
       whisperProgress={progress.whisperProgress}
     />
   );
+}
+
+/**
+ * Adapter: bridges v2 YouTubeClient (getPlaylistById / getPlaylistItems /
+ * getVideoById) into the shape v2 VideoExtractor expects
+ * (getPlaylistInfo / getPlaylistVideos / getVideoDetails). This is a
+ * Wave 3 sibling-drift papered over at the Ink boundary; the proper fix
+ * is to reconcile names inside src-ts-v2/ in a follow-up.
+ */
+function makeYouTubeClientAdapter(client: YouTubeClient): YouTubeClientLike {
+  return {
+    async getPlaylistInfo(playlistId: PlaylistId): Promise<PlaylistInfo | null> {
+      const pl = await client.getPlaylistById(playlistId);
+      if (pl === null) return null;
+      return {
+        playlistId: pl.playlistId,
+        title: pl.title,
+        description: pl.description,
+        videoCount: pl.itemCount,
+      };
+    },
+    async getPlaylistVideos(
+      playlistId: PlaylistId,
+      opts: PlaylistVideoOptions = {}
+    ): Promise<readonly PlaylistVideoItem[]> {
+      const items = await client.getPlaylistItems(playlistId);
+      const capped =
+        opts.maxResults !== undefined ? items.slice(0, opts.maxResults) : items;
+      return capped.map((it) => ({
+        videoId: it.videoId,
+        title: it.title ?? '',
+        channelId: it.channelId ?? '',
+        channelTitle: it.channelTitle ?? '',
+        addedAt: it.addedAt ?? '',
+        position: it.position,
+      }));
+    },
+    async getVideoDetails(videoId: VideoId): Promise<VideoDetails | null> {
+      const v = await client.getVideoById(videoId);
+      if (v === null) return null;
+      return {
+        videoId: v.videoId,
+        title: v.title,
+        description: v.description,
+        channelId: v.channelId,
+        channelTitle: v.channelTitle,
+        publishedAt: v.publishedAt,
+        duration: v.duration,
+        durationSeconds: v.durationSeconds,
+        isShort: v.isShort,
+        viewCount: v.viewCount ?? 0,
+        likeCount: v.likeCount ?? 0,
+        commentCount: v.commentCount ?? 0,
+        tags: v.tags ?? [],
+        categoryId: v.categoryId,
+        caption: v.caption,
+        licensedContent: v.licensedContent,
+      };
+    },
+  };
+}
+
+/**
+ * Map v2's discriminated-union ExtractProgressEvent into the existing
+ * ProgressDisplay state shape. The display does not care about per-stage
+ * detail — it only renders counters + current video + a status enum.
+ */
+type ProgressState = {
+  current: number;
+  total: number;
+  currentVideo: string;
+  status:
+    | 'downloading'
+    | 'downloading_audio'
+    | 'whisper_transcribing'
+    | 'transcribing'
+    | 'parsing'
+    | 'saving'
+    | 'completed';
+  successCount: number;
+  failureCount: number;
+  skippedCount: number;
+  whisperProgress?: {
+    stage: 'downloading' | 'transcribing' | 'complete';
+    percentage?: number;
+    message?: string;
+  };
+};
+
+function mapEventToProgress(
+  event: ExtractProgressEvent,
+  setProgress: React.Dispatch<React.SetStateAction<ProgressState>>
+): void {
+  switch (event.kind) {
+    case 'job_started':
+      setProgress((prev) => ({ ...prev, total: event.total, current: 0 }));
+      return;
+    case 'fetch_meta':
+    case 'persist':
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        status: 'downloading',
+      }));
+      return;
+    case 'transcribe':
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        status: 'transcribing',
+      }));
+      return;
+    case 'whisper':
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        status: 'whisper_transcribing',
+      }));
+      return;
+    case 'gemini':
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        status: 'parsing',
+      }));
+      return;
+    case 'video_done':
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        successCount: prev.successCount + 1,
+      }));
+      return;
+    case 'video_skipped':
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        skippedCount: prev.skippedCount + 1,
+      }));
+      return;
+    case 'video_failed':
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        failureCount: prev.failureCount + 1,
+      }));
+      return;
+    case 'job_completed':
+      setProgress((prev) => ({
+        ...prev,
+        status: 'completed',
+        successCount: event.result.processed,
+        failureCount: event.result.failed,
+        skippedCount: event.result.skipped,
+      }));
+      return;
+  }
 }

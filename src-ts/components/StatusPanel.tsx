@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
-import { DatabaseManager } from '../database/connection.js';
-import { YouTubeAuth } from '../auth/YouTubeAuth.js';
-import { WhisperExtractor } from '../extractors/WhisperExtractor.js';
+import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
+import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
+import { WhisperExtractor } from '../../src-ts-v2/extractors/WhisperExtractor.js';
 import { symbols, inkColors, status } from '../utils/colors.js';
 
 interface StatusPanelProps {
@@ -17,20 +17,24 @@ export function StatusPanel({ showDetails = true }: StatusPanelProps) {
   );
 
   useEffect(() => {
-    // Check database
+    // Check database — v2 DatabaseManager opens + bootstraps the schema
+    // in the constructor. Constructing without throwing means we have a
+    // working connection.
     try {
       const db = new DatabaseManager('data/metube.db');
-      db.getConnection();
       setDbStatus('connected');
       db.close();
     } catch {
       setDbStatus('error');
     }
 
-    // Check auth
+    // Check auth — v2 YouTubeAuth's hasValidTokens() requires a prior
+    // authenticate() call to populate currentClient. For a disk-only
+    // probe we attempt loadTokens() and treat any throw as "invalid".
     try {
       const auth = new YouTubeAuth();
-      setAuthStatus(auth.hasValidTokens() ? 'valid' : 'invalid');
+      auth.loadTokens();
+      setAuthStatus('valid');
     } catch {
       setAuthStatus('invalid');
     }

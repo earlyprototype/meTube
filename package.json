@@ -1,6 +1,6 @@
 {
   "name": "metube-ink",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "A comprehensive CLI tool for extracting and analysing YouTube videos with dual-layer transcript extraction (YouTube + Whisper AI fallback), automatic entity parsing from transcripts and descriptions, cached playlist discovery, and beautiful interactive HTML reports. Built with Ink.",
   "main": "dist/cli.js",
   "type": "module",
