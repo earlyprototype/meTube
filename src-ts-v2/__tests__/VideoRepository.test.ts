@@ -32,10 +32,7 @@ import { VideoRepository } from '../database/VideoRepository.js';
  * uses a different one so any cross-test leakage would surface
  * immediately as a missing-row assertion failure.
  */
-function makeVideoInput(
-  videoIdRaw: string,
-  overrides: Record<string, unknown> = {}
-) {
+function makeVideoInput(videoIdRaw: string, overrides: Record<string, unknown> = {}) {
   return {
     video_id: asVideoId(videoIdRaw),
     title: 'Default title',
@@ -136,12 +133,8 @@ describe('VideoRepository.findAll', () => {
 
   it('respects the shortsOnly filter (only is_short=1 rows returned)', () => {
     // Arrange — one regular, one short
-    repo.createOrUpdate(
-      makeVideoInput('aaaaaaaaaaa', { title: 'regular', is_short: 0 })
-    );
-    repo.createOrUpdate(
-      makeVideoInput('bbbbbbbbbbb', { title: 'short', is_short: 1 })
-    );
+    repo.createOrUpdate(makeVideoInput('aaaaaaaaaaa', { title: 'regular', is_short: 0 }));
+    repo.createOrUpdate(makeVideoInput('bbbbbbbbbbb', { title: 'short', is_short: 1 }));
 
     // Act
     const shorts = repo.findAll({ shortsOnly: true });
@@ -196,15 +189,9 @@ describe('VideoRepository.findByChannel', () => {
 
   it('returns only rows belonging to the requested channel', () => {
     // Arrange
-    repo.createOrUpdate(
-      makeVideoInput('aaaaaaaaaaa', { channel_id: 'UCalpha', title: 'a1' })
-    );
-    repo.createOrUpdate(
-      makeVideoInput('bbbbbbbbbbb', { channel_id: 'UCalpha', title: 'a2' })
-    );
-    repo.createOrUpdate(
-      makeVideoInput('ccccccccccc', { channel_id: 'UCbeta', title: 'b1' })
-    );
+    repo.createOrUpdate(makeVideoInput('aaaaaaaaaaa', { channel_id: 'UCalpha', title: 'a1' }));
+    repo.createOrUpdate(makeVideoInput('bbbbbbbbbbb', { channel_id: 'UCalpha', title: 'a2' }));
+    repo.createOrUpdate(makeVideoInput('ccccccccccc', { channel_id: 'UCbeta', title: 'b1' }));
 
     // Act
     const alpha = repo.findByChannel('UCalpha');
@@ -245,9 +232,10 @@ describe('VideoRepository.findByPlaylist', () => {
     // Insert the playlist + playlist_items via raw withTransaction.
     // VideoRepository owns videos; the rest is fixture setup.
     dbm.withTransaction((db) => {
-      db.prepare(
-        `INSERT INTO playlists (playlist_id, title) VALUES (?, ?)`
-      ).run('PLtestlistxxx', 'Test playlist');
+      db.prepare(`INSERT INTO playlists (playlist_id, title) VALUES (?, ?)`).run(
+        'PLtestlistxxx',
+        'Test playlist'
+      );
       db.prepare(
         `INSERT INTO playlist_items (playlist_id, video_id, position, added_at)
          VALUES (?, ?, ?, ?)`
@@ -269,9 +257,10 @@ describe('VideoRepository.findByPlaylist', () => {
   it('returns an empty array when the playlist has no items', () => {
     // Arrange — playlist exists, no items
     dbm.withTransaction((db) => {
-      db.prepare(
-        `INSERT INTO playlists (playlist_id, title) VALUES (?, ?)`
-      ).run('PLempty12345', 'Empty');
+      db.prepare(`INSERT INTO playlists (playlist_id, title) VALUES (?, ?)`).run(
+        'PLempty12345',
+        'Empty'
+      );
     });
 
     // Act
@@ -301,9 +290,7 @@ describe('VideoRepository.search', () => {
 
   it('matches a title substring', () => {
     // Arrange
-    repo.createOrUpdate(
-      makeVideoInput('aaaaaaaaaaa', { title: 'JavaScript Tutorial' })
-    );
+    repo.createOrUpdate(makeVideoInput('aaaaaaaaaaa', { title: 'JavaScript Tutorial' }));
     repo.createOrUpdate(makeVideoInput('bbbbbbbbbbb', { title: 'Python Guide' }));
 
     // Act
@@ -332,9 +319,7 @@ describe('VideoRepository.search', () => {
 
   it('is case-insensitive across ASCII characters (SQLite LIKE default)', () => {
     // Arrange
-    repo.createOrUpdate(
-      makeVideoInput('aaaaaaaaaaa', { title: 'JavaScript Tutorial' })
-    );
+    repo.createOrUpdate(makeVideoInput('aaaaaaaaaaa', { title: 'JavaScript Tutorial' }));
 
     // Act
     const results = repo.search('javascript');
@@ -566,14 +551,16 @@ describe('VideoRepository.delete', () => {
 
     // Assert
     const transcriptCount = dbm
-      .prepare<readonly string[], { c: number }>(
-        'SELECT COUNT(*) AS c FROM transcripts WHERE video_id = ?'
-      )
+      .prepare<
+        readonly string[],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM transcripts WHERE video_id = ?')
       .get(vid);
     const entityCount = dbm
-      .prepare<readonly string[], { c: number }>(
-        'SELECT COUNT(*) AS c FROM extracted_entities WHERE video_id = ?'
-      )
+      .prepare<
+        readonly string[],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM extracted_entities WHERE video_id = ?')
       .get(vid);
 
     expect(transcriptCount?.c).toBe(0);
@@ -627,9 +614,7 @@ describe('VideoRepository — transaction rollback', () => {
         );
 
         // And write through the repository (also via withTransaction).
-        repo.createOrUpdate(
-          makeVideoInput('bbbbbbbbbbb', { title: 'through-repo' })
-        );
+        repo.createOrUpdate(makeVideoInput('bbbbbbbbbbb', { title: 'through-repo' }));
 
         throw new TestRollback('cancel');
       })
@@ -657,8 +642,65 @@ describe('VideoRepository — error propagation', () => {
     dbm.close();
 
     // Act + Assert
-    expect(() => repo.findById(asVideoId('dQw4w9WgXcQ'))).toThrow(
-      DatabaseError
-    );
+    expect(() => repo.findById(asVideoId('dQw4w9WgXcQ'))).toThrow(DatabaseError);
+  });
+});
+
+// --------------------------------------------------------------------
+// Schema NULL tolerance — managed timestamp columns must accept NULL
+// --------------------------------------------------------------------
+
+describe('VideoRepository — schema NULL tolerance for managed timestamps', () => {
+  let dbm: DatabaseManager;
+  let repo: VideoRepository;
+
+  beforeEach(() => {
+    dbm = new DatabaseManager(':memory:');
+    repo = new VideoRepository(dbm);
+  });
+
+  afterEach(() => {
+    dbm.close();
+  });
+
+  it('round-trips a row whose created_at and updated_at are NULL on disk', () => {
+    // Arrange — bypass createOrUpdate so we can write explicit NULLs into
+    // the managed timestamp columns. The DDL allows it (created_at /
+    // updated_at are TEXT with a DEFAULT but no NOT NULL), so SQLite will
+    // store NULL when an INSERT names the column and binds null.
+    const vid = 'dQw4w9WgXcQ';
+    dbm.withTransaction((db) => {
+      db.prepare(
+        `INSERT INTO videos (
+          video_id, title, channel_id, channel_title, published_at,
+          duration, duration_seconds, is_short, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        vid,
+        'NULL-timestamp video',
+        'UCnulltest',
+        'Null Test',
+        '2024-01-01T00:00:00Z',
+        'PT1S',
+        1,
+        0,
+        null,
+        null
+      );
+    });
+
+    // Act — the read path must not throw a ZodError (which would be
+    // rewrapped as "Transaction rolled back" by withTransaction and hide
+    // the real cause from the user).
+    const found = repo.findById(asVideoId(vid));
+
+    // Assert — row comes back and the timestamp columns are present as
+    // either string OR null, never undefined.
+    expect(found).not.toBeNull();
+    expect(found?.title).toBe('NULL-timestamp video');
+    expect(found?.created_at === null || typeof found?.created_at === 'string').toBe(true);
+    expect(found?.updated_at === null || typeof found?.updated_at === 'string').toBe(true);
+    expect(found?.created_at).not.toBeUndefined();
+    expect(found?.updated_at).not.toBeUndefined();
   });
 });

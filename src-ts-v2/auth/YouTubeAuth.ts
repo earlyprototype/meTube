@@ -151,10 +151,7 @@ export class YouTubeAuth {
         const client = this.buildOAuth2Client(creds);
         client.setCredentials(this.tokensToCredentials(tokens));
         this.currentClient = client;
-        logger.info(
-          { tokensPath: this.tokensPath },
-          'Hydrated OAuth client from saved tokens'
-        );
+        logger.info({ tokensPath: this.tokensPath }, 'Hydrated OAuth client from saved tokens');
         return client;
       } catch (err) {
         // Saved tokens were broken - propagate INVALID_TOKEN so the
@@ -180,10 +177,7 @@ export class YouTubeAuth {
     //    the code is even exchanged.
     const state = crypto.randomBytes(32).toString('hex');
     const redirectUri = this.pickRedirectUri(creds);
-    logger.info(
-      { port: this.port, scopes: this.scopes, redirectUri },
-      'Starting local OAuth flow'
-    );
+    logger.info({ port: this.port, scopes: this.scopes, redirectUri }, 'Starting local OAuth flow');
 
     const client = this.buildOAuth2Client(creds);
 
@@ -216,15 +210,37 @@ export class YouTubeAuth {
         expectedState: state,
       });
 
-      // Best-effort browser launch. If it fails the user can paste
-      // the URL manually - the server is still listening.
+      // Always surface the auth URL to the user via stderr BEFORE
+      // attempting to open the browser. Pino's default level is `error`,
+      // so a `logger.warn` on browser-open failure would never reach the
+      // user - they'd be stuck staring at a hung terminal. Writing the
+      // URL to stderr unconditionally guarantees they can always grab it
+      // by hand, whether or not auto-open works.
+      //
+      // This is the SINGLE intentional exception to "no console.* in
+      // production code": the URL is non-sensitive, the user is staring
+      // at a terminal waiting for it, and we use process.stderr.write
+      // (not console.log) so it doesn't conflict with Ink's stdout
+      // takeover. The pre-commit stub hook checks for console.*; stderr
+      // writes are fine.
+      const banner = '========================================================================';
+      process.stderr.write(
+        `\n${banner}\n` +
+          'OAuth: open this URL in a browser to grant access\n' +
+          `${banner}\n` +
+          `${authUrl}\n` +
+          `${banner}\n\n`
+      );
+
+      // Best-effort browser launch. If it fails the user can still paste
+      // the URL printed above - the server is still listening.
       try {
         await openBrowser(authUrl);
         logger.info('Browser launched for OAuth consent');
       } catch (browserErr) {
         logger.warn(
           { errMsg: browserErr instanceof Error ? browserErr.message : String(browserErr) },
-          'Could not auto-open browser; user must paste authUrl manually'
+          'Could not auto-open browser; paste the URL printed above manually'
         );
       }
 
@@ -477,10 +493,10 @@ export class YouTubeAuth {
     const config = parsed as OAuthConfig;
     const creds = config.installed ?? config.web;
     if (!creds) {
-      throw new ValidationError(
-        'Credentials file missing "installed" or "web" client section',
-        { field: 'credentialsPath', value: this.credentialsPath }
-      );
+      throw new ValidationError('Credentials file missing "installed" or "web" client section', {
+        field: 'credentialsPath',
+        value: this.credentialsPath,
+      });
     }
 
     if (

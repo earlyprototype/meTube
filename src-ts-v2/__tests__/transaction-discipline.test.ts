@@ -30,6 +30,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DatabaseManager, type PreparedRead } from '../database/connection.js';
+import { AppError, DatabaseError, ValidationError } from '../errors/index.js';
 
 /** Sentinel error type so a rollback assertion can target this exact throw. */
 class TransactionDisciplineTestError extends Error {}
@@ -112,9 +113,7 @@ describe('DatabaseManager.withTransaction — commits writes inside the closure 
 
     // Act — read it back via the read-only prepared surface
     const row = dbm
-      .prepare<TagInsertParams, { tag: string }>(
-        'SELECT tag FROM tags WHERE tag = ?'
-      )
+      .prepare<TagInsertParams, { tag: string }>('SELECT tag FROM tags WHERE tag = ?')
       .get('typescript');
 
     // Assert — the row landed
@@ -135,33 +134,23 @@ describe('DatabaseManager.withTransaction — rolls back the entire closure on t
 
   it('reverts a prior INSERT in the same callback when a later statement throws', () => {
     // Arrange — count rows before; expect zero
-    const countBefore = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags')
-      .get();
+    const countBefore = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags').get();
     expect(countBefore?.c).toBe(0);
 
     // Act — issue an INSERT, then throw. The INSERT must NOT survive.
     expect(() =>
       dbm.withTransaction((db) => {
-        db.prepare('INSERT INTO tags (tag) VALUES (?)').run(
-          'will-be-rolled-back'
-        );
-        throw new TransactionDisciplineTestError(
-          'forced rollback for discipline test'
-        );
+        db.prepare('INSERT INTO tags (tag) VALUES (?)').run('will-be-rolled-back');
+        throw new TransactionDisciplineTestError('forced rollback for discipline test');
       })
     ).toThrow();
 
     // Assert — the tag table must be empty; the INSERT was rolled back atomically
-    const countAfter = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags')
-      .get();
+    const countAfter = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags').get();
     expect(countAfter?.c).toBe(0);
 
     const sneaked = dbm
-      .prepare<TagInsertParams, { tag: string }>(
-        'SELECT tag FROM tags WHERE tag = ?'
-      )
+      .prepare<TagInsertParams, { tag: string }>('SELECT tag FROM tags WHERE tag = ?')
       .get('will-be-rolled-back');
     expect(sneaked).toBeUndefined();
   });
@@ -179,9 +168,7 @@ describe('DatabaseManager.withTransaction — rolls back the entire closure on t
 
     // Assert — neither row survived. This is the bit that catches partial-commit bugs.
     const remaining = dbm
-      .prepare<TagInsertParams, { tag: string }>(
-        'SELECT tag FROM tags WHERE tag = ?'
-      )
+      .prepare<TagInsertParams, { tag: string }>('SELECT tag FROM tags WHERE tag = ?')
       .get('first-write');
     expect(remaining).toBeUndefined();
   });
@@ -236,5 +223,109 @@ describe('DatabaseManager.prepare — PreparedRead does not expose .run() (guara
     // Sanity — the read methods ARE present via the same indexed access path
     expect(indexable.get).toBeDefined();
     expect(indexable.all).toBeDefined();
+  });
+});
+
+/**
+ * Typed-error pass-through tests (guarantee 5).
+ *
+ * Bug regression: previously, `withTransaction` caught EVERY non-`DatabaseError`
+ * throw from the work closure and rewrapped it as
+ * `new DatabaseError('Transaction rolled back', { cause })`. This destroyed
+ * typed errors thrown by repository code (e.g. `ValidationError`,
+ * `ZodError`-via-`ValidationError`, custom `AppError` subclasses) so that
+ * a Zod parse failure surfaced to the user as the opaque message
+ * "Transaction rolled back" with no usable cause chain.
+ *
+ * The fix: re-throw any `AppError` subclass UNWRAPPED. Only wrap
+ * genuinely-unknown errors (raw `Error`, `TypeError`, network errors, etc.).
+ *
+ * Sibling fix: `AppError`'s `cause` attach previously hid behind a
+ * `Error.prototype.hasOwnProperty('cause')` guard that is ALWAYS false
+ * (cause is per-instance, not on the prototype). The cause was never
+ * attached even when callers passed one. The fix attaches unconditionally.
+ */
+describe('DatabaseManager.withTransaction — typed-error pass-through (guarantee 5)', () => {
+  let dbm: DatabaseManager;
+
+  beforeEach(() => {
+    dbm = new DatabaseManager(':memory:');
+  });
+
+  afterEach(() => {
+    dbm.close();
+  });
+
+  it('throwing a ValidationError inside withTransaction surfaces as ValidationError to the caller', () => {
+    // Arrange — a ValidationError carrying a recognisable message that must
+    // survive the transaction boundary unmangled. This is the exact shape
+    // a repository emits when a Zod parse fails at the wire boundary.
+    const innerMessage = 'tag must be a non-empty string';
+
+    // Act + Assert — caller sees the ValidationError untouched.
+    let caught: unknown;
+    try {
+      dbm.withTransaction(() => {
+        throw new ValidationError(innerMessage, { field: 'tag' });
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ValidationError);
+    expect(caught).toBeInstanceOf(AppError);
+    expect(caught).not.toBeInstanceOf(DatabaseError);
+    expect((caught as ValidationError).message).toBe(innerMessage);
+    expect((caught as ValidationError).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('throwing a DatabaseError inside withTransaction surfaces as DatabaseError to the caller (no double-wrap)', () => {
+    // Arrange — DatabaseError with a recognisable context. If the catch
+    // branch double-wraps, the outer DatabaseError will carry an INNER
+    // DatabaseError as its cause and the original message will be lost.
+    const innerMessage = 'unique constraint failed on tags.tag';
+    const inner = new DatabaseError(innerMessage, { operation: 'TagRepository.insert' });
+
+    // Act + Assert
+    let caught: unknown;
+    try {
+      dbm.withTransaction(() => {
+        throw inner;
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(DatabaseError);
+    expect(caught).toBe(inner); // identity preserved — no rewrap
+    expect((caught as DatabaseError).message).toBe(innerMessage);
+    // Sanity — the cause chain wasn't inverted (the original error should
+    // not have ITSELF as a cause via a double-wrap)
+    expect((caught as DatabaseError & { cause?: unknown }).cause).toBeUndefined();
+  });
+
+  it('throwing a raw Error inside withTransaction surfaces as DatabaseError with cause set to the original', () => {
+    // Arrange — a raw, untyped error that withTransaction SHOULD wrap. This
+    // is the legitimate use of the wrap branch: network errors, TypeErrors,
+    // anything that isn't part of the v2 typed-error tree.
+    const rawMessage = 'unexpected runtime explosion';
+    const raw = new Error(rawMessage);
+
+    // Act + Assert
+    let caught: unknown;
+    try {
+      dbm.withTransaction(() => {
+        throw raw;
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(DatabaseError);
+    expect((caught as DatabaseError).message).toBe('Transaction rolled back');
+    // The cause chain MUST work — this is the second-half of the fix.
+    // If `AppError`'s prototype guard regressed, this assertion would fail
+    // even though the catch branch did the right thing.
+    expect((caught as DatabaseError & { cause?: unknown }).cause).toBe(raw);
   });
 });

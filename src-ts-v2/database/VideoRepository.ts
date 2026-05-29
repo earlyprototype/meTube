@@ -35,16 +35,8 @@
 import type { Database } from 'better-sqlite3';
 
 import { DatabaseError, ValidationError } from '../errors/index.js';
-import {
-  VideoRowSchema,
-  type VideoRow,
-} from '../schemas/db.js';
-import {
-  asVideoId,
-  asPlaylistId,
-  type PlaylistId,
-  type VideoId,
-} from '../types/index.js';
+import { VideoRowSchema, type VideoRow } from '../schemas/db.js';
+import { asVideoId, asPlaylistId, type PlaylistId, type VideoId } from '../types/index.js';
 import logger from '../utils/logger.js';
 import { DatabaseManager } from './connection.js';
 
@@ -77,8 +69,8 @@ export interface VideoRecord {
   readonly definition?: string | null;
   readonly caption?: number | null;
   readonly licensed_content?: number | null;
-  readonly created_at?: string;
-  readonly updated_at?: string;
+  readonly created_at?: string | null;
+  readonly updated_at?: string | null;
 }
 
 /**
@@ -241,10 +233,7 @@ export class VideoRepository {
       const parsed = VideoRowSchema.parse(raw);
       return rowToRecord(parsed);
     } catch (error) {
-      if (
-        error instanceof DatabaseError ||
-        error instanceof ValidationError
-      ) {
+      if (error instanceof DatabaseError || error instanceof ValidationError) {
         throw error;
       }
       throw new DatabaseError('Failed to load video by ID', {
@@ -294,16 +283,11 @@ export class VideoRepository {
     }
 
     try {
-      const rows = this.db
-        .prepare<readonly number[], unknown>(sql)
-        .all(...params);
+      const rows = this.db.prepare<readonly number[], unknown>(sql).all(...params);
 
       return rows.map((row) => rowToRecord(VideoRowSchema.parse(row)));
     } catch (error) {
-      if (
-        error instanceof DatabaseError ||
-        error instanceof ValidationError
-      ) {
+      if (error instanceof DatabaseError || error instanceof ValidationError) {
         throw error;
       }
       throw new DatabaseError('Failed to list videos', {
@@ -331,17 +315,15 @@ export class VideoRepository {
 
     try {
       const rows = this.db
-        .prepare<readonly string[], unknown>(
-          'SELECT * FROM videos WHERE channel_id = ? ORDER BY id ASC'
-        )
+        .prepare<
+          readonly string[],
+          unknown
+        >('SELECT * FROM videos WHERE channel_id = ? ORDER BY id ASC')
         .all(channelId);
 
       return rows.map((row) => rowToRecord(VideoRowSchema.parse(row)));
     } catch (error) {
-      if (
-        error instanceof DatabaseError ||
-        error instanceof ValidationError
-      ) {
+      if (error instanceof DatabaseError || error instanceof ValidationError) {
         throw error;
       }
       throw new DatabaseError('Failed to list videos by channel', {
@@ -373,10 +355,7 @@ export class VideoRepository {
 
       return rows.map((row) => rowToRecord(VideoRowSchema.parse(row)));
     } catch (error) {
-      if (
-        error instanceof DatabaseError ||
-        error instanceof ValidationError
-      ) {
+      if (error instanceof DatabaseError || error instanceof ValidationError) {
         throw error;
       }
       throw new DatabaseError('Failed to list videos by playlist', {
@@ -407,17 +386,15 @@ export class VideoRepository {
     const pattern = `%${queryText}%`;
     try {
       const rows = this.db
-        .prepare<readonly string[], unknown>(
-          'SELECT * FROM videos WHERE title LIKE ? OR description LIKE ? ORDER BY id ASC'
-        )
+        .prepare<
+          readonly string[],
+          unknown
+        >('SELECT * FROM videos WHERE title LIKE ? OR description LIKE ? ORDER BY id ASC')
         .all(pattern, pattern);
 
       return rows.map((row) => rowToRecord(VideoRowSchema.parse(row)));
     } catch (error) {
-      if (
-        error instanceof DatabaseError ||
-        error instanceof ValidationError
-      ) {
+      if (error instanceof DatabaseError || error instanceof ValidationError) {
         throw error;
       }
       throw new DatabaseError('Failed to search videos', {
@@ -437,9 +414,10 @@ export class VideoRepository {
   exists(videoId: VideoId): boolean {
     try {
       const row = this.db
-        .prepare<readonly string[], { c: number }>(
-          'SELECT COUNT(*) AS c FROM videos WHERE video_id = ?'
-        )
+        .prepare<
+          readonly string[],
+          { c: number }
+        >('SELECT COUNT(*) AS c FROM videos WHERE video_id = ?')
         .get(videoId);
       return (row?.c ?? 0) > 0;
     } catch (error) {
@@ -481,10 +459,7 @@ export class VideoRepository {
     // typing wants one.
     const columnEntries: Array<readonly [string, unknown]> = Object.entries(
       video as unknown as Record<string, unknown>
-    ).filter(
-      ([key, value]) =>
-        WRITABLE_VIDEO_COLUMNS.has(key) && value !== undefined
-    );
+    ).filter(([key, value]) => WRITABLE_VIDEO_COLUMNS.has(key) && value !== undefined);
 
     return this.db.withTransaction((db: Database): VideoRecord => {
       const existing = db
@@ -502,12 +477,8 @@ export class VideoRepository {
           return rowToRecord(parsed);
         }
 
-        const setClauses = columnEntries
-          .map(([key]) => `${key} = ?`)
-          .join(', ');
-        const updateValues = columnEntries.map(([, value]) =>
-          coerceBindable(value)
-        );
+        const setClauses = columnEntries.map(([key]) => `${key} = ?`).join(', ');
+        const updateValues = columnEntries.map(([, value]) => coerceBindable(value));
 
         db.prepare(
           `UPDATE videos SET ${setClauses}, updated_at = datetime('now')
@@ -529,14 +500,12 @@ export class VideoRepository {
 
         const columns = insertEntries.map(([key]) => key).join(', ');
         const placeholders = insertEntries.map(() => '?').join(', ');
-        const insertValues = insertEntries.map(([, value]) =>
-          coerceBindable(value)
-        );
+        const insertValues = insertEntries.map(([, value]) => coerceBindable(value));
 
         try {
-          db.prepare(
-            `INSERT INTO videos (${columns}) VALUES (${placeholders})`
-          ).run(...insertValues);
+          db.prepare(`INSERT INTO videos (${columns}) VALUES (${placeholders})`).run(
+            ...insertValues
+          );
         } catch (error) {
           throw new DatabaseError('Failed to insert video', {
             operation: 'createOrUpdate.insert',
@@ -546,24 +515,18 @@ export class VideoRepository {
           });
         }
 
-        logger.debug(
-          { videoId: video.video_id },
-          'createOrUpdate: inserted new video'
-        );
+        logger.debug({ videoId: video.video_id }, 'createOrUpdate: inserted new video');
       }
 
       const afterRow = db
         .prepare('SELECT * FROM videos WHERE video_id = ?')
         .get(video.video_id) as unknown;
       if (afterRow === undefined || afterRow === null) {
-        throw new DatabaseError(
-          'Video disappeared between write and read-back',
-          {
-            operation: 'createOrUpdate.readBack',
-            table: 'videos',
-            context: { videoId: video.video_id },
-          }
-        );
+        throw new DatabaseError('Video disappeared between write and read-back', {
+          operation: 'createOrUpdate.readBack',
+          table: 'videos',
+          context: { videoId: video.video_id },
+        });
       }
       const parsed = VideoRowSchema.parse(afterRow);
       return rowToRecord(parsed);
@@ -584,9 +547,7 @@ export class VideoRepository {
    */
   delete(videoId: VideoId): boolean {
     return this.db.withTransaction((db: Database): boolean => {
-      const info = db
-        .prepare('DELETE FROM videos WHERE video_id = ?')
-        .run(videoId);
+      const info = db.prepare('DELETE FROM videos WHERE video_id = ?').run(videoId);
       const deleted = info.changes > 0;
       if (deleted) {
         logger.debug({ videoId }, 'Deleted video and cascaded children');
