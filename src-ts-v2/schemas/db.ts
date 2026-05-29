@@ -39,7 +39,7 @@ import { z } from 'zod';
 
 export const SchemaVersionRowSchema = z.object({
   version: z.number().int(),
-  applied_at: z.string().optional(),
+  applied_at: z.string().optional(), // NOT NULL DEFAULT CURRENT_TIMESTAMP per schema.ts: never NULL on disk
 });
 
 // --------------------------------------------------------------------------
@@ -62,8 +62,8 @@ export const VideoRowSchema = z.object({
   definition: z.string().nullable().optional(),
   caption: z.number().int().nullable().optional(), // 0 or 1
   licensed_content: z.number().int().nullable().optional(), // 0 or 1
-  created_at: z.string().optional(),
-  updated_at: z.string().optional(),
+  created_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL)
+  updated_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL)
 });
 
 // --------------------------------------------------------------------------
@@ -76,7 +76,7 @@ export const VideoStatisticRowSchema = z.object({
   view_count: z.number().int().nullable().optional(),
   like_count: z.number().int().nullable().optional(),
   comment_count: z.number().int().nullable().optional(),
-  recorded_at: z.string().optional(),
+  recorded_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL)
 });
 
 // --------------------------------------------------------------------------
@@ -90,7 +90,7 @@ export const TranscriptRowSchema = z.object({
   full_text: z.string(),
   segments_json: z.string().nullable().optional(),
   is_auto_generated: z.number().int().nullable().optional(),
-  extracted_at: z.string().optional(),
+  extracted_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL)
 });
 
 // --------------------------------------------------------------------------
@@ -102,12 +102,7 @@ export const TranscriptRowSchema = z.object({
  * `# 'topic', 'repo', 'website', 'person'`. v2 normalizes `repo` to
  * `github_repo` to match the GeminiParser output key for cleaner joins.
  */
-export const EntityTypeSchema = z.enum([
-  'topic',
-  'github_repo',
-  'website',
-  'person',
-]);
+export const EntityTypeSchema = z.enum(['topic', 'github_repo', 'website', 'person']);
 
 export const ExtractedEntityRowSchema = z.object({
   id: z.number().int().optional(),
@@ -116,7 +111,7 @@ export const ExtractedEntityRowSchema = z.object({
   entity_value: z.string(),
   entity_url: z.string().nullable().optional(),
   confidence: z.number().int().nullable().optional(),
-  extracted_at: z.string().optional(),
+  extracted_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL)
 });
 
 // --------------------------------------------------------------------------
@@ -126,7 +121,7 @@ export const ExtractedEntityRowSchema = z.object({
 export const TagRowSchema = z.object({
   id: z.number().int().optional(),
   tag: z.string(),
-  created_at: z.string().optional(),
+  created_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL)
 });
 
 // --------------------------------------------------------------------------
@@ -150,8 +145,8 @@ export const PlaylistRowSchema = z.object({
   last_checked: z.string().nullable().optional(),
   video_count: z.number().int().nullable().optional(),
   enabled: z.number().int().nullable().optional(),
-  created_at: z.string().optional(),
-  updated_at: z.string().optional(),
+  created_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL)
+  updated_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL)
 });
 
 // --------------------------------------------------------------------------
@@ -170,12 +165,7 @@ export const PlaylistItemRowSchema = z.object({
 // extraction_jobs
 // --------------------------------------------------------------------------
 
-export const ExtractionJobStatusSchema = z.enum([
-  'pending',
-  'running',
-  'completed',
-  'failed',
-]);
+export const ExtractionJobStatusSchema = z.enum(['pending', 'running', 'completed', 'failed']);
 
 export const ExtractionJobRowSchema = z.object({
   id: z.number().int().optional(),
@@ -202,7 +192,7 @@ export const AIAnalysisRowSchema = z.object({
   sentiment: z.string().nullable().optional(),
   content_type: z.string().nullable().optional(),
   model_used: z.string().nullable().optional(),
-  analyzed_at: z.string().optional(),
+  analyzed_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL)
 });
 
 // --------------------------------------------------------------------------

@@ -29,13 +29,13 @@ export class AppError extends Error {
     // Maintains proper stack trace for where our error was thrown
     Error.captureStackTrace(this, this.constructor);
 
-    // Store the original error as cause (set on Error base class)
-    if (options.cause && Error.prototype.hasOwnProperty('cause')) {
-      Object.defineProperty(this, 'cause', {
-        value: options.cause,
-        writable: true,
-        configurable: true,
-      });
+    // Store the original error as cause (set on Error base class).
+    // Note: `cause` is a per-instance property in the ES2022 Error spec, NOT
+    // on Error.prototype — the previous `Error.prototype.hasOwnProperty('cause')`
+    // guard was always false and silently dropped every cause. Attach
+    // unconditionally when supplied.
+    if (options.cause !== undefined) {
+      (this as { cause?: unknown }).cause = options.cause;
     }
   }
 }

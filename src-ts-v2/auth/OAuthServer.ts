@@ -71,9 +71,7 @@ function renderHtml(title: string, heading: string, body: string, color: string)
  * On every terminal event the server is closed and the timeout
  * cleared, so the process can exit cleanly.
  */
-export async function captureAuthorizationCode(
-  options: CaptureOptions = {}
-): Promise<string> {
+export async function captureAuthorizationCode(options: CaptureOptions = {}): Promise<string> {
   const port = options.port ?? 3000;
   const timeout = options.timeout ?? 5 * 60 * 1000;
   const expectedState = options.expectedState;
@@ -158,10 +156,9 @@ export async function captureAuthorizationCode(
           );
           cleanup();
           reject(
-            new AppError(
-              'OAuth state parameter mismatch — possible CSRF attempt',
-              { code: 'OAUTH_STATE_MISMATCH' }
-            )
+            new AppError('OAuth state parameter mismatch — possible CSRF attempt', {
+              code: 'OAUTH_STATE_MISMATCH',
+            })
           );
           return;
         }
@@ -219,10 +216,10 @@ export async function captureAuthorizationCode(
     timeoutId = setTimeout(() => {
       cleanup();
       reject(
-        new AppError(
-          `Authorization timeout — no response received within ${timeout / 1000}s`,
-          { code: 'OAUTH_TIMEOUT', context: { timeoutMs: timeout } }
-        )
+        new AppError(`Authorization timeout — no response received within ${timeout / 1000}s`, {
+          code: 'OAUTH_TIMEOUT',
+          context: { timeoutMs: timeout },
+        })
       );
     }, timeout);
   });
@@ -231,43 +228,26 @@ export async function captureAuthorizationCode(
 /**
  * Open a URL in the user's default browser, cross-platform.
  *
- * Best-effort: if the platform launcher fails the caller can fall back
- * to printing the URL for manual paste-in. The child process is
- * detached and un-refed so it cannot block process exit.
+ * Delegates to the `open` npm package, which handles cross-platform
+ * URL escaping correctly. The previous hand-rolled `cmd /c start ""`
+ * shell-out on Windows truncated OAuth URLs at the first `&` query
+ * separator because `cmd start` interprets `&` as a command separator
+ * — Google then rejected the request with "Required parameter is
+ * missing: response_type".
+ *
+ * `open` v11 returns `Promise<ChildProcess>` that resolves once the
+ * child process is spawned (not when the browser finishes rendering),
+ * which matches our best-effort contract.
  */
 export async function openBrowser(url: string): Promise<void> {
-  const { spawn } = await import('child_process');
-
-  let command: string;
-  let args: string[];
-
-  if (process.platform === 'win32') {
-    command = 'cmd';
-    args = ['/c', 'start', '', url];
-  } else if (process.platform === 'darwin') {
-    command = 'open';
-    args = [url];
-  } else {
-    command = 'xdg-open';
-    args = [url];
+  const open = (await import('open')).default;
+  try {
+    await open(url);
+  } catch (err) {
+    logger.warn({ err }, 'Failed to open browser automatically');
+    throw new AppError('Failed to open browser', {
+      code: 'OPEN_BROWSER_FAILED',
+      cause: err,
+    });
   }
-
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'ignore', detached: true });
-
-    child.on('error', (err) => {
-      logger.warn({ err }, 'Failed to open browser automatically');
-      reject(
-        new AppError('Failed to open browser', {
-          code: 'OPEN_BROWSER_FAILED',
-          cause: err,
-        })
-      );
-    });
-
-    child.on('spawn', () => {
-      child.unref();
-      resolve();
-    });
-  });
 }
