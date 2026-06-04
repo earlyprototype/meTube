@@ -197,18 +197,10 @@ export type YouTubePlaylistItem = z.infer<typeof YouTubePlaylistItemSchema>;
  * Convenience aliases for the most-used paged responses. Callers building
  * other shapes can call `YouTubePageResponseSchema(MySchema)` directly.
  */
-export const YouTubeVideosPageSchema = YouTubePageResponseSchema(
-  YouTubeVideoSchema
-);
-export const YouTubePlaylistsPageSchema = YouTubePageResponseSchema(
-  YouTubePlaylistSchema
-);
-export const YouTubePlaylistItemsPageSchema = YouTubePageResponseSchema(
-  YouTubePlaylistItemSchema
-);
+export const YouTubeVideosPageSchema = YouTubePageResponseSchema(YouTubeVideoSchema);
+export const YouTubePlaylistsPageSchema = YouTubePageResponseSchema(YouTubePlaylistSchema);
+export const YouTubePlaylistItemsPageSchema = YouTubePageResponseSchema(YouTubePlaylistItemSchema);
 
 export type YouTubeVideosPage = z.infer<typeof YouTubeVideosPageSchema>;
 export type YouTubePlaylistsPage = z.infer<typeof YouTubePlaylistsPageSchema>;
-export type YouTubePlaylistItemsPage = z.infer<
-  typeof YouTubePlaylistItemsPageSchema
->;
+export type YouTubePlaylistItemsPage = z.infer<typeof YouTubePlaylistItemsPageSchema>;

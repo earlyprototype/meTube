@@ -186,10 +186,7 @@ export class TranscriptExtractor {
           }
         } else {
           youtubeFailedReason = errorMessage;
-          logger.debug(
-            { videoId, error: errorMessage },
-            'YouTube transcript extraction failed'
-          );
+          logger.debug({ videoId, error: errorMessage }, 'YouTube transcript extraction failed');
           break;
         }
       }
@@ -208,16 +205,11 @@ export class TranscriptExtractor {
           logger.warn({ videoId }, 'Whisper transcription failed');
         } catch (error) {
           const errorMessage =
-            error instanceof Error
-              ? error.message.split('\n')[0].substring(0, 100)
-              : String(error);
+            error instanceof Error ? error.message.split('\n')[0].substring(0, 100) : String(error);
           logger.error({ videoId, error: errorMessage }, 'Whisper extraction error');
         }
       } else {
-        logger.info(
-          { videoId, reason: youtubeFailedReason },
-          'No transcript available'
-        );
+        logger.info({ videoId, reason: youtubeFailedReason }, 'No transcript available');
       }
     }
 
@@ -238,13 +230,11 @@ export class TranscriptExtractor {
         return null;
       }
 
-      const segments: TranscriptSegment[] = transcript.map(
-        (segment: TranscriptResponse) => ({
-          start: segment.offset / 1000,
-          duration: segment.duration / 1000,
-          text: segment.text,
-        })
-      );
+      const segments: TranscriptSegment[] = transcript.map((segment: TranscriptResponse) => ({
+        start: segment.offset / 1000,
+        duration: segment.duration / 1000,
+        text: segment.text,
+      }));
 
       const fullText = segments.map((seg) => seg.text).join(' ');
 
@@ -294,9 +284,7 @@ export class TranscriptExtractor {
    * Extract transcripts for a list of videos. One failure does not cause
    * the rest to fail — each entry's result is independent.
    */
-  async extractBatch(
-    videoIds: string[]
-  ): Promise<Record<string, TranscriptData | null>> {
+  async extractBatch(videoIds: string[]): Promise<Record<string, TranscriptData | null>> {
     if (!Array.isArray(videoIds)) {
       throw new ValidationError('videoIds must be an array', {
         field: 'videoIds',
@@ -379,9 +367,7 @@ export class TranscriptExtractor {
         .toString()
         .padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
-    return `${minutes.toString().padStart(2, '0')}:${secs
-      .toString()
-      .padStart(2, '0')}`;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
 
   /**

@@ -153,9 +153,7 @@ export class ExtractionJobRepository {
       );
 
       const rowId = result.lastInsertRowid;
-      const raw = handle
-        .prepare(`SELECT * FROM ${TABLE} WHERE id = ?`)
-        .get(rowId);
+      const raw = handle.prepare(`SELECT * FROM ${TABLE} WHERE id = ?`).get(rowId);
       if (raw === undefined) {
         // Should be impossible inside the same transaction, but surface
         // honestly if SQLite ever disagrees.
@@ -201,9 +199,7 @@ export class ExtractionJobRepository {
     }
 
     return this.db.withTransaction<ExtractionJobRow | null>((handle) => {
-      const existing = handle
-        .prepare(`SELECT id FROM ${TABLE} WHERE id = ?`)
-        .get(jobId);
+      const existing = handle.prepare(`SELECT id FROM ${TABLE} WHERE id = ?`).get(jobId);
       if (existing === undefined) {
         logger.debug({ jobId: String(jobId) }, 'updateStatus: job not found');
         return null;
@@ -213,10 +209,7 @@ export class ExtractionJobRepository {
       //   - explicit value (including null) wins
       //   - terminal status without explicit value: stamp now
       //   - non-terminal status without explicit value: leave alone
-      const explicitCompletedAt = Object.prototype.hasOwnProperty.call(
-        opts,
-        'completed_at'
-      );
+      const explicitCompletedAt = Object.prototype.hasOwnProperty.call(opts, 'completed_at');
       const completedAtSentinel: string | null | undefined = explicitCompletedAt
         ? (opts.completed_at ?? null)
         : TERMINAL_STATUSES.has(parsedStatus.data)
@@ -251,17 +244,10 @@ export class ExtractionJobRepository {
       }
 
       params.push(jobId);
-      handle
-        .prepare(`UPDATE ${TABLE} SET ${sets.join(', ')} WHERE id = ?`)
-        .run(...params);
+      handle.prepare(`UPDATE ${TABLE} SET ${sets.join(', ')} WHERE id = ?`).run(...params);
 
-      const raw = handle
-        .prepare(`SELECT * FROM ${TABLE} WHERE id = ?`)
-        .get(jobId);
-      logger.debug(
-        { jobId: String(jobId), status: parsedStatus.data },
-        'extraction job updated'
-      );
+      const raw = handle.prepare(`SELECT * FROM ${TABLE} WHERE id = ?`).get(jobId);
+      logger.debug({ jobId: String(jobId), status: parsedStatus.data }, 'extraction job updated');
       return ExtractionJobRowSchema.parse(raw);
     });
   }
@@ -273,9 +259,7 @@ export class ExtractionJobRepository {
    */
   findById(jobId: ExtractionJobId): ExtractionJobRow | null {
     const raw = this.db
-      .prepare<readonly [ExtractionJobId], unknown>(
-        `SELECT * FROM ${TABLE} WHERE id = ?`
-      )
+      .prepare<readonly [ExtractionJobId], unknown>(`SELECT * FROM ${TABLE} WHERE id = ?`)
       .get(jobId);
     if (raw === undefined) {
       return null;
@@ -349,9 +333,10 @@ export class ExtractionJobRepository {
    */
   countByStatus(): Record<ExtractionJobStatus, number> {
     const rows = this.db
-      .prepare<readonly [], { status: string; n: number }>(
-        `SELECT status, COUNT(*) AS n FROM ${TABLE} GROUP BY status`
-      )
+      .prepare<
+        readonly [],
+        { status: string; n: number }
+      >(`SELECT status, COUNT(*) AS n FROM ${TABLE} GROUP BY status`)
       .all();
     const result: Record<ExtractionJobStatus, number> = {
       pending: 0,

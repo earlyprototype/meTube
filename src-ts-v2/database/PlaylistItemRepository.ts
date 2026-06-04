@@ -34,12 +34,7 @@ import {
   type PlaylistItemRow,
   type VideoRow,
 } from '../schemas/db.js';
-import {
-  asPlaylistId,
-  asVideoId,
-  type PlaylistId,
-  type VideoId,
-} from '../types/branded.js';
+import { asPlaylistId, asVideoId, type PlaylistId, type VideoId } from '../types/branded.js';
 import logger from '../utils/logger.js';
 import type { DatabaseManager } from './connection.js';
 
@@ -145,9 +140,7 @@ export class PlaylistItemRepository {
     try {
       const row = this.db.withTransaction((db) => {
         const existing = db
-          .prepare(
-            'SELECT * FROM playlist_items WHERE playlist_id = ? AND video_id = ?'
-          )
+          .prepare('SELECT * FROM playlist_items WHERE playlist_id = ? AND video_id = ?')
           .get(playlistId, videoId) as unknown;
 
         if (existing !== undefined) {
@@ -165,14 +158,11 @@ export class PlaylistItemRepository {
           // Guard against the v1 stub-bomb class — if the INSERT silently
           // produces zero rows we want a loud, traceable failure here, not
           // a missing playlist item discovered three commands later.
-          throw new DatabaseError(
-            'INSERT into playlist_items did not produce a row',
-            {
-              operation: 'addVideoToPlaylist',
-              table: 'playlist_items',
-              context: { playlistId, videoId, position, addedAt: added, changes: info.changes },
-            }
-          );
+          throw new DatabaseError('INSERT into playlist_items did not produce a row', {
+            operation: 'addVideoToPlaylist',
+            table: 'playlist_items',
+            context: { playlistId, videoId, position, addedAt: added, changes: info.changes },
+          });
         }
 
         const created = db
@@ -180,14 +170,11 @@ export class PlaylistItemRepository {
           .get(info.lastInsertRowid) as unknown;
 
         if (created === undefined) {
-          throw new DatabaseError(
-            'Failed to read back newly inserted playlist_items row',
-            {
-              operation: 'addVideoToPlaylist',
-              table: 'playlist_items',
-              context: { playlistId, videoId, lastInsertRowid: String(info.lastInsertRowid) },
-            }
-          );
+          throw new DatabaseError('Failed to read back newly inserted playlist_items row', {
+            operation: 'addVideoToPlaylist',
+            table: 'playlist_items',
+            context: { playlistId, videoId, lastInsertRowid: String(info.lastInsertRowid) },
+          });
         }
 
         return created;
@@ -218,9 +205,7 @@ export class PlaylistItemRepository {
     try {
       const changes = this.db.withTransaction((db) => {
         const info = db
-          .prepare(
-            'DELETE FROM playlist_items WHERE playlist_id = ? AND video_id = ?'
-          )
+          .prepare('DELETE FROM playlist_items WHERE playlist_id = ? AND video_id = ?')
           .run(playlistId, videoId);
         return info.changes;
       });
@@ -284,9 +269,7 @@ export class PlaylistItemRepository {
     `;
 
     try {
-      const rawRows = this.db
-        .prepare<[string], unknown>(SQL)
-        .all(playlistId);
+      const rawRows = this.db.prepare<[string], unknown>(SQL).all(playlistId);
 
       return rawRows.map((raw) => {
         const flat = PlaylistItemWithVideoSchema.parse(raw);
@@ -405,9 +388,7 @@ export class PlaylistItemRepository {
   getPlaylistsForVideo(videoId: VideoId): readonly PlaylistItemRow[] {
     try {
       const rows = this.db
-        .prepare<[string], unknown>(
-          'SELECT * FROM playlist_items WHERE video_id = ?'
-        )
+        .prepare<[string], unknown>('SELECT * FROM playlist_items WHERE video_id = ?')
         .all(videoId);
       return rows.map((raw) => PlaylistItemRowSchema.parse(raw));
     } catch (error) {
@@ -452,9 +433,10 @@ export class PlaylistItemRepository {
   countByPlaylist(playlistId: PlaylistId): number {
     try {
       const row = this.db
-        .prepare<[string], { c: number }>(
-          'SELECT COUNT(*) AS c FROM playlist_items WHERE playlist_id = ?'
-        )
+        .prepare<
+          [string],
+          { c: number }
+        >('SELECT COUNT(*) AS c FROM playlist_items WHERE playlist_id = ?')
         .get(playlistId);
       return row?.c ?? 0;
     } catch (error) {
@@ -475,9 +457,7 @@ export class PlaylistItemRepository {
   clearPlaylist(playlistId: PlaylistId): number {
     try {
       const changes = this.db.withTransaction((db) => {
-        const info = db
-          .prepare('DELETE FROM playlist_items WHERE playlist_id = ?')
-          .run(playlistId);
+        const info = db.prepare('DELETE FROM playlist_items WHERE playlist_id = ?').run(playlistId);
         return info.changes;
       });
       logger.debug({ playlistId, changes }, 'clearPlaylist resolved');

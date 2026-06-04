@@ -329,9 +329,7 @@ describe('YouTubeClient.getPlaylistById', () => {
     playlistsListMock.mockResolvedValueOnce({ data: { items: [makePlaylistItem()] } });
 
     // Act
-    const result = await client.getPlaylistById(
-      asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-    );
+    const result = await client.getPlaylistById(asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'));
 
     // Assert
     expect(result).not.toBeNull();
@@ -348,9 +346,7 @@ describe('YouTubeClient.getPlaylistById', () => {
     playlistsListMock.mockResolvedValueOnce({ data: { items: [] } });
 
     // Act
-    const result = await client.getPlaylistById(
-      asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-    );
+    const result = await client.getPlaylistById(asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'));
 
     // Assert
     expect(result).toBeNull();
@@ -438,9 +434,7 @@ describe('YouTubeClient.getPlaylistItems', () => {
     playlistItemsListMock.mockResolvedValueOnce({ data: { items: [] } });
 
     // Act
-    const items = await client.getPlaylistItems(
-      asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-    );
+    const items = await client.getPlaylistItems(asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'));
 
     // Assert
     expect(items).toEqual([]);
@@ -457,9 +451,7 @@ describe('YouTubeClient.getPlaylistItems', () => {
     });
 
     // Act
-    const items = await client.getPlaylistItems(
-      asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-    );
+    const items = await client.getPlaylistItems(asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'));
 
     // Assert — branded values are still strings at runtime, but at
     // compile time they're VideoId / PlaylistId. Round-trip both
@@ -472,9 +464,7 @@ describe('YouTubeClient.getPlaylistItems', () => {
     expect(playlistId).toBe('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
     // Re-validating succeeds (i.e. the persisted value is a valid ID).
     expect(asVideoId(videoId as string)).toBe('aaaaaaaaaaa');
-    expect(asPlaylistId(playlistId as string)).toBe(
-      'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-    );
+    expect(asPlaylistId(playlistId as string)).toBe('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
   });
 
   it('throws AppError with YOUTUBE_API_PARSE_ERROR on shape-broken page', async () => {

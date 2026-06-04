@@ -31,10 +31,7 @@
 import type { Database } from 'better-sqlite3';
 
 import { DatabaseError } from '../errors/index.js';
-import {
-  VideoStatisticRowSchema,
-  type VideoStatisticRow,
-} from '../schemas/db.js';
+import { VideoStatisticRowSchema, type VideoStatisticRow } from '../schemas/db.js';
 import type { VideoId } from '../types/branded.js';
 import logger from '../utils/logger.js';
 import type { DatabaseManager } from './connection.js';
@@ -114,14 +111,11 @@ export class StatisticsRepository {
         .get(insertedId);
 
       if (raw === undefined) {
-        throw new DatabaseError(
-          'Inserted statistics row could not be read back',
-          {
-            operation: 'recordSnapshot',
-            table: 'video_statistics',
-            context: { videoId, insertedId },
-          }
-        );
+        throw new DatabaseError('Inserted statistics row could not be read back', {
+          operation: 'recordSnapshot',
+          table: 'video_statistics',
+          context: { videoId, insertedId },
+        });
       }
 
       const parsed = VideoStatisticRowSchema.safeParse(raw);
@@ -210,15 +204,12 @@ export class StatisticsRepository {
     return rows.map((raw, index) => {
       const parsed = VideoStatisticRowSchema.safeParse(raw);
       if (!parsed.success) {
-        throw new DatabaseError(
-          'video_statistics row failed schema validation',
-          {
-            operation: 'findHistoryByVideoId',
-            table: 'video_statistics',
-            cause: parsed.error,
-            context: { videoId, rowIndex: index },
-          }
-        );
+        throw new DatabaseError('video_statistics row failed schema validation', {
+          operation: 'findHistoryByVideoId',
+          table: 'video_statistics',
+          cause: parsed.error,
+          context: { videoId, rowIndex: index },
+        });
       }
       return parsed.data;
     });
@@ -274,13 +265,10 @@ export class StatisticsRepository {
     if (raw === undefined) {
       // Even on an empty table, the outer SELECT returns one zeroed row.
       // An undefined result here is genuinely unexpected.
-      throw new DatabaseError(
-        'aggregateTotalsAcrossVideos returned no row',
-        {
-          operation: 'aggregateTotalsAcrossVideos',
-          table: 'video_statistics',
-        }
-      );
+      throw new DatabaseError('aggregateTotalsAcrossVideos returned no row', {
+        operation: 'aggregateTotalsAcrossVideos',
+        table: 'video_statistics',
+      });
     }
 
     return {

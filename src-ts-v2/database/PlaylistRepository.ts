@@ -30,10 +30,7 @@
  */
 
 import { DatabaseError, ValidationError } from '../errors/index.js';
-import {
-  PlaylistRowSchema,
-  type PlaylistRow,
-} from '../schemas/db.js';
+import { PlaylistRowSchema, type PlaylistRow } from '../schemas/db.js';
 import { asPlaylistId, type PlaylistId } from '../types/branded.js';
 import logger from '../utils/logger.js';
 
@@ -128,9 +125,7 @@ export class PlaylistRepository {
   findById(playlistId: PlaylistId): Playlist | null {
     try {
       const raw = this.db
-        .prepare<[string], unknown>(
-          'SELECT * FROM playlists WHERE playlist_id = ?'
-        )
+        .prepare<[string], unknown>('SELECT * FROM playlists WHERE playlist_id = ?')
         .get(playlistId);
 
       if (raw === undefined) {
@@ -213,10 +208,10 @@ export class PlaylistRepository {
     // as `DatabaseError('Transaction rolled back', ...)` — which is
     // the same outcome as before.
     if (input.title === undefined && !this.exists(playlistId)) {
-      throw new ValidationError(
-        'title is required when creating a new playlist',
-        { field: 'title', value: input.title }
-      );
+      throw new ValidationError('title is required when creating a new playlist', {
+        field: 'title',
+        value: input.title,
+      });
     }
 
     return this.db.withTransaction((db) => {
@@ -259,12 +254,12 @@ export class PlaylistRepository {
           return rowToDomain(parsed);
         }
 
-        setClauses.push("updated_at = CURRENT_TIMESTAMP");
+        setClauses.push('updated_at = CURRENT_TIMESTAMP');
         values.push(playlistId);
 
-        db.prepare(
-          `UPDATE playlists SET ${setClauses.join(', ')} WHERE playlist_id = ?`
-        ).run(...values);
+        db.prepare(`UPDATE playlists SET ${setClauses.join(', ')} WHERE playlist_id = ?`).run(
+          ...values
+        );
 
         logger.info({ playlistId }, 'Playlist updated');
       } else {
@@ -275,14 +270,11 @@ export class PlaylistRepository {
         // this assertion is a defense-in-depth narrow for the
         // SQLite NOT NULL contract.
         if (input.title === undefined) {
-          throw new DatabaseError(
-            'title is required when creating a new playlist',
-            {
-              operation: 'createOrUpdate',
-              table: 'playlists',
-              context: { playlistId },
-            }
-          );
+          throw new DatabaseError('title is required when creating a new playlist', {
+            operation: 'createOrUpdate',
+            table: 'playlists',
+            context: { playlistId },
+          });
         }
 
         db.prepare(
@@ -306,14 +298,11 @@ export class PlaylistRepository {
         .get(playlistId);
 
       if (writtenRaw === undefined) {
-        throw new DatabaseError(
-          'Failed to read back playlist after createOrUpdate',
-          {
-            operation: 'createOrUpdate',
-            table: 'playlists',
-            context: { playlistId },
-          }
-        );
+        throw new DatabaseError('Failed to read back playlist after createOrUpdate', {
+          operation: 'createOrUpdate',
+          table: 'playlists',
+          context: { playlistId },
+        });
       }
 
       const parsed = parseRowOrThrow(writtenRaw, 'createOrUpdate');
@@ -331,9 +320,7 @@ export class PlaylistRepository {
    */
   delete(playlistId: PlaylistId): void {
     this.db.withTransaction((db) => {
-      db.prepare('DELETE FROM playlists WHERE playlist_id = ?').run(
-        playlistId
-      );
+      db.prepare('DELETE FROM playlists WHERE playlist_id = ?').run(playlistId);
     });
     logger.info({ playlistId }, 'Playlist deleted');
   }
@@ -347,9 +334,10 @@ export class PlaylistRepository {
   exists(playlistId: PlaylistId): boolean {
     try {
       const row = this.db
-        .prepare<[string], { c: number }>(
-          'SELECT COUNT(*) AS c FROM playlists WHERE playlist_id = ?'
-        )
+        .prepare<
+          [string],
+          { c: number }
+        >('SELECT COUNT(*) AS c FROM playlists WHERE playlist_id = ?')
         .get(playlistId);
       return (row?.c ?? 0) > 0;
     } catch (error) {

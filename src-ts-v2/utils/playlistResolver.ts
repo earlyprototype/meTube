@@ -110,10 +110,10 @@ export async function resolvePlaylistIdentifier(
       if (branded === null) {
         // URL contained `list=` but the value is not a valid playlist ID.
         // Surface this as a validation problem rather than a silent miss.
-        throw new ValidationError(
-          'YouTube URL contained an invalid playlist ID',
-          { field: 'list', value: candidate }
-        );
+        throw new ValidationError('YouTube URL contained an invalid playlist ID', {
+          field: 'list',
+          value: candidate,
+        });
       }
       const title = await getPlaylistTitle(branded, ctx.db);
       return { id: branded, title, source: 'url' };
@@ -221,10 +221,7 @@ async function getPlaylistTitle(
  * function is async only because cache-loading kept the `async` shape in
  * v1 — we match it for callsite compatibility.
  */
-function searchDatabase(
-  query: string,
-  db: DatabaseManager
-): PlaylistResolution | null {
+function searchDatabase(query: string, db: DatabaseManager): PlaylistResolution | null {
   let allPlaylists: ReturnType<PlaylistRepository['findAll']>;
   try {
     const repo = new PlaylistRepository(db);
@@ -238,8 +235,7 @@ function searchDatabase(
 
   const lowerQuery = query.toLowerCase();
   const matches = allPlaylists.filter(
-    (p) =>
-      p.title.toLowerCase().includes(lowerQuery) || p.playlistId === query
+    (p) => p.title.toLowerCase().includes(lowerQuery) || p.playlistId === query
   );
 
   if (matches.length === 1) {

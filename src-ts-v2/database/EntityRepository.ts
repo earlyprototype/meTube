@@ -135,11 +135,7 @@ export class EntityRepository {
        WHERE video_id = ? AND entity_type = ?
        ORDER BY id ASC`
     );
-    return this.parseRows(
-      stmt.all(videoId, type),
-      'findByVideoIdAndType',
-      videoId
-    );
+    return this.parseRows(stmt.all(videoId, type), 'findByVideoIdAndType', videoId);
   }
 
   /**
@@ -217,22 +213,13 @@ export class EntityRepository {
 
       let inserted = 0;
       for (const entity of narrowed) {
-        const info = insert.run(
-          videoId,
-          entity.type,
-          entity.value,
-          entity.url,
-          entity.confidence
-        );
+        const info = insert.run(videoId, entity.type, entity.value, entity.url, entity.confidence);
         // changes is `number | bigint` in better-sqlite3 types; ours never
         // overflows JS-safe-int for a single INSERT.
         inserted += Number(info.changes);
       }
 
-      logger.debug(
-        { videoId, count: inserted },
-        'EntityRepository.insertMany committed'
-      );
+      logger.debug({ videoId, count: inserted }, 'EntityRepository.insertMany committed');
       return inserted;
     });
   }
@@ -245,14 +232,9 @@ export class EntityRepository {
    */
   deleteByVideoId(videoId: VideoId): number {
     return this.dbm.withTransaction((db: Database): number => {
-      const info = db
-        .prepare('DELETE FROM extracted_entities WHERE video_id = ?')
-        .run(videoId);
+      const info = db.prepare('DELETE FROM extracted_entities WHERE video_id = ?').run(videoId);
       const removed = Number(info.changes);
-      logger.debug(
-        { videoId, removed },
-        'EntityRepository.deleteByVideoId committed'
-      );
+      logger.debug({ videoId, removed }, 'EntityRepository.deleteByVideoId committed');
       return removed;
     });
   }
@@ -264,11 +246,7 @@ export class EntityRepository {
    * Called inside the transaction so a bad enum value aborts the whole
    * batch (rollback discipline).
    */
-  private narrowEntity(
-    raw: EntityInput,
-    videoId: VideoId,
-    index: number
-  ): ValidatedEntityInput {
+  private narrowEntity(raw: EntityInput, videoId: VideoId, index: number): ValidatedEntityInput {
     const typeResult = EntityTypeSchema.safeParse(raw.type);
     if (!typeResult.success) {
       throw new ValidationError('Invalid entity_type', {
@@ -295,11 +273,7 @@ export class EntityRepository {
    * declared invariants — that is a corruption signal, not a user error,
    * so it surfaces as `DatabaseError`.
    */
-  private parseRows(
-    rows: unknown[],
-    operation: string,
-    videoId: VideoId
-  ): ExtractedEntityRow[] {
+  private parseRows(rows: unknown[], operation: string, videoId: VideoId): ExtractedEntityRow[] {
     return rows.map((row, index) => {
       const result = ExtractedEntityRowSchema.safeParse(row);
       if (!result.success) {

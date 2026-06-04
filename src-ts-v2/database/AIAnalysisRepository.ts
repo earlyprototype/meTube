@@ -25,14 +25,8 @@
 import { ZodError } from 'zod';
 
 import { DatabaseError } from '../errors/index.js';
-import {
-  AIAnalysisRowSchema,
-  type AIAnalysisRow,
-} from '../schemas/db.js';
-import {
-  GeminiResponseSchema,
-  type GeminiResponse,
-} from '../schemas/gemini.js';
+import { AIAnalysisRowSchema, type AIAnalysisRow } from '../schemas/db.js';
+import { GeminiResponseSchema, type GeminiResponse } from '../schemas/gemini.js';
 import type { VideoId } from '../types/index.js';
 import logger from '../utils/logger.js';
 
@@ -184,11 +178,7 @@ export class AIAnalysisRepository {
    * @returns The persisted projection (a fresh read of the just-written row).
    * @throws {DatabaseError} If the Zod parse fails or the SQL throws.
    */
-  upsert(
-    videoId: VideoId,
-    analysis: GeminiResponse,
-    modelUsed: string
-  ): AIAnalysis {
+  upsert(videoId: VideoId, analysis: GeminiResponse, modelUsed: string): AIAnalysis {
     let validated: GeminiResponse;
     try {
       validated = GeminiResponseSchema.parse(analysis);
@@ -227,14 +217,7 @@ export class AIAnalysisRepository {
              model_used = excluded.model_used,
              analyzed_at = CURRENT_TIMESTAMP`
         )
-        .run(
-          videoId,
-          summary,
-          keyPointsJson,
-          sentiment,
-          contentType,
-          modelUsed
-        );
+        .run(videoId, summary, keyPointsJson, sentiment, contentType, modelUsed);
     });
 
     const persisted = this.getByVideo(videoId);
@@ -262,9 +245,7 @@ export class AIAnalysisRepository {
    */
   deleteByVideo(videoId: VideoId): number {
     return this.db.withTransaction((conn) => {
-      const info = conn
-        .prepare(`DELETE FROM ai_analysis WHERE video_id = ?`)
-        .run(videoId);
+      const info = conn.prepare(`DELETE FROM ai_analysis WHERE video_id = ?`).run(videoId);
       return Number(info.changes);
     });
   }
@@ -275,9 +256,7 @@ export class AIAnalysisRepository {
    */
   exists(videoId: VideoId): boolean {
     const row = this.db
-      .prepare<[string], { c: number }>(
-        `SELECT COUNT(*) AS c FROM ai_analysis WHERE video_id = ?`
-      )
+      .prepare<[string], { c: number }>(`SELECT COUNT(*) AS c FROM ai_analysis WHERE video_id = ?`)
       .get(videoId);
     return (row?.c ?? 0) > 0;
   }
@@ -288,9 +267,7 @@ export class AIAnalysisRepository {
    * trivial extension that some callers (report-side stats) ask for.
    */
   count(): number {
-    const row = this.db
-      .prepare<[], { c: number }>(`SELECT COUNT(*) AS c FROM ai_analysis`)
-      .get();
+    const row = this.db.prepare<[], { c: number }>(`SELECT COUNT(*) AS c FROM ai_analysis`).get();
     return row?.c ?? 0;
   }
 }

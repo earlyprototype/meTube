@@ -348,8 +348,7 @@ function makeYouTubeClientAdapter(client: YouTubeClient): YouTubeClientLike {
       opts: PlaylistVideoOptions = {}
     ): Promise<readonly PlaylistVideoItem[]> {
       const items = await client.getPlaylistItems(playlistId);
-      const capped =
-        opts.maxResults !== undefined ? items.slice(0, opts.maxResults) : items;
+      const capped = opts.maxResults !== undefined ? items.slice(0, opts.maxResults) : items;
       return capped.map((it) => ({
         videoId: it.videoId,
         title: it.title ?? '',

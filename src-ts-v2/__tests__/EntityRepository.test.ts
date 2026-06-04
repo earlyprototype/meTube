@@ -107,12 +107,7 @@ describe('EntityRepository.insertMany — empty + happy path', () => {
 
     const rows = repo.findByVideoId(videoId);
     expect(rows.length).toBe(SAMPLE_BATCH.length);
-    expect(rows.map((r) => r.entity_type)).toEqual([
-      'topic',
-      'github_repo',
-      'website',
-      'person',
-    ]);
+    expect(rows.map((r) => r.entity_type)).toEqual(['topic', 'github_repo', 'website', 'person']);
     expect(rows.map((r) => r.entity_value)).toEqual([
       'machine learning',
       'anthropic/claude-code',
@@ -240,9 +235,9 @@ describe('EntityRepository.insertMany — rollback on invalid type', () => {
     // typed error reaches the caller without being wrapped in a generic
     // DatabaseError. No INSERT has happened, so rollback semantics are
     // trivially preserved.
-    expect(() =>
-      repo.insertMany(videoId, [{ type: 'bogus', value: 'x' }])
-    ).toThrow(ValidationError);
+    expect(() => repo.insertMany(videoId, [{ type: 'bogus', value: 'x' }])).toThrow(
+      ValidationError
+    );
 
     // Assert — DatabaseError reference is exported (used by the row-parse
     // failure test below); ensure linter retains the import path.
@@ -460,9 +455,7 @@ describe('EntityRepository — reads parse through ExtractedEntityRowSchema', ()
     // Arrange
     const videoId = asVideoId(VIDEO_A);
     seedVideo(dbm, videoId);
-    repo.insertMany(videoId, [
-      { type: 'topic', value: 'shape test', confidence: 42 },
-    ]);
+    repo.insertMany(videoId, [{ type: 'topic', value: 'shape test', confidence: 42 }]);
 
     // Act
     const [row] = repo.findByVideoId(videoId);

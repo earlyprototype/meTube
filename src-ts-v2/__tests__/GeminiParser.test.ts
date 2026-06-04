@@ -298,12 +298,12 @@ describe('GeminiParser', () => {
         sentiment: 'positive',
       });
 
-      await expect(
-        parser.parseTranscript({ transcript: 't', videoTitle: 'v' })
-      ).rejects.toThrow(ValidationError);
-      await expect(
-        parser.parseTranscript({ transcript: 't', videoTitle: 'v' })
-      ).rejects.toThrow(/schema validation/);
+      await expect(parser.parseTranscript({ transcript: 't', videoTitle: 'v' })).rejects.toThrow(
+        ValidationError
+      );
+      await expect(parser.parseTranscript({ transcript: 't', videoTitle: 'v' })).rejects.toThrow(
+        /schema validation/
+      );
     });
 
     it('throws ValidationError when github_repos entry is missing required name', async () => {
@@ -318,9 +318,9 @@ describe('GeminiParser', () => {
         sentiment: 'positive',
       });
 
-      await expect(
-        parser.parseTranscript({ transcript: 't', videoTitle: 'v' })
-      ).rejects.toThrow(ValidationError);
+      await expect(parser.parseTranscript({ transcript: 't', videoTitle: 'v' })).rejects.toThrow(
+        ValidationError
+      );
     });
 
     it('throws ValidationError when sentiment is outside the enum', async () => {
@@ -335,9 +335,9 @@ describe('GeminiParser', () => {
         sentiment: 'enthusiastic',
       });
 
-      await expect(
-        parser.parseTranscript({ transcript: 't', videoTitle: 'v' })
-      ).rejects.toThrow(ValidationError);
+      await expect(parser.parseTranscript({ transcript: 't', videoTitle: 'v' })).rejects.toThrow(
+        ValidationError
+      );
     });
 
     it('throws ValidationError when people contains non-string entries', async () => {
@@ -352,9 +352,9 @@ describe('GeminiParser', () => {
         sentiment: 'positive',
       });
 
-      await expect(
-        parser.parseTranscript({ transcript: 't', videoTitle: 'v' })
-      ).rejects.toThrow(ValidationError);
+      await expect(parser.parseTranscript({ transcript: 't', videoTitle: 'v' })).rejects.toThrow(
+        ValidationError
+      );
     });
   });
 

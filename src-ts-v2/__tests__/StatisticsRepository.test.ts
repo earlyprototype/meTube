@@ -94,9 +94,10 @@ describe('StatisticsRepository.recordSnapshot', () => {
 
     // Assert — the row is actually visible to a subsequent read
     const count = dbm
-      .prepare<[VideoId], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?'
-      )
+      .prepare<
+        [VideoId],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?')
       .get(VIDEO_A);
     expect(count?.c).toBe(1);
   });
@@ -119,24 +120,24 @@ describe('StatisticsRepository.recordSnapshot', () => {
 
     // Assert — three distinct rows, not one mutated row
     const count = dbm
-      .prepare<[VideoId], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?'
-      )
+      .prepare<
+        [VideoId],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?')
       .get(VIDEO_A);
     expect(count?.c).toBe(3);
   });
 
   it('honours the FK constraint and rejects snapshots for unknown videos', () => {
     // Act + Assert — UNRECORDED has no parent row in `videos`
-    expect(() =>
-      repo.recordSnapshot(UNRECORDED, { viewCount: 1 })
-    ).toThrow();
+    expect(() => repo.recordSnapshot(UNRECORDED, { viewCount: 1 })).toThrow();
 
     // And no orphan row was written
     const count = dbm
-      .prepare<[VideoId], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?'
-      )
+      .prepare<
+        [VideoId],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?')
       .get(UNRECORDED);
     expect(count?.c).toBe(0);
   });
@@ -176,9 +177,10 @@ describe('StatisticsRepository — rollback discipline', () => {
 
     // No row should remain for VIDEO_A
     const count = dbm
-      .prepare<[VideoId], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?'
-      )
+      .prepare<
+        [VideoId],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?')
       .get(VIDEO_A);
     expect(count?.c).toBe(0);
   });

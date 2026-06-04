@@ -273,9 +273,7 @@ describe('GeminiResponseSchema', () => {
     // Arrange — modelled on the JSON the prompt asks Gemini to return
     const response = {
       topics: ['Machine Learning', 'Python'],
-      github_repos: [
-        { name: 'tensorflow', url: 'https://github.com/tensorflow/tensorflow' },
-      ],
+      github_repos: [{ name: 'tensorflow', url: 'https://github.com/tensorflow/tensorflow' }],
       websites: [{ name: 'arxiv', url: 'https://arxiv.org' }],
       people: ['Andrew Ng'],
       tags: ['ml', 'python'],
@@ -526,9 +524,7 @@ describe('VideoTagRowSchema', () => {
 
   it('rejects when tag_id is not a number', () => {
     // Arrange + Act + Assert
-    expect(() =>
-      VideoTagRowSchema.parse({ video_id: 'dQw4w9WgXcQ', tag_id: 'seven' })
-    ).toThrow();
+    expect(() => VideoTagRowSchema.parse({ video_id: 'dQw4w9WgXcQ', tag_id: 'seven' })).toThrow();
   });
 });
 
@@ -642,9 +638,7 @@ describe('VideoStatisticRowSchema', () => {
 
   it('rejects when video_id is not a string', () => {
     // Arrange + Act + Assert
-    expect(() =>
-      VideoStatisticRowSchema.parse({ video_id: 123, view_count: 0 })
-    ).toThrow();
+    expect(() => VideoStatisticRowSchema.parse({ video_id: 123, view_count: 0 })).toThrow();
   });
 });
 

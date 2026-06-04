@@ -127,10 +127,7 @@ export class WhisperExtractor {
     }
 
     if (!this.isAvailable()) {
-      logger.warn(
-        { videoId, reason: this.getUnavailableReason() },
-        'Whisper not available'
-      );
+      logger.warn({ videoId, reason: this.getUnavailableReason() }, 'Whisper not available');
       return null;
     }
 
@@ -281,10 +278,7 @@ export class WhisperExtractor {
    * Run the Python whisper subprocess on `audioPath`. The subprocess emits
    * JSON between the marker lines; this method extracts and parses it.
    */
-  private async transcribeAudio(
-    audioPath: string,
-    videoId: string
-  ): Promise<TranscriptData> {
+  private async transcribeAudio(audioPath: string, videoId: string): Promise<TranscriptData> {
     return new Promise((resolve, reject) => {
       const pythonScript = `
 import sys
@@ -339,9 +333,7 @@ print('JSON_OUTPUT_END')
 
         if (code === 0) {
           try {
-            const jsonMatch = stdout.match(
-              /JSON_OUTPUT_START\s*\n([\s\S]*?)\nJSON_OUTPUT_END/
-            );
+            const jsonMatch = stdout.match(/JSON_OUTPUT_START\s*\n([\s\S]*?)\nJSON_OUTPUT_END/);
             if (!jsonMatch) {
               throw new Error('JSON markers not found in output');
             }

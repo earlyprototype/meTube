@@ -31,16 +31,8 @@ import { StatisticsRepository } from '../database/StatisticsRepository.js';
 import { TranscriptRepository } from '../database/TranscriptRepository.js';
 import { VideoRepository } from '../database/VideoRepository.js';
 import { AppError } from '../errors/index.js';
-import {
-  HTMLReportGenerator,
-  REPORT_ERROR_CODES,
-} from '../reports/HTMLReportGenerator.js';
-import {
-  asPlaylistId,
-  asVideoId,
-  type PlaylistId,
-  type VideoId,
-} from '../types/index.js';
+import { HTMLReportGenerator, REPORT_ERROR_CODES } from '../reports/HTMLReportGenerator.js';
+import { asPlaylistId, asVideoId, type PlaylistId, type VideoId } from '../types/index.js';
 import type { GeminiResponse } from '../schemas/gemini.js';
 
 // --------------------------------------------------------------------------
@@ -198,7 +190,11 @@ function seedVideo(dbm: DatabaseManager, opts: SeedVideoOptions): VideoId {
   return opts.videoId;
 }
 
-function seedPlaylist(dbm: DatabaseManager, playlistId: PlaylistId, title = 'Fixture playlist'): PlaylistId {
+function seedPlaylist(
+  dbm: DatabaseManager,
+  playlistId: PlaylistId,
+  title = 'Fixture playlist'
+): PlaylistId {
   const repo = new PlaylistRepository(dbm);
   repo.createOrUpdate({ playlistId, title });
   return playlistId;
@@ -217,9 +213,7 @@ function attachVideoToPlaylist(
 function makeGeminiResponse(overrides: Partial<GeminiResponse> = {}): GeminiResponse {
   return {
     topics: ['machine learning', 'rust'],
-    github_repos: [
-      { name: 'serde-rs/serde', url: 'https://github.com/serde-rs/serde' },
-    ],
+    github_repos: [{ name: 'serde-rs/serde', url: 'https://github.com/serde-rs/serde' }],
     websites: [{ name: 'rust-lang.org', url: 'https://rust-lang.org' }],
     people: ['Alice Hacker'],
     tags: ['rust', 'ml'],
@@ -439,12 +433,10 @@ describe('HTMLReportGenerator.generateVideoReport', () => {
     const videoId = asVideoId('NONEXISTENT');
 
     // Act + Assert — typed error, structured code, no file written.
-    await expect(
-      h.generator.generateVideoReport(videoId, h.outputDir)
-    ).rejects.toThrow(AppError);
-    await expect(
-      h.generator.generateVideoReport(videoId, h.outputDir)
-    ).rejects.toMatchObject({ code: REPORT_ERROR_CODES.VIDEO_NOT_FOUND });
+    await expect(h.generator.generateVideoReport(videoId, h.outputDir)).rejects.toThrow(AppError);
+    await expect(h.generator.generateVideoReport(videoId, h.outputDir)).rejects.toMatchObject({
+      code: REPORT_ERROR_CODES.VIDEO_NOT_FOUND,
+    });
   });
 
   it('throws ValidationError when outputDir is empty', async () => {
@@ -482,9 +474,7 @@ describe('HTMLReportGenerator template loading', () => {
 
     try {
       // Act + Assert
-      await expect(
-        generator.generateVideoReport(videoId, h.outputDir)
-      ).rejects.toMatchObject({
+      await expect(generator.generateVideoReport(videoId, h.outputDir)).rejects.toMatchObject({
         code: REPORT_ERROR_CODES.TEMPLATE_NOT_FOUND,
       });
     } finally {
@@ -533,10 +523,7 @@ describe('HTMLReportGenerator.generatePlaylistReport', () => {
     attachVideoToPlaylist(h.dbm, playlistId, v3, 2);
 
     // Act
-    const filepath = await h.generator.generatePlaylistReport(
-      playlistId,
-      h.outputDir
-    );
+    const filepath = await h.generator.generatePlaylistReport(playlistId, h.outputDir);
     const html = fs.readFileSync(filepath, 'utf-8');
 
     // Assert — every marker title is present and the count is exactly 3.
@@ -550,10 +537,7 @@ describe('HTMLReportGenerator.generatePlaylistReport', () => {
     // Arrange — two videos that share a topic and a repo, plus one
     // video-unique topic. Aggregation must produce counts that reflect
     // both sharing and uniqueness.
-    const playlistId = seedPlaylist(
-      h.dbm,
-      asPlaylistId('PLBCF2DAC6FFB574DE')
-    );
+    const playlistId = seedPlaylist(h.dbm, asPlaylistId('PLBCF2DAC6FFB574DE'));
     const v1 = seedVideo(h.dbm, { videoId: asVideoId('AGG00000001') });
     const v2 = seedVideo(h.dbm, { videoId: asVideoId('AGG00000002') });
     attachVideoToPlaylist(h.dbm, playlistId, v1, 0);
@@ -581,10 +565,7 @@ describe('HTMLReportGenerator.generatePlaylistReport', () => {
     ]);
 
     // Act
-    const filepath = await h.generator.generatePlaylistReport(
-      playlistId,
-      h.outputDir
-    );
+    const filepath = await h.generator.generatePlaylistReport(playlistId, h.outputDir);
     const html = fs.readFileSync(filepath, 'utf-8');
 
     // Assert — shared topic count is 2; v1-only topic is present; repo is
@@ -602,11 +583,11 @@ describe('HTMLReportGenerator.generatePlaylistReport', () => {
     const playlistId = asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
 
     // Act + Assert
-    await expect(
-      h.generator.generatePlaylistReport(playlistId, h.outputDir)
-    ).rejects.toMatchObject({
-      code: REPORT_ERROR_CODES.PLAYLIST_NOT_FOUND,
-    });
+    await expect(h.generator.generatePlaylistReport(playlistId, h.outputDir)).rejects.toMatchObject(
+      {
+        code: REPORT_ERROR_CODES.PLAYLIST_NOT_FOUND,
+      }
+    );
   });
 
   it('throws AppError REPORT_PLAYLIST_EMPTY for a playlist with zero videos', async () => {
@@ -618,19 +599,16 @@ describe('HTMLReportGenerator.generatePlaylistReport', () => {
     );
 
     // Act + Assert
-    await expect(
-      h.generator.generatePlaylistReport(playlistId, h.outputDir)
-    ).rejects.toMatchObject({
-      code: REPORT_ERROR_CODES.PLAYLIST_EMPTY,
-    });
+    await expect(h.generator.generatePlaylistReport(playlistId, h.outputDir)).rejects.toMatchObject(
+      {
+        code: REPORT_ERROR_CODES.PLAYLIST_EMPTY,
+      }
+    );
   });
 
   it('totals duration and transcript percentage across the playlist', async () => {
     // Arrange — 2 videos, 60s + 120s, one with a transcript.
-    const playlistId = seedPlaylist(
-      h.dbm,
-      asPlaylistId('PLtotalstotalstotals')
-    );
+    const playlistId = seedPlaylist(h.dbm, asPlaylistId('PLtotalstotalstotals'));
     const v1 = seedVideo(h.dbm, {
       videoId: asVideoId('DURATION001'),
       durationSeconds: 60,
@@ -651,10 +629,7 @@ describe('HTMLReportGenerator.generatePlaylistReport', () => {
     });
 
     // Act
-    const filepath = await h.generator.generatePlaylistReport(
-      playlistId,
-      h.outputDir
-    );
+    const filepath = await h.generator.generatePlaylistReport(playlistId, h.outputDir);
     const html = fs.readFileSync(filepath, 'utf-8');
 
     // Assert — 60 + 120 = 180s = 3 minutes total, 1 of 2 = 50%.
@@ -666,10 +641,7 @@ describe('HTMLReportGenerator.generatePlaylistReport', () => {
   it('uses AI analysis summary for video cards when present', async () => {
     // Arrange — a playlist video with a stored analysis. The summary
     // should appear on the per-video card in the playlist report.
-    const playlistId = seedPlaylist(
-      h.dbm,
-      asPlaylistId('PLanlanlanlanlanlanl')
-    );
+    const playlistId = seedPlaylist(h.dbm, asPlaylistId('PLanlanlanlanlanlanl'));
     const videoId = seedVideo(h.dbm, {
       videoId: asVideoId('PLISTANL001'),
       title: 'Video with analysis',
@@ -686,10 +658,7 @@ describe('HTMLReportGenerator.generatePlaylistReport', () => {
     );
 
     // Act
-    const filepath = await h.generator.generatePlaylistReport(
-      playlistId,
-      h.outputDir
-    );
+    const filepath = await h.generator.generatePlaylistReport(playlistId, h.outputDir);
     const html = fs.readFileSync(filepath, 'utf-8');
 
     // Assert — the playlist report carries the per-video AI summary text.
