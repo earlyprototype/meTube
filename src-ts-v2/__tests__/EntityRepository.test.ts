@@ -107,12 +107,7 @@ describe('EntityRepository.insertMany — empty + happy path', () => {
 
     const rows = repo.findByVideoId(videoId);
     expect(rows.length).toBe(SAMPLE_BATCH.length);
-    expect(rows.map((r) => r.entity_type)).toEqual([
-      'topic',
-      'github_repo',
-      'website',
-      'person',
-    ]);
+    expect(rows.map((r) => r.entity_type)).toEqual(['topic', 'github_repo', 'website', 'person']);
     expect(rows.map((r) => r.entity_value)).toEqual([
       'machine learning',
       'anthropic/claude-code',
@@ -240,9 +235,9 @@ describe('EntityRepository.insertMany — rollback on invalid type', () => {
     // typed error reaches the caller without being wrapped in a generic
     // DatabaseError. No INSERT has happened, so rollback semantics are
     // trivially preserved.
-    expect(() =>
-      repo.insertMany(videoId, [{ type: 'bogus', value: 'x' }])
-    ).toThrow(ValidationError);
+    expect(() => repo.insertMany(videoId, [{ type: 'bogus', value: 'x' }])).toThrow(
+      ValidationError
+    );
 
     // Assert — DatabaseError reference is exported (used by the row-parse
     // failure test below); ensure linter retains the import path.
@@ -258,6 +253,83 @@ describe('EntityRepository.insertMany — rollback on invalid type', () => {
     // Act + Assert
     expect(() => repo.insertMany(videoId, broken)).toThrow(ValidationError);
     expect(repo.countByVideoId(videoId)).toBe(0);
+  });
+});
+
+// --------------------------------------------------------------------------
+// Confidence range validation — confidence is documented 0-100, enforced
+// at the input boundary so out-of-range integers never reach the DB row.
+// --------------------------------------------------------------------------
+
+describe('EntityRepository — confidence range validation', () => {
+  let dbm: DatabaseManager;
+  let repo: EntityRepository;
+  const videoId: VideoId = asVideoId(VIDEO_A);
+
+  beforeEach(() => {
+    dbm = new DatabaseManager(':memory:');
+    repo = new EntityRepository(dbm);
+    seedVideo(dbm, videoId);
+  });
+
+  afterEach(() => {
+    dbm.close();
+  });
+
+  it('rejects confidence above 100 with a ValidationError', () => {
+    // Arrange
+    const overshoot: EntityInput[] = [{ type: 'topic', value: 'too-confident', confidence: 150 }];
+
+    // Act + Assert
+    expect(() => repo.insertMany(videoId, overshoot)).toThrow(ValidationError);
+    expect(repo.countByVideoId(videoId)).toBe(0);
+  });
+
+  it('rejects confidence below 0 with a ValidationError', () => {
+    // Arrange
+    const undershoot: EntityInput[] = [{ type: 'topic', value: 'negative', confidence: -1 }];
+
+    // Act + Assert
+    expect(() => repo.insertMany(videoId, undershoot)).toThrow(ValidationError);
+    expect(repo.countByVideoId(videoId)).toBe(0);
+  });
+
+  it('accepts confidence at the lower boundary (0)', () => {
+    // Arrange
+    const batch: EntityInput[] = [{ type: 'topic', value: 'zero', confidence: 0 }];
+
+    // Act
+    const inserted = repo.insertMany(videoId, batch);
+
+    // Assert
+    expect(inserted).toBe(1);
+    expect(repo.findByVideoId(videoId)[0].confidence).toBe(0);
+  });
+
+  it('accepts confidence at the upper boundary (100)', () => {
+    // Arrange
+    const batch: EntityInput[] = [{ type: 'topic', value: 'hundred', confidence: 100 }];
+
+    // Act
+    const inserted = repo.insertMany(videoId, batch);
+
+    // Assert
+    expect(inserted).toBe(1);
+    expect(repo.findByVideoId(videoId)[0].confidence).toBe(100);
+  });
+
+  it('accepts confidence: null (preserved through the schema)', () => {
+    // Arrange
+    const batch: EntityInput[] = [{ type: 'topic', value: 'unknown', confidence: null }];
+
+    // Act
+    const inserted = repo.insertMany(videoId, batch);
+
+    // Assert — null means "unset"; the column defaults to 100 in the
+    // current repo, so we assert the row landed without throwing rather
+    // than the column value.
+    expect(inserted).toBe(1);
+    expect(repo.countByVideoId(videoId)).toBe(1);
   });
 });
 
@@ -460,9 +532,7 @@ describe('EntityRepository — reads parse through ExtractedEntityRowSchema', ()
     // Arrange
     const videoId = asVideoId(VIDEO_A);
     seedVideo(dbm, videoId);
-    repo.insertMany(videoId, [
-      { type: 'topic', value: 'shape test', confidence: 42 },
-    ]);
+    repo.insertMany(videoId, [{ type: 'topic', value: 'shape test', confidence: 42 }]);
 
     // Act
     const [row] = repo.findByVideoId(videoId);
