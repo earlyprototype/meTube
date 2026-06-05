@@ -10,8 +10,14 @@ import {
   type VideoDetails,
   type PlaylistVideoItem,
   type PlaylistVideoOptions,
+  type VideoExtractorConfig,
+  type VideoExtractorDeps,
+  type GeminiParserLike,
 } from '../../src-ts-v2/extractors/VideoExtractor.js';
 import { DescriptionParser } from '../../src-ts-v2/parsers/DescriptionParser.js';
+import { TranscriptExtractor } from '../../src-ts-v2/extractors/TranscriptExtractor.js';
+import { WhisperExtractor } from '../../src-ts-v2/extractors/WhisperExtractor.js';
+import { GeminiParser } from '../../src-ts-v2/parsers/GeminiParser.js';
 import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
 import { PlaylistRepository } from '../../src-ts-v2/database/PlaylistRepository.js';
 import { ProgressDisplay } from '../components/ProgressDisplay.js';
@@ -19,6 +25,7 @@ import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { PostExtractionMenu } from '../components/PostExtractionMenu.js';
 import { resolvePlaylistIdentifier } from '../../src-ts-v2/utils/playlistResolver.js';
 import { safeTitle } from '../utils/terminal.js';
+import logger from '../../src-ts-v2/utils/logger.js';
 import type { VideoId, PlaylistId } from '../../src-ts-v2/types/branded.js';
 
 interface ExtractCommandProps {
@@ -138,19 +145,15 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
         // getVideoById). Adapter bridges the names + result shapes.
         const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient);
 
+        // Wire the full dual-transcript + LLM pipeline. Without the
+        // TranscriptExtractor / WhisperExtractor / GeminiParser injected
+        // here, VideoExtractor short-circuits transcript and Gemini work
+        // even though the config asks for them — the bug this fixes.
         const extractor = new VideoExtractor(
           db,
           ytAdapter,
-          {
-            autoTranscript: true,
-            autoLlmParse: false,
-            enableWhisper: true,
-            skipExisting: !flags.reprocess,
-            maxVideos: flags.maxVideos,
-          },
-          {
-            descriptionParser: new DescriptionParser(),
-          }
+          buildVideoExtractorConfig(flags),
+          buildVideoExtractorDeps()
         );
 
         // v2 extractPlaylist signature: (playlistId, { onProgress }).
@@ -209,13 +212,8 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
         const extractor = new VideoExtractor(
           db,
           ytAdapter,
-          {
-            skipExisting: !flags.reprocess,
-            maxVideos: flags.maxVideos,
-          },
-          {
-            descriptionParser: new DescriptionParser(),
-          }
+          buildVideoExtractorConfig(flags),
+          buildVideoExtractorDeps()
         );
 
         let totalProcessed = 0;
@@ -322,6 +320,87 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
       whisperProgress={progress.whisperProgress}
     />
   );
+}
+
+/**
+ * Gemini model used for production playlist extraction. Matches the
+ * `VideoExtractorConfigSchema` default so `config.geminiModel` and the
+ * adapter's `modelName` (written into the `ai_analysis` row) agree.
+ */
+const GEMINI_MODEL = 'gemini-3-flash-preview';
+
+/**
+ * Build the production VideoExtractor config. Enables the dual-transcript
+ * path (`autoTranscript` + `enableWhisper`) and LLM analysis
+ * (`autoLlmParse`). Preserves the user-facing flags: `reprocess` maps to
+ * `skipExisting` (inverted) and `maxVideos` passes straight through.
+ */
+export function buildVideoExtractorConfig(flags: {
+  reprocess?: boolean;
+  maxVideos?: number;
+}): Partial<VideoExtractorConfig> {
+  return {
+    autoTranscript: true,
+    autoLlmParse: true,
+    enableWhisper: true,
+    geminiModel: GEMINI_MODEL,
+    skipExisting: !flags.reprocess,
+    maxVideos: flags.maxVideos,
+  };
+}
+
+/**
+ * Build the production dependency set injected into VideoExtractor. The
+ * dual-transcript pipeline needs the real TranscriptExtractor (YouTube
+ * captions) and WhisperExtractor (audio fallback); description parsing is
+ * always on; Gemini is optional and degrades to null when no API key is
+ * configured (see `buildGeminiAdapter`).
+ */
+export function buildVideoExtractorDeps(): VideoExtractorDeps {
+  return {
+    transcriptExtractor: new TranscriptExtractor(),
+    whisperExtractor: new WhisperExtractor(),
+    descriptionParser: new DescriptionParser(),
+    geminiParser: buildGeminiAdapter(),
+  };
+}
+
+/**
+ * Build a `GeminiParserLike` adapter over the concrete v2 `GeminiParser`,
+ * bridging two pieces of sibling drift: the VideoExtractor surface calls
+ * `parseTranscript(transcriptText, videoTitle)` and reads a public
+ * `modelName`, whereas the concrete parser takes `{ transcript, videoTitle }`
+ * and keeps `modelName` private.
+ *
+ * Returns `null` when no Gemini credentials are available — the
+ * `GeminiParser` constructor throws `ValidationError` without a key, and
+ * VideoExtractor treats a null parser as "LLM analysis disabled" rather
+ * than a fatal condition. So missing credentials disable Gemini without
+ * breaking playlist extraction.
+ */
+export function buildGeminiAdapter(
+  apiKey: string | undefined = process.env.GEMINI_API_KEY,
+  model: string = GEMINI_MODEL
+): GeminiParserLike | null {
+  if (!apiKey) {
+    logger.debug('GEMINI_API_KEY not set; Gemini LLM analysis disabled for extraction');
+    return null;
+  }
+
+  try {
+    const parser = new GeminiParser(apiKey, model);
+    return {
+      modelName: model,
+      parseTranscript: (transcriptText: string, videoTitle: string) =>
+        parser.parseTranscript({ transcript: transcriptText, videoTitle }),
+    };
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'GeminiParser construction failed; continuing without LLM analysis'
+    );
+    return null;
+  }
 }
 
 /**
