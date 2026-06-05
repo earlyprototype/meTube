@@ -94,9 +94,10 @@ describe('StatisticsRepository.recordSnapshot', () => {
 
     // Assert — the row is actually visible to a subsequent read
     const count = dbm
-      .prepare<[VideoId], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?'
-      )
+      .prepare<
+        [VideoId],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?')
       .get(VIDEO_A);
     expect(count?.c).toBe(1);
   });
@@ -119,24 +120,24 @@ describe('StatisticsRepository.recordSnapshot', () => {
 
     // Assert — three distinct rows, not one mutated row
     const count = dbm
-      .prepare<[VideoId], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?'
-      )
+      .prepare<
+        [VideoId],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?')
       .get(VIDEO_A);
     expect(count?.c).toBe(3);
   });
 
   it('honours the FK constraint and rejects snapshots for unknown videos', () => {
     // Act + Assert — UNRECORDED has no parent row in `videos`
-    expect(() =>
-      repo.recordSnapshot(UNRECORDED, { viewCount: 1 })
-    ).toThrow();
+    expect(() => repo.recordSnapshot(UNRECORDED, { viewCount: 1 })).toThrow();
 
     // And no orphan row was written
     const count = dbm
-      .prepare<[VideoId], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?'
-      )
+      .prepare<
+        [VideoId],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?')
       .get(UNRECORDED);
     expect(count?.c).toBe(0);
   });
@@ -176,9 +177,10 @@ describe('StatisticsRepository — rollback discipline', () => {
 
     // No row should remain for VIDEO_A
     const count = dbm
-      .prepare<[VideoId], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?'
-      )
+      .prepare<
+        [VideoId],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM video_statistics WHERE video_id = ?')
       .get(VIDEO_A);
     expect(count?.c).toBe(0);
   });
@@ -373,5 +375,40 @@ describe('StatisticsRepository.aggregateTotalsAcrossVideos', () => {
     // Assert
     expect(totals.videoCount).toBe(1);
     expect(totals.totalViews).toBe(42);
+  });
+
+  it('treats the row with the most recent recorded_at as latest, not max(id)', () => {
+    // Arrange — Simulate a backfill: row id=2 was inserted AFTER row id=1
+    // but the operator backdated it to BEFORE row id=1's recorded_at. The
+    // canonical "latest" per `findLatestByVideoId` is the most-recent
+    // recorded_at, so totals must use row id=1's value (100), not the
+    // numerically-highest id's value (1).
+    seedVideo(dbm, VIDEO_A, 'video A');
+
+    dbm.withTransaction((db) => {
+      db.prepare(
+        `INSERT INTO video_statistics (video_id, view_count, like_count, comment_count, recorded_at)
+         VALUES (?, ?, ?, ?, ?)`
+      ).run(VIDEO_A, 100, 10, 1, '2024-12-01T00:00:00Z'); // id=1, newest timestamp
+      db.prepare(
+        `INSERT INTO video_statistics (video_id, view_count, like_count, comment_count, recorded_at)
+         VALUES (?, ?, ?, ?, ?)`
+      ).run(VIDEO_A, 1, 1, 1, '2024-01-01T00:00:00Z'); // id=2, older timestamp
+    });
+
+    // Sanity — findLatestByVideoId already uses recorded_at DESC, id DESC
+    // and picks the 100-view row.
+    const latest = repo.findLatestByVideoId(VIDEO_A);
+    expect(latest?.view_count).toBe(100);
+
+    // Act
+    const totals = repo.aggregateTotalsAcrossVideos();
+
+    // Assert — totals match `findLatestByVideoId`. Pre-fix, totals would
+    // have picked id=2 (the backfilled row, view_count=1) via MAX(id).
+    expect(totals.totalViews).toBe(100);
+    expect(totals.totalLikes).toBe(10);
+    expect(totals.totalComments).toBe(1);
+    expect(totals.videoCount).toBe(1);
   });
 });
