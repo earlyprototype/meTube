@@ -5,6 +5,7 @@ import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
 import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { StatusPanel } from '../components/StatusPanel.js';
+import logger from '../../src-ts-v2/utils/logger.js';
 
 interface InitCommandProps {
   force?: boolean;
@@ -42,7 +43,14 @@ export function InitCommand({ force = false, onComplete }: InitCommandProps) {
         // when tokens.json is valid (hydrates and returns), so we only
         // explicitly skip the call when --force is NOT set AND tokens
         // parse cleanly off disk.
-        if (!force) {
+        if (force) {
+          // Force re-authentication: delete existing tokens if present
+          const fs = await import('fs');
+          if (fs.existsSync('tokens.json')) {
+            fs.unlinkSync('tokens.json');
+            logger.info('Deleted tokens.json for forced re-authentication');
+          }
+        } else {
           try {
             auth.loadTokens();
             setMessage('Already authenticated with valid tokens');

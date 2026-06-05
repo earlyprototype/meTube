@@ -419,11 +419,17 @@ export class YouTubeClient {
 
       // Safety: refuse to paginate forever even if YouTube misbehaves.
       if (pageCount > MAX_PAGES) {
-        logger.warn(
+        logger.error(
           { playlistId, pageCount, totalSoFar: allItems.length },
-          'Pagination safety ceiling reached, stopping'
+          'Pagination safety ceiling reached — playlist exceeds maximum fetchable size'
         );
-        break;
+        throw new AppError(
+          `Playlist exceeds maximum fetchable size (${MAX_PAGES} pages, ~${MAX_PAGES * 50} items)`,
+          {
+            code: 'PLAYLIST_TOO_LARGE',
+            context: { playlistId, pageCount, itemsFetched: allItems.length },
+          }
+        );
       }
 
       await this.rateLimiter.waitForToken(
@@ -496,11 +502,17 @@ export class YouTubeClient {
       pageCount += 1;
 
       if (pageCount > MAX_PAGES) {
-        logger.warn(
+        logger.error(
           { pageCount, totalSoFar: allPlaylists.length },
-          'Pagination safety ceiling reached, stopping'
+          'Pagination safety ceiling reached — user has too many playlists'
         );
-        break;
+        throw new AppError(
+          `User has too many playlists (exceeds ${MAX_PAGES} pages, ~${MAX_PAGES * 50} playlists)`,
+          {
+            code: 'TOO_MANY_PLAYLISTS',
+            context: { pageCount, playlistsFetched: allPlaylists.length },
+          }
+        );
       }
 
       await this.rateLimiter.waitForToken(
