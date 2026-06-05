@@ -366,17 +366,17 @@ export function buildVideoExtractorDeps(): VideoExtractorDeps {
 }
 
 /**
- * Build a `GeminiParserLike` adapter over the concrete v2 `GeminiParser`,
- * bridging two pieces of sibling drift: the VideoExtractor surface calls
- * `parseTranscript(transcriptText, videoTitle)` and reads a public
- * `modelName`, whereas the concrete parser takes `{ transcript, videoTitle }`
- * and keeps `modelName` private.
+ * Build a `GeminiParserLike` adapter over the concrete v2 `GeminiParser`.
+ * The `parseTranscript` signatures now match — both take a single
+ * `ParseTranscriptInput` object — so the adapter delegates straight
+ * through. Its remaining purpose is twofold:
  *
- * Returns `null` when no Gemini credentials are available — the
- * `GeminiParser` constructor throws `ValidationError` without a key, and
- * VideoExtractor treats a null parser as "LLM analysis disabled" rather
- * than a fatal condition. So missing credentials disable Gemini without
- * breaking playlist extraction.
+ *   1. Expose a public `modelName` (the concrete parser keeps it private,
+ *      but VideoExtractor writes it into the `ai_analysis` row).
+ *   2. Preserve graceful no-key behaviour: the `GeminiParser` constructor
+ *      throws `ValidationError` without a key, and VideoExtractor treats a
+ *      null parser as "LLM analysis disabled" rather than fatal. So missing
+ *      credentials disable Gemini without breaking playlist extraction.
  */
 export function buildGeminiAdapter(
   apiKey: string | undefined = process.env.GEMINI_API_KEY,
@@ -391,8 +391,7 @@ export function buildGeminiAdapter(
     const parser = new GeminiParser(apiKey, model);
     return {
       modelName: model,
-      parseTranscript: (transcriptText: string, videoTitle: string) =>
-        parser.parseTranscript({ transcript: transcriptText, videoTitle }),
+      parseTranscript: (input) => parser.parseTranscript(input),
     };
   } catch (err) {
     logger.warn(

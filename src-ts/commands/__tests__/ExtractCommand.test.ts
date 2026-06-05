@@ -18,7 +18,24 @@
  * `null` without breaking the rest of the wiring.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// --------------------------------------------------------------------------
+// Mock the concrete GeminiParser so the adapter-forwarding test can assert
+// the exact (object-shaped) argument passed through, with no live API call.
+// Only the `GeminiParser` value export is used at runtime by ExtractCommand;
+// `ParseTranscriptInput` is a type-only import elsewhere and needs no stub.
+// --------------------------------------------------------------------------
+
+const { parseTranscriptSpy } = vi.hoisted(() => ({
+  parseTranscriptSpy: vi.fn(),
+}));
+
+vi.mock('../../../src-ts-v2/parsers/GeminiParser.js', () => ({
+  GeminiParser: class {
+    parseTranscript = parseTranscriptSpy;
+  },
+}));
 
 import { DatabaseManager } from '../../../src-ts-v2/database/connection.js';
 import { TranscriptExtractor } from '../../../src-ts-v2/extractors/TranscriptExtractor.js';
@@ -108,6 +125,18 @@ describe('buildGeminiAdapter', () => {
     process.env.GEMINI_API_KEY = 'env-key';
 
     expect(buildGeminiAdapter()).not.toBeNull();
+  });
+
+  it('forwards the object-shaped ParseTranscriptInput straight to the parser', async () => {
+    parseTranscriptSpy.mockReset();
+    parseTranscriptSpy.mockResolvedValue(null);
+
+    const adapter = buildGeminiAdapter('test-key');
+    const input = { transcript: 'hello world', videoTitle: 'My Video' };
+    await adapter?.parseTranscript(input);
+
+    expect(parseTranscriptSpy).toHaveBeenCalledTimes(1);
+    expect(parseTranscriptSpy).toHaveBeenCalledWith(input);
   });
 });
 
