@@ -10,8 +10,18 @@
  *   - Operation cost tracking (caller passes cost per call)
  *   - Pino-logged
  */
+import { ValidationError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 import { RateLimiterConfig } from './types.js';
+
+function assertPositiveFinite(field: 'maxRequests' | 'windowMs', value: number): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new ValidationError(`RateLimiter config.${field} must be a positive finite number`, {
+      field,
+      value,
+    });
+  }
+}
 
 export class RateLimiter {
   private tokens: number;
@@ -22,8 +32,12 @@ export class RateLimiter {
    * Create a new RateLimiter instance.
    *
    * @param config - Rate limiter configuration
+   * @throws {ValidationError} when maxRequests or windowMs is not a positive finite number
    */
   constructor(config: RateLimiterConfig) {
+    assertPositiveFinite('maxRequests', config.maxRequests);
+    assertPositiveFinite('windowMs', config.windowMs);
+
     this.config = config;
     this.tokens = config.maxRequests;
     this.lastRefill = Date.now();
@@ -42,8 +56,29 @@ export class RateLimiter {
    *
    * @param operation - Name of operation (for logging and cost calculation)
    * @param cost - Cost of this operation (default: 1)
+   * @throws {ValidationError} when cost is not a positive finite number, or when
+   *   cost exceeds the configured maxRequests (the call would otherwise hang
+   *   forever waiting for a refill that can never satisfy it).
    */
   async waitForToken(operation: string, cost = 1): Promise<void> {
+    if (!Number.isFinite(cost) || cost <= 0) {
+      throw new ValidationError('RateLimiter cost must be a positive finite number', {
+        field: 'cost',
+        value: cost,
+        context: { operation },
+      });
+    }
+    if (cost > this.config.maxRequests) {
+      throw new ValidationError(
+        'RateLimiter cost exceeds configured maxRequests; would hang forever',
+        {
+          field: 'cost',
+          value: cost,
+          context: { operation, maxRequests: this.config.maxRequests },
+        }
+      );
+    }
+
     this.refillTokens();
 
     while (this.tokens < cost) {
