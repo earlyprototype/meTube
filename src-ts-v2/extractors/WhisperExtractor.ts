@@ -22,6 +22,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { z } from 'zod';
+
 import { AppError } from '../errors/index.js';
 import type { VideoId } from '../types/index.js';
 import logger from '../utils/logger.js';
@@ -73,6 +75,29 @@ interface WhisperPayload {
   segments: WhisperSegment[];
   language?: string;
 }
+
+/**
+ * Zod schema mirroring `WhisperSegment`. Validates the subprocess output at
+ * the wire boundary (v2 invariant #2) — a valid-JSON-but-malformed payload is
+ * caught here and surfaces as `WHISPER_PARSE_FAILED` rather than a raw
+ * TypeError on `.map(...)`.
+ */
+const whisperSegmentSchema = z.object({
+  start: z.number(),
+  end: z.number(),
+  text: z.string(),
+});
+
+/**
+ * Zod schema mirroring `WhisperPayload`. The optional `language` mirrors the
+ * interface; extra Whisper fields are tolerated (the subprocess emits more
+ * than these three keys per segment, but only these are consumed).
+ */
+const whisperPayloadSchema = z.object({
+  text: z.string(),
+  segments: z.array(whisperSegmentSchema),
+  language: z.string().optional(),
+});
 
 /**
  * Drives the Python `openai-whisper` subprocess. Single-video API
@@ -342,7 +367,7 @@ print('JSON_OUTPUT_END')
               throw new Error('JSON markers not found in output');
             }
             const parsedUnknown: unknown = JSON.parse(jsonMatch[1]);
-            const payload = parsedUnknown as WhisperPayload;
+            const payload: WhisperPayload = whisperPayloadSchema.parse(parsedUnknown);
 
             const segments = payload.segments.map((seg: WhisperSegment) => ({
               start: seg.start,

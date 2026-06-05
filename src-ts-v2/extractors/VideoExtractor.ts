@@ -268,24 +268,18 @@ export interface GeminiParserLike {
  * downstream code reads from the parsed value, not the raw input.
  */
 export const VideoExtractorConfigSchema = z.object({
-  /** Gemini API key. Optional — if absent, LLM parsing is disabled. */
-  geminiApiKey: z.string().optional(),
-  /** Gemini model name. Defaults to `gemini-3-flash-preview`. */
+  /**
+   * Gemini model name. Defaults to `gemini-3-flash-preview`. Consumed as
+   * the persisted-analysis model label (`aiAnalysisRepository.upsert`)
+   * when the injected GeminiParser doesn't report its own `modelName`.
+   */
   geminiModel: z.string().default('gemini-3-flash-preview'),
-  /** Whisper model size. Defaults to `base`. */
-  whisperModel: z.string().default('base'),
-  /** Preferred transcript language. Defaults to `en`. */
-  transcriptLanguage: z.string().default('en'),
-  /** Preferred transcript languages (priority order). */
-  transcriptLanguages: z.array(z.string()).default(['en', 'en-GB', 'en-US']),
   /** Whether to attempt transcript extraction at all. */
   autoTranscript: z.boolean().default(true),
   /** Whether to run the LLM analysis stage when a transcript is available. */
   autoLlmParse: z.boolean().default(true),
   /** Whether the Whisper fallback is enabled. */
   enableWhisper: z.boolean().default(false),
-  /** Rate-limit delay between transcript requests, in milliseconds. */
-  transcriptRateLimitMs: z.number().int().nonnegative().default(2000),
   /** Skip videos already in the database (idempotency knob). */
   skipExisting: z.boolean().default(true),
   /** Optional hard cap on videos processed per extractPlaylist call. */
@@ -476,7 +470,6 @@ export class VideoExtractor {
         autoLlmParse: this.config.autoLlmParse && this.geminiParser !== null,
         enableWhisper: this.config.enableWhisper && this.whisperExtractor !== null,
         geminiModel: this.config.geminiModel,
-        whisperModel: this.config.whisperModel,
       },
       'VideoExtractor initialized'
     );

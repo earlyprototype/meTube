@@ -408,9 +408,20 @@ export class YouTubeAuth {
     try {
       const dir = path.dirname(this.tokensPath);
       if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+        // Owner-only dir (0o700) - tokens.json holds long-lived OAuth
+        // refresh + access tokens with write scope; on a multi-user
+        // POSIX host with a permissive umask it must not be
+        // group/other-readable. No-op on Windows.
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       }
-      fs.writeFileSync(this.tokensPath, JSON.stringify(tokens, null, 2), 'utf-8');
+      // `mode` on writeFileSync only applies when the file is CREATED,
+      // not when overwriting - so chmod immediately after to harden
+      // re-saves too. mode/chmod are no-ops on Windows, correct on POSIX.
+      fs.writeFileSync(this.tokensPath, JSON.stringify(tokens, null, 2), {
+        encoding: 'utf-8',
+        mode: 0o600,
+      });
+      fs.chmodSync(this.tokensPath, 0o600);
       logger.info({ tokensPath: this.tokensPath }, 'Tokens saved');
     } catch (err) {
       throw new AppError('Failed to save tokens', {

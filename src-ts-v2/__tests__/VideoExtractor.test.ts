@@ -925,14 +925,15 @@ describe('VideoExtractor.extractPlaylist — counter discipline', () => {
     const transcriptRepository = new TranscriptRepository(dbm);
     const middleVideoId = items[1].videoId;
     const realUpsert = transcriptRepository.upsert.bind(transcriptRepository);
-    vi.spyOn(transcriptRepository, 'upsert').mockImplementation(
-      ((videoId: VideoId, input: Parameters<typeof realUpsert>[1]) => {
-        if (videoId === middleVideoId) {
-          throw new Error('Transcript repo exploded on Nth video');
-        }
-        return realUpsert(videoId, input);
-      }) as typeof realUpsert
-    );
+    vi.spyOn(transcriptRepository, 'upsert').mockImplementation(((
+      videoId: VideoId,
+      input: Parameters<typeof realUpsert>[1]
+    ) => {
+      if (videoId === middleVideoId) {
+        throw new Error('Transcript repo exploded on Nth video');
+      }
+      return realUpsert(videoId, input);
+    }) as typeof realUpsert);
 
     const extractor = new VideoExtractor(
       dbm,
