@@ -70,6 +70,10 @@ metube report playlist 3     # generate the HTML report
 
 You can also use the `mtb` alias for all commands.
 
+## Optional: kanbanger MCP for AI sessions
+
+If you run Claude Code (or another MCP-capable client) against this repo, the kanban board at `_kanban.md` syncs through the [kanbanger](https://github.com/earlyprototype/kanbanger-partymix) MCP server. The wiring is `.mcp.json`, but that file carries absolute, machine-specific paths so it is gitignored. Copy `.mcp.json.example` to `.mcp.json` and update the `KANBANGER_WORKSPACE` value (and the `command` path if your venv lives elsewhere) before launching your client.
+
 ## Architecture
 
 The canonical implementation is TypeScript: Ink (React) for the terminal UI, better-sqlite3 for local storage, googleapis for YouTube Data API, youtube-transcript for native captions, Whisper subprocess for audio fallback, and Google Gemini for entity parsing. HTML reports are Handlebars templates.

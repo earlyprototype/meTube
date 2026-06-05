@@ -1,13 +1,13 @@
 {
   "mcpServers": {
     "kanbanger": {
-      "command": "C:/Users/Fab2/Desktop/AI/_tools/_metube/.venv/Scripts/python.exe",
+      "command": "./.venv/Scripts/python.exe",
       "args": [
         "-m",
         "kanbanger_mcp"
       ],
       "env": {
-        "KANBANGER_WORKSPACE": "${KANBANGER_WORKSPACE:-C:/Users/Fab2/Desktop/AI/_tools/_metube}",
+        "KANBANGER_WORKSPACE": "${KANBANGER_WORKSPACE:-<absolute-path-to-project-root>}",
         "GITHUB_TOKEN": "${GITHUB_TOKEN:-}",
         "GITHUB_REPO": "${GITHUB_REPO:-}",
         "GITHUB_PROJECT_NUMBER": "${GITHUB_PROJECT_NUMBER:-}",
