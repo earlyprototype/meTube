@@ -777,7 +777,11 @@ export class VideoExtractor {
           if (parsed.success) {
             geminiResult = parsed.data;
           } else {
-            logger.warn(
+            // A26: promoted warn -> error so the schema-parse breadcrumb
+            // is visible at the default Pino level. The video itself is
+            // NOT failed (description-path entities still land); only
+            // visibility changes.
+            logger.error(
               { videoId, issues: parsed.error.issues },
               'Gemini response failed schema parse; skipping LLM persistence'
             );
@@ -786,7 +790,12 @@ export class VideoExtractor {
       } catch (error) {
         // Gemini failure must NOT fail the whole video — it's a soft
         // augmentation. Log and continue with description-only entities.
-        logger.warn(
+        // A26: promoted warn -> error so this soft-failure is visible at
+        // the default Pino level. The video still counts as `processed`
+        // (description-path entities still persist); only visibility
+        // changes. This is the load-bearing site that hides A15 when
+        // the GeminiParser arg-shape drift bites.
+        logger.error(
           { videoId, err: error instanceof Error ? error.message : String(error) },
           'Gemini parseTranscript threw; continuing without LLM entities'
         );
@@ -852,7 +861,13 @@ export class VideoExtractor {
     try {
       transcript = await this.transcriptExtractor.extract(videoId);
     } catch (error) {
-      logger.debug(
+      // A26: promoted debug -> error. This is a FAILURE path (catch
+      // block), not a success-path breadcrumb. At the default Pino
+      // level (`error`) this would otherwise be invisible — and silent
+      // YouTube-extraction throws are exactly what masks A18/A14's
+      // dual-transcript-inert symptom. The video still continues
+      // (Whisper fallback if configured); only visibility changes.
+      logger.error(
         { videoId, err: error instanceof Error ? error.message : String(error) },
         'YouTube transcript extraction threw; will try Whisper fallback if enabled'
       );
@@ -872,7 +887,11 @@ export class VideoExtractor {
       try {
         transcript = await this.whisperExtractor.extract(videoId);
       } catch (error) {
-        logger.debug(
+        // A26: promoted debug -> error. Same rationale as the YouTube
+        // catch above: this is a FAILURE path that silently masks the
+        // marquee dual-transcript pipeline going inert. The video still
+        // continues (no transcript downstream); only visibility changes.
+        logger.error(
           { videoId, err: error instanceof Error ? error.message : String(error) },
           'Whisper extraction threw; continuing without transcript'
         );

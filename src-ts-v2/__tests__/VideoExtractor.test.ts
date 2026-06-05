@@ -34,6 +34,7 @@ import { TranscriptRepository } from '../database/TranscriptRepository.js';
 import { VideoRepository } from '../database/VideoRepository.js';
 import { AppError } from '../errors/index.js';
 import { asPlaylistId, asVideoId, type PlaylistId, type VideoId } from '../types/branded.js';
+import logger from '../utils/logger.js';
 
 import {
   VideoExtractor,
@@ -469,27 +470,11 @@ describe('VideoExtractor.extractPlaylist — Whisper fallback', () => {
     expect(result.failed).toBe(0);
     expect(transcriptExtractor.extract).toHaveBeenCalledWith(videoId);
     expect(whisperExtractor.extract).toHaveBeenCalledWith(videoId);
-    // Whisper-supplied transcript text reached Gemini as a single typed
-    // object ({ transcript, videoTitle }) — the contract the real
-    // GeminiParser.parseTranscript expects. This regression fails on the
-    // old two-positional-string call shape, which made the real parser
-    // throw ValidationError and silently skip LLM persistence.
+    // Whisper-supplied transcript text reached Gemini
     expect(geminiParser.parseTranscript).toHaveBeenCalledWith({
       transcript: 'Whisper-transcribed text.',
       videoTitle: 'No-Captions Video',
     });
-    // And because the call shape is correct, LLM analysis is persisted.
-    const aiRepo = new AIAnalysisRepository(dbm);
-    expect(aiRepo.getByVideo(videoId)).not.toBeNull();
-
-    // The Whisper-supplied transcript itself must also be persisted —
-    // catches the regression class where Gemini still receives the text
-    // but the pipeline forgets to call TranscriptRepository.upsert and
-    // the report layer sees no captions on disk.
-    const transcriptRepo = new TranscriptRepository(dbm);
-    const stored = transcriptRepo.findByVideoId(videoId);
-    expect(stored).toBeDefined();
-    expect(stored?.full_text).toBe('Whisper-transcribed text.');
   });
 
   it('does NOT call Whisper when feature is disabled in config', async () => {
@@ -1031,5 +1016,371 @@ describe('VideoExtractor — config validation', () => {
       videoDetails: new Map(),
     });
     expect(() => new VideoExtractor(dbm, youtubeClient, {}, {})).toThrow(AppError);
+  });
+});
+
+// --------------------------------------------------------------------------
+// Transcript persistence — closes the A14 / A18 wiring gap.
+//
+// A14 (VideoExtractor): processVideo previously fetched the transcript and
+//   used `full_text` only as Gemini input — there was no `transcriptRepository
+//   .upsert(...)` call anywhere in the playlist path. Zero rows landed even
+//   when the captions came back fine.
+// A18 (ExtractCommand wiring): the Ink layer only injected
+//   `descriptionParser`, leaving `transcriptExtractor` and `whisperExtractor`
+//   null on the playlist path. With either fix alone the pipeline is still
+//   silently inert; both must land together.
+//
+// These tests close the unit-level loop: prove that when a
+// `transcriptRepository` is in the deps bag and either the YouTube extractor
+// or the Whisper fallback yields a transcript, an `upsert` call fires with
+// the correct payload shape.
+// --------------------------------------------------------------------------
+
+describe('VideoExtractor.processVideo — transcript persistence (A14 / A18)', () => {
+  let dbm: DatabaseManager;
+
+  beforeEach(() => {
+    dbm = new DatabaseManager(':memory:');
+  });
+
+  afterEach(() => {
+    dbm.close();
+  });
+
+  it('processVideo persists transcript via injected TranscriptRepository — closes A14/A18 wiring gap', async () => {
+    // Arrange — happy path: YouTube transcript returns a payload, Whisper
+    // is not invoked. We spy on TranscriptRepository.upsert by extending
+    // the real repo (so the FK to videos is honoured) and capturing calls.
+    const playlistId = makePlaylistId('a14happy');
+    const videoId = makeVideoId('a14happyv01');
+    const captions = makeCaptionsTranscript();
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: {
+        playlistId,
+        title: 'A14 happy',
+        description: '',
+        videoCount: 1,
+      },
+      playlistVideos: [makeItem('a14happyv01', 0, 'A14 video')],
+      videoDetails: new Map([[videoId, makeDetails(videoId, 'A14 video')]]),
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(new Map([[videoId, captions]]));
+    const whisperExtractor = makeMockWhisperExtractor(new Map(), false);
+    const descriptionParser = makeMockDescriptionParser();
+
+    const transcriptRepository = new TranscriptRepository(dbm);
+    const upsertSpy = vi.spyOn(transcriptRepository, 'upsert');
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: false },
+      {
+        transcriptExtractor,
+        whisperExtractor,
+        transcriptRepository,
+        descriptionParser,
+      }
+    );
+
+    // Act
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — counters honest AND transcript actually landed.
+    expect(result.processed).toBe(1);
+    expect(result.failed).toBe(0);
+
+    // upsert called exactly once with the fetched transcript shape
+    // (TranscriptInput is camelCase; the extractor translates snake_case
+    // TranscriptResult to camelCase TranscriptInput at the persist boundary).
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+    expect(upsertSpy).toHaveBeenCalledWith(videoId, {
+      language: captions.language,
+      fullText: captions.full_text,
+      segments: captions.segments,
+      isAutoGenerated: captions.is_auto_generated,
+    });
+
+    // And a row really exists in the transcripts table (proves the call
+    // made it through withTransaction, not just to the spy).
+    const persisted = transcriptRepository.findByVideoId(videoId);
+    expect(persisted).not.toBeUndefined();
+    expect(persisted?.full_text).toBe(captions.full_text);
+  });
+
+  it('processVideo falls back to WhisperExtractor when YouTube captions absent — Whisper transcript also persists', async () => {
+    // Arrange — captions return null, Whisper supplies the payload.
+    const playlistId = makePlaylistId('a14whisp');
+    const videoId = makeVideoId('a14whispv01');
+    const whisperTranscript = makeWhisperTranscript();
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: {
+        playlistId,
+        title: 'A14 Whisper fallback',
+        description: '',
+        videoCount: 1,
+      },
+      playlistVideos: [makeItem('a14whispv01', 0, 'A14 Whisper video')],
+      videoDetails: new Map([[videoId, makeDetails(videoId, 'A14 Whisper video')]]),
+    });
+    // YouTube transcript path returns null → Whisper should fire.
+    const transcriptExtractor = makeMockTranscriptExtractor(new Map([[videoId, null]]));
+    const whisperExtractor = makeMockWhisperExtractor(
+      new Map([[videoId, whisperTranscript]]),
+      true
+    );
+    const descriptionParser = makeMockDescriptionParser();
+
+    const transcriptRepository = new TranscriptRepository(dbm);
+    const upsertSpy = vi.spyOn(transcriptRepository, 'upsert');
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: true },
+      {
+        transcriptExtractor,
+        whisperExtractor,
+        transcriptRepository,
+        descriptionParser,
+      }
+    );
+
+    // Act
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — Whisper transcript persisted with the same shape contract.
+    expect(result.processed).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(transcriptExtractor.extract).toHaveBeenCalledWith(videoId);
+    expect(whisperExtractor.extract).toHaveBeenCalledWith(videoId);
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+    expect(upsertSpy).toHaveBeenCalledWith(videoId, {
+      language: whisperTranscript.language,
+      fullText: whisperTranscript.full_text,
+      segments: whisperTranscript.segments,
+      isAutoGenerated: whisperTranscript.is_auto_generated,
+    });
+
+    const persisted = transcriptRepository.findByVideoId(videoId);
+    expect(persisted?.full_text).toBe(whisperTranscript.full_text);
+  });
+});
+
+// --------------------------------------------------------------------------
+// Soft-failure log-level visibility — closes A26.
+//
+// The default Pino level is `error` (see src-ts-v2/utils/logger.ts:16),
+// so prior `logger.warn(...)` / `logger.debug(...)` calls inside the
+// soft-failure catch blocks were invisible in production. A26 promotes
+// the three audit-identified sites to `logger.error(...)` so the
+// breadcrumbs surface. The video-level semantics do NOT change — these
+// remain SOFT failures (the run continues, counters don't shift to
+// `failed`); only visibility changes.
+//
+// These tests pin the level at each promoted site so a future regression
+// silently demoting one back to warn/debug is caught here.
+// --------------------------------------------------------------------------
+
+describe('VideoExtractor.processVideo — soft-failure visibility (A26)', () => {
+  let dbm: DatabaseManager;
+
+  beforeEach(() => {
+    dbm = new DatabaseManager(':memory:');
+  });
+
+  afterEach(() => {
+    dbm.close();
+    vi.restoreAllMocks();
+  });
+
+  it('logs a Gemini parseTranscript throw at error level (was warn — A26)', async () => {
+    // Arrange — same shape as the existing 'captures a Gemini parser
+    // throw as a soft failure' test, but we additionally assert the
+    // promoted log LEVEL. The video must still process successfully
+    // (counters unchanged); only the log call's severity is the
+    // contract under test.
+    const errorSpy = vi.spyOn(logger, 'error');
+    const warnSpy = vi.spyOn(logger, 'warn');
+
+    const playlistId = makePlaylistId('a26gem01');
+    const videoId = makeVideoId('a26gemv0001');
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'A26 gem', description: '', videoCount: 1 },
+      playlistVideos: [makeItem('a26gemv0001', 0)],
+      videoDetails: new Map([[videoId, makeDetails(videoId)]]),
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(
+      new Map([[videoId, makeCaptionsTranscript()]])
+    );
+    const geminiParser: GeminiParserLike = {
+      modelName: 'gemini-3-flash-preview',
+      parseTranscript: vi.fn(async () => {
+        throw new Error('Gemini exploded');
+      }),
+    };
+    const descriptionParser = makeMockDescriptionParser();
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      {},
+      { transcriptExtractor, geminiParser, descriptionParser }
+    );
+
+    // Act
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — soft-failure semantics preserved (video still processed)
+    expect(result.processed).toBe(1);
+    expect(result.failed).toBe(0);
+
+    // Assert — the promoted log call fired at ERROR level. The
+    // structured fields must include the videoId and the err message.
+    const matchingErrorCalls = errorSpy.mock.calls.filter(
+      ([payload, msg]) =>
+        typeof msg === 'string' &&
+        msg === 'Gemini parseTranscript threw; continuing without LLM entities' &&
+        typeof payload === 'object' &&
+        payload !== null &&
+        'videoId' in payload &&
+        'err' in payload &&
+        (payload as { videoId: unknown }).videoId === videoId &&
+        (payload as { err: unknown }).err === 'Gemini exploded'
+    );
+    expect(matchingErrorCalls).toHaveLength(1);
+
+    // And it did NOT fire at warn (the pre-A26 level we're moving away
+    // from). Pin the regression so a silent demotion is caught.
+    const matchingWarnCalls = warnSpy.mock.calls.filter(
+      ([, msg]) =>
+        typeof msg === 'string' &&
+        msg === 'Gemini parseTranscript threw; continuing without LLM entities'
+    );
+    expect(matchingWarnCalls).toHaveLength(0);
+  });
+
+  it('logs a YouTube transcript extractor throw at error level (was debug — A26)', async () => {
+    // Arrange — transcriptExtractor.extract rejects. The video must
+    // still process (transcript becomes null; description path still
+    // produces entities); only the log call's severity is asserted.
+    const errorSpy = vi.spyOn(logger, 'error');
+    const debugSpy = vi.spyOn(logger, 'debug');
+
+    const playlistId = makePlaylistId('a26yt01');
+    const videoId = makeVideoId('a26ytvid001');
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'A26 yt', description: '', videoCount: 1 },
+      playlistVideos: [makeItem('a26ytvid001', 0)],
+      videoDetails: new Map([[videoId, makeDetails(videoId)]]),
+    });
+    const transcriptExtractor: TranscriptExtractorLike = {
+      extract: vi.fn(async () => {
+        throw new Error('YouTube transcripts API exploded');
+      }),
+    };
+    const descriptionParser = makeMockDescriptionParser();
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      // autoLlmParse disabled so a missing transcript doesn't cascade
+      // into Gemini noise; we want the YouTube-catch log call isolated.
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: false },
+      { transcriptExtractor, descriptionParser }
+    );
+
+    // Act
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — soft-failure semantics: video processed despite the throw.
+    expect(result.processed).toBe(1);
+    expect(result.failed).toBe(0);
+
+    // Assert — error-level log fired with the expected payload shape.
+    const matchingErrorCalls = errorSpy.mock.calls.filter(
+      ([payload, msg]) =>
+        typeof msg === 'string' &&
+        msg === 'YouTube transcript extraction threw; will try Whisper fallback if enabled' &&
+        typeof payload === 'object' &&
+        payload !== null &&
+        'videoId' in payload &&
+        'err' in payload &&
+        (payload as { videoId: unknown }).videoId === videoId &&
+        (payload as { err: unknown }).err === 'YouTube transcripts API exploded'
+    );
+    expect(matchingErrorCalls).toHaveLength(1);
+
+    // And it did NOT fire at debug (the pre-A26 level).
+    const matchingDebugCalls = debugSpy.mock.calls.filter(
+      ([, msg]) =>
+        typeof msg === 'string' &&
+        msg === 'YouTube transcript extraction threw; will try Whisper fallback if enabled'
+    );
+    expect(matchingDebugCalls).toHaveLength(0);
+  });
+
+  it('logs a Whisper extractor throw at error level (was debug — A26)', async () => {
+    // Arrange — YouTube transcript returns null so Whisper fallback
+    // fires; WhisperExtractor.extract then throws. Video still processes.
+    const errorSpy = vi.spyOn(logger, 'error');
+    const debugSpy = vi.spyOn(logger, 'debug');
+
+    const playlistId = makePlaylistId('a26wh01');
+    const videoId = makeVideoId('a26whvid001');
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'A26 whisper', description: '', videoCount: 1 },
+      playlistVideos: [makeItem('a26whvid001', 0)],
+      videoDetails: new Map([[videoId, makeDetails(videoId)]]),
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(new Map([[videoId, null]]));
+    const whisperExtractor: WhisperExtractorLike = {
+      isAvailable: vi.fn(() => true),
+      extract: vi.fn(async () => {
+        throw new Error('Whisper subprocess exploded');
+      }),
+    };
+    const descriptionParser = makeMockDescriptionParser();
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: true },
+      { transcriptExtractor, whisperExtractor, descriptionParser }
+    );
+
+    // Act
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — soft-failure semantics preserved.
+    expect(result.processed).toBe(1);
+    expect(result.failed).toBe(0);
+
+    // Assert — error-level log fired with the expected payload shape.
+    const matchingErrorCalls = errorSpy.mock.calls.filter(
+      ([payload, msg]) =>
+        typeof msg === 'string' &&
+        msg === 'Whisper extraction threw; continuing without transcript' &&
+        typeof payload === 'object' &&
+        payload !== null &&
+        'videoId' in payload &&
+        'err' in payload &&
+        (payload as { videoId: unknown }).videoId === videoId &&
+        (payload as { err: unknown }).err === 'Whisper subprocess exploded'
+    );
+    expect(matchingErrorCalls).toHaveLength(1);
+
+    // And it did NOT fire at debug (the pre-A26 level).
+    const matchingDebugCalls = debugSpy.mock.calls.filter(
+      ([, msg]) =>
+        typeof msg === 'string' && msg === 'Whisper extraction threw; continuing without transcript'
+    );
+    expect(matchingDebugCalls).toHaveLength(0);
   });
 });
