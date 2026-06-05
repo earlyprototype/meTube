@@ -38,6 +38,23 @@ export interface CaptureOptions {
   expectedState?: string;
 }
 
+/**
+ * Minimal HTML-attribute/text escaper. The OAuth callback echoes
+ * untrusted query-string values into the response body (`error=...`),
+ * so any character that closes a tag or starts a script needs to be
+ * escaped before interpolation. Five-char escape is sufficient for
+ * inner-text + double-quoted attributes; the body never interpolates
+ * into single-quoted contexts or `<script>` blocks.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /** Inline HTML helper. Server dies on capture, so no external assets. */
 function renderHtml(title: string, heading: string, body: string, color: string): string {
   return `<!DOCTYPE html>
@@ -71,9 +88,7 @@ function renderHtml(title: string, heading: string, body: string, color: string)
  * On every terminal event the server is closed and the timeout
  * cleared, so the process can exit cleanly.
  */
-export async function captureAuthorizationCode(
-  options: CaptureOptions = {}
-): Promise<string> {
+export async function captureAuthorizationCode(options: CaptureOptions = {}): Promise<string> {
   const port = options.port ?? 3000;
   const timeout = options.timeout ?? 5 * 60 * 1000;
   const expectedState = options.expectedState;
@@ -108,12 +123,17 @@ export async function captureAuthorizationCode(
         const state = url.searchParams.get('state');
 
         if (error) {
+          // Untrusted query-string value — escape before interpolating
+          // into the response body. A crafted callback URL such as
+          // `?error=<script>alert(1)</script>` would otherwise execute
+          // in the user's browser.
+          const safeError = escapeHtml(error);
           res.writeHead(200, { 'Content-Type': 'text/html' });
           res.end(
             renderHtml(
               'Authorization Failed',
               'Authorization Failed',
-              `<p>Error: ${error}</p><p>You can close this window and return to the terminal.</p>`,
+              `<p>Error: ${safeError}</p><p>You can close this window and return to the terminal.</p>`,
               '#d32f2f'
             )
           );
@@ -158,10 +178,9 @@ export async function captureAuthorizationCode(
           );
           cleanup();
           reject(
-            new AppError(
-              'OAuth state parameter mismatch — possible CSRF attempt',
-              { code: 'OAUTH_STATE_MISMATCH' }
-            )
+            new AppError('OAuth state parameter mismatch — possible CSRF attempt', {
+              code: 'OAUTH_STATE_MISMATCH',
+            })
           );
           return;
         }
@@ -219,10 +238,10 @@ export async function captureAuthorizationCode(
     timeoutId = setTimeout(() => {
       cleanup();
       reject(
-        new AppError(
-          `Authorization timeout — no response received within ${timeout / 1000}s`,
-          { code: 'OAUTH_TIMEOUT', context: { timeoutMs: timeout } }
-        )
+        new AppError(`Authorization timeout — no response received within ${timeout / 1000}s`, {
+          code: 'OAUTH_TIMEOUT',
+          context: { timeoutMs: timeout },
+        })
       );
     }, timeout);
   });
