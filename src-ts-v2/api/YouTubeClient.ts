@@ -79,9 +79,7 @@ const YouTubeSearchPlaylistItemSchema = z.object({
   }),
 });
 
-const YouTubeSearchPlaylistsPageSchema = YouTubePageResponseSchema(
-  YouTubeSearchPlaylistItemSchema
-);
+const YouTubeSearchPlaylistsPageSchema = YouTubePageResponseSchema(YouTubeSearchPlaylistItemSchema);
 
 /**
  * v2 lightweight search-result type. Distinct from `YouTubePlaylist`
@@ -253,9 +251,7 @@ export class YouTubeClient {
    * @param parsed - Schema-validated playlist item
    * @returns Branded `YouTubePlaylistItem` domain object
    */
-  private toPlaylistItem(
-    parsed: z.infer<typeof YouTubePlaylistItemSchema>
-  ): YouTubePlaylistItem {
+  private toPlaylistItem(parsed: z.infer<typeof YouTubePlaylistItemSchema>): YouTubePlaylistItem {
     return {
       videoId: asVideoId(parsed.contentDetails.videoId),
       playlistId: asPlaylistId(parsed.snippet.playlistId),
@@ -315,9 +311,11 @@ export class YouTubeClient {
    * @throws {AppError} On API failure or schema mismatch
    */
   async getVideoById(videoId: VideoId): Promise<YouTubeVideo | null> {
-    await this.rateLimiter.waitForToken('videos.list', YOUTUBE_API_COSTS['videos.list']);
-
     return this.retryHandler.execute('getVideoById', async () => {
+      // Consume a token per attempt — every transient retry is a real
+      // API request and must charge against the quota, not just the
+      // first attempt.
+      await this.rateLimiter.waitForToken('videos.list', YOUTUBE_API_COSTS['videos.list']);
       logger.info({ videoId }, 'Fetching video by ID');
 
       try {
@@ -360,12 +358,9 @@ export class YouTubeClient {
    * @throws {AppError} On API failure or schema mismatch
    */
   async getPlaylistById(playlistId: PlaylistId): Promise<YouTubePlaylist | null> {
-    await this.rateLimiter.waitForToken(
-      'playlists.list',
-      YOUTUBE_API_COSTS['playlists.list']
-    );
-
     return this.retryHandler.execute('getPlaylistById', async () => {
+      // Token consumed per attempt; see getVideoById for rationale.
+      await this.rateLimiter.waitForToken('playlists.list', YOUTUBE_API_COSTS['playlists.list']);
       logger.info({ playlistId }, 'Fetching playlist by ID');
 
       try {
@@ -432,15 +427,15 @@ export class YouTubeClient {
         );
       }
 
-      await this.rateLimiter.waitForToken(
-        'playlistItems.list',
-        YOUTUBE_API_COSTS['playlistItems.list']
-      );
-
       const page = await this.retryHandler.execute<{
         items: YouTubePlaylistItem[];
         nextPageToken?: string;
       }>('getPlaylistItems', async () => {
+        // Token consumed per attempt; see getVideoById for rationale.
+        await this.rateLimiter.waitForToken(
+          'playlistItems.list',
+          YOUTUBE_API_COSTS['playlistItems.list']
+        );
         logger.debug({ playlistId, pageToken, pageCount }, 'Fetching playlist page');
 
         try {
@@ -515,15 +510,12 @@ export class YouTubeClient {
         );
       }
 
-      await this.rateLimiter.waitForToken(
-        'playlists.list',
-        YOUTUBE_API_COSTS['playlists.list']
-      );
-
       const page = await this.retryHandler.execute<{
         items: YouTubePlaylist[];
         nextPageToken?: string;
       }>('getMyPlaylists', async () => {
+        // Token consumed per attempt; see getVideoById for rationale.
+        await this.rateLimiter.waitForToken('playlists.list', YOUTUBE_API_COSTS['playlists.list']);
         logger.debug({ pageToken, pageCount }, 'Fetching my playlists page');
 
         try {
@@ -590,9 +582,9 @@ export class YouTubeClient {
       });
     }
 
-    await this.rateLimiter.waitForToken('search.list', YOUTUBE_API_COSTS['search.list']);
-
     return this.retryHandler.execute('searchPlaylists', async () => {
+      // Token consumed per attempt; see getVideoById for rationale.
+      await this.rateLimiter.waitForToken('search.list', YOUTUBE_API_COSTS['search.list']);
       logger.info({ query }, 'Searching playlists');
 
       try {
@@ -603,11 +595,10 @@ export class YouTubeClient {
           maxResults: 50,
         });
 
-        const parsedPage = this.parseResponse(
-          YouTubeSearchPlaylistsPageSchema,
-          response.data,
-          { method: 'searchPlaylists', query }
-        );
+        const parsedPage = this.parseResponse(YouTubeSearchPlaylistsPageSchema, response.data, {
+          method: 'searchPlaylists',
+          query,
+        });
 
         const results: YouTubePlaylistSearchResult[] = parsedPage.items.map((it) => ({
           playlistId: asPlaylistId(it.id.playlistId),
