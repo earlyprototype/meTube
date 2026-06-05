@@ -23,6 +23,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { AppError } from '../errors/index.js';
+import type { VideoId } from '../types/index.js';
 import logger from '../utils/logger.js';
 
 import type { TranscriptData } from './TranscriptExtractor.js';
@@ -119,18 +120,18 @@ export class WhisperExtractor {
   /**
    * Extract a transcript via Whisper. Returns `null` if disabled or
    * unavailable; never throws on per-video failures (logs + returns null).
+   *
+   * `videoId: VideoId` matches the v2 boundary invariant — the brand is
+   * structurally a string so no runtime semantics change.
    */
-  async extract(videoId: string): Promise<TranscriptData | null> {
+  async extract(videoId: VideoId): Promise<TranscriptData | null> {
     if (!this.enabled) {
       logger.debug({ videoId }, 'Whisper extraction disabled');
       return null;
     }
 
     if (!this.isAvailable()) {
-      logger.warn(
-        { videoId, reason: this.getUnavailableReason() },
-        'Whisper not available'
-      );
+      logger.warn({ videoId, reason: this.getUnavailableReason() }, 'Whisper not available');
       return null;
     }
 
@@ -196,7 +197,7 @@ export class WhisperExtractor {
   /**
    * Run `yt-dlp` to download the audio track to `outputPath`.
    */
-  private async downloadAudio(videoId: string, outputPath: string): Promise<void> {
+  private async downloadAudio(videoId: VideoId, outputPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const args = [
         '-x',
@@ -281,10 +282,7 @@ export class WhisperExtractor {
    * Run the Python whisper subprocess on `audioPath`. The subprocess emits
    * JSON between the marker lines; this method extracts and parses it.
    */
-  private async transcribeAudio(
-    audioPath: string,
-    videoId: string
-  ): Promise<TranscriptData> {
+  private async transcribeAudio(audioPath: string, videoId: VideoId): Promise<TranscriptData> {
     return new Promise((resolve, reject) => {
       const pythonScript = `
 import sys
@@ -339,9 +337,7 @@ print('JSON_OUTPUT_END')
 
         if (code === 0) {
           try {
-            const jsonMatch = stdout.match(
-              /JSON_OUTPUT_START\s*\n([\s\S]*?)\nJSON_OUTPUT_END/
-            );
+            const jsonMatch = stdout.match(/JSON_OUTPUT_START\s*\n([\s\S]*?)\nJSON_OUTPUT_END/);
             if (!jsonMatch) {
               throw new Error('JSON markers not found in output');
             }

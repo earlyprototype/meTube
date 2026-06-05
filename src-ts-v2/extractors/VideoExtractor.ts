@@ -45,10 +45,7 @@ import logger from '../utils/logger.js';
 
 import { AIAnalysisRepository } from '../database/AIAnalysisRepository.js';
 import type { DatabaseManager } from '../database/connection.js';
-import {
-  EntityRepository,
-  type EntityInput,
-} from '../database/EntityRepository.js';
+import { EntityRepository, type EntityInput } from '../database/EntityRepository.js';
 import {
   ExtractionJobRepository,
   type ExtractionJobId,
@@ -157,14 +154,13 @@ export interface TranscriptResult {
 
 /**
  * Expected `TranscriptExtractor` surface — async, returns null when no
- * caption track is available (caller falls back to Whisper). Accepts a
- * raw string `videoId` because the sibling lifted extractor (v1
- * `youtube-transcript` wrapper) takes a string, not a branded type.
- * The branded `VideoId` is structurally a string so calls compile, but
- * the parameter type is declared as `string` to match the sibling.
+ * caption track is available (caller falls back to Whisper). v2
+ * declares the branded `VideoId` at the boundary (invariant #3); the
+ * brand is structurally a string, so the sibling lifted extractor's
+ * runtime impl satisfies this interface unchanged.
  */
 export interface TranscriptExtractorLike {
-  extract(videoId: string): Promise<TranscriptResult | null>;
+  extract(videoId: VideoId): Promise<TranscriptResult | null>;
 }
 
 /**
@@ -172,7 +168,7 @@ export interface TranscriptExtractorLike {
  * but always sets `from_whisper: true` when it returns a result.
  */
 export interface WhisperExtractorLike {
-  extract(videoId: string): Promise<TranscriptResult | null>;
+  extract(videoId: VideoId): Promise<TranscriptResult | null>;
   isAvailable(): boolean;
 }
 
@@ -425,17 +421,12 @@ export class VideoExtractor {
     // Repositories: use injected if present, otherwise build from `db`.
     this.videoRepository = deps.videoRepository ?? new VideoRepository(db);
     this.playlistRepository = deps.playlistRepository ?? new PlaylistRepository(db);
-    this.playlistItemRepository =
-      deps.playlistItemRepository ?? new PlaylistItemRepository(db);
-    this.statisticsRepository =
-      deps.statisticsRepository ?? new StatisticsRepository(db);
+    this.playlistItemRepository = deps.playlistItemRepository ?? new PlaylistItemRepository(db);
+    this.statisticsRepository = deps.statisticsRepository ?? new StatisticsRepository(db);
     this.entityRepository = deps.entityRepository ?? new EntityRepository(db);
-    this.aiAnalysisRepository =
-      deps.aiAnalysisRepository ?? new AIAnalysisRepository(db);
-    this.extractionJobRepository =
-      deps.extractionJobRepository ?? new ExtractionJobRepository(db);
-    this.transcriptRepository =
-      deps.transcriptRepository ?? new TranscriptRepository(db);
+    this.aiAnalysisRepository = deps.aiAnalysisRepository ?? new AIAnalysisRepository(db);
+    this.extractionJobRepository = deps.extractionJobRepository ?? new ExtractionJobRepository(db);
+    this.transcriptRepository = deps.transcriptRepository ?? new TranscriptRepository(db);
 
     // Siblings: injected siblings win. When not injected we leave them
     // null and require the test (or production wiring) to have passed
@@ -626,10 +617,7 @@ export class VideoExtractor {
         new_videos: processed,
         error_message: message,
       });
-      logger.error(
-        { playlistId, err: message },
-        'Playlist extraction failed (uncaught)'
-      );
+      logger.error({ playlistId, err: message }, 'Playlist extraction failed (uncaught)');
       throw error instanceof AppError
         ? error
         : new AppError('Playlist extraction failed', {
@@ -741,13 +729,8 @@ export class VideoExtractor {
     // Step 5: description parsing (regex-only, always runs). Persisted
     // entities from the description path are independent of the LLM
     // path; LLM augments, doesn't replace.
-    const description = this.descriptionParser.parse(
-      details.title,
-      details.description
-    );
-    const descriptionEntities = this.descriptionParser.extractEntitiesForDatabase(
-      description
-    );
+    const description = this.descriptionParser.parse(details.title, details.description);
+    const descriptionEntities = this.descriptionParser.extractEntitiesForDatabase(description);
 
     // Step 6: Gemini LLM analysis (optional). Requires a transcript +
     // an enabled parser.
@@ -926,9 +909,7 @@ export class VideoExtractor {
    * Wrap a user-supplied progress callback in a try-catch so a faulty
    * observer does not abort the extraction. `undefined` → no-op.
    */
-  private wrapProgress(
-    raw: ExtractProgressCallback | undefined
-  ): ExtractProgressCallback {
+  private wrapProgress(raw: ExtractProgressCallback | undefined): ExtractProgressCallback {
     if (raw === undefined) {
       return () => {
         // no-op

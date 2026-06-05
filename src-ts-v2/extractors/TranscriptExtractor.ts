@@ -24,6 +24,7 @@
 import { YoutubeTranscript, type TranscriptResponse } from 'youtube-transcript';
 
 import { ValidationError } from '../errors/index.js';
+import type { VideoId } from '../types/index.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -52,9 +53,14 @@ export interface TranscriptData {
  * method TranscriptExtractor calls is `extract`. Both the v2
  * `WhisperExtractor` and any test double implementing the same method are
  * accepted by this type.
+ *
+ * `videoId` is the v2-branded `VideoId` at the module boundary
+ * (invariant #3). The brand is structurally a string, so existing
+ * implementations that declare `videoId: string` continue to satisfy
+ * this interface — but new callers are forced through the validator.
  */
 export interface WhisperLike {
-  extract(videoId: string): Promise<TranscriptData | null>;
+  extract(videoId: VideoId): Promise<TranscriptData | null>;
 }
 
 /**
@@ -114,7 +120,10 @@ export class TranscriptExtractor {
    * exponential backoff on rate-limit, then optionally falls back to
    * Whisper.
    *
-   * @param videoId - YouTube video ID (11 chars, [A-Za-z0-9_-]).
+   * @param videoId - Branded YouTube video ID (`VideoId`). The brand is
+   *                  structurally a string and the runtime validators
+   *                  below preserve v1 input safety for callers that
+   *                  cast in.
    * @param maxRetries - Max retries on rate-limit. Default 3.
    * @param useWhisperFallback - Whether to try Whisper if YouTube fails.
    *                              Default `true`.
@@ -122,13 +131,14 @@ export class TranscriptExtractor {
    * @throws {ValidationError} If videoId is missing or malformed.
    */
   async extract(
-    videoId: string,
+    videoId: VideoId,
     maxRetries = 3,
     useWhisperFallback = true
   ): Promise<TranscriptData | null> {
     // Boundary validation. The same regex `asVideoId` uses is enforced
     // here so callers that haven't branded their input upstream still get
-    // a clear failure.
+    // a clear failure. The `VideoId` brand is compile-time only — at
+    // runtime any string can be cast in, so we validate defensively.
     if (typeof videoId !== 'string' || !videoId.trim()) {
       throw new ValidationError('videoId must be a non-empty string', {
         field: 'videoId',
@@ -186,10 +196,7 @@ export class TranscriptExtractor {
           }
         } else {
           youtubeFailedReason = errorMessage;
-          logger.debug(
-            { videoId, error: errorMessage },
-            'YouTube transcript extraction failed'
-          );
+          logger.debug({ videoId, error: errorMessage }, 'YouTube transcript extraction failed');
           break;
         }
       }
@@ -208,16 +215,11 @@ export class TranscriptExtractor {
           logger.warn({ videoId }, 'Whisper transcription failed');
         } catch (error) {
           const errorMessage =
-            error instanceof Error
-              ? error.message.split('\n')[0].substring(0, 100)
-              : String(error);
+            error instanceof Error ? error.message.split('\n')[0].substring(0, 100) : String(error);
           logger.error({ videoId, error: errorMessage }, 'Whisper extraction error');
         }
       } else {
-        logger.info(
-          { videoId, reason: youtubeFailedReason },
-          'No transcript available'
-        );
+        logger.info({ videoId, reason: youtubeFailedReason }, 'No transcript available');
       }
     }
 
@@ -227,76 +229,100 @@ export class TranscriptExtractor {
   /**
    * Inner fetch + convert. Separated so the retry loop in `extract` can
    * intercept rate-limit errors cleanly.
+   *
+   * Iterates the configured language priority list — a video that only
+   * carries `en-GB` captions (with `en` returning "No transcript") now
+   * surfaces those captions instead of falling straight through to
+   * Whisper. Rate-limit and "video unavailable" errors short-circuit
+   * the loop with the same semantics as v1 — they're not "missing
+   * captions" failures, they're transport / target failures.
    */
-  private async extractTranscript(videoId: string): Promise<TranscriptData | null> {
-    try {
-      const transcript = await YoutubeTranscript.fetchTranscript(videoId, {
-        lang: this.languages[0],
-      });
+  private async extractTranscript(videoId: VideoId): Promise<TranscriptData | null> {
+    // Treat these substrings as "this language has no captions; try
+    // the next one" rather than as a terminal failure. Anything else
+    // is propagated (rate-limit) or short-circuits (video unavailable).
+    const missingPatterns = ['Transcript is disabled', 'No transcript'];
 
-      if (transcript.length === 0) {
-        return null;
-      }
+    for (const lang of this.languages) {
+      try {
+        const transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang });
 
-      const segments: TranscriptSegment[] = transcript.map(
-        (segment: TranscriptResponse) => ({
+        if (transcript.length === 0) {
+          // Empty for this language — try the next.
+          logger.debug({ videoId, lang }, 'Empty transcript; trying next language');
+          continue;
+        }
+
+        const segments: TranscriptSegment[] = transcript.map((segment: TranscriptResponse) => ({
           start: segment.offset / 1000,
           duration: segment.duration / 1000,
           text: segment.text,
-        })
-      );
+        }));
 
-      const fullText = segments.map((seg) => seg.text).join(' ');
+        const fullText = segments.map((seg) => seg.text).join(' ');
 
-      // Language detection: prefer the per-segment lang the library
-      // returns; fall back to the requested language. v1 always wrote
-      // `'en'` regardless of what was requested or returned, which is the
-      // bug PORT_PLAN flags.
-      const detectedLanguage = transcript[0]?.lang ?? this.languages[0];
+        // Language detection: prefer the per-segment lang the library
+        // returns; fall back to the language we actually requested
+        // (not languages[0]) so the recorded language matches the
+        // track we got back. v1 always wrote `'en'`.
+        const detectedLanguage = transcript[0]?.lang ?? lang;
 
-      return {
-        full_text: fullText,
-        segments,
-        language: detectedLanguage,
-        is_auto_generated: this.assumeAutoGenerated,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+        return {
+          full_text: fullText,
+          segments,
+          language: detectedLanguage,
+          is_auto_generated: this.assumeAutoGenerated,
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
 
-      if (
-        errorMessage.includes('Transcript is disabled') ||
-        errorMessage.includes('No transcript')
-      ) {
-        logger.debug({ videoId }, 'YouTube transcripts disabled for video');
-        return null;
+        // Rate-limit errors are transport-level — bubble to the outer
+        // retry handler regardless of language.
+        if (errorMessage.toLowerCase().includes('rate limit')) {
+          throw error;
+        }
+
+        // Video unavailable applies to the target, not the language —
+        // no point in trying other languages.
+        if (errorMessage.includes('Video unavailable')) {
+          logger.warn({ videoId }, 'Video unavailable');
+          return null;
+        }
+
+        // "Missing for this language" — fall through to the next entry.
+        if (missingPatterns.some((p) => errorMessage.includes(p))) {
+          logger.debug({ videoId, lang }, 'No transcript for requested language; trying next');
+          continue;
+        }
+
+        // Anything else: log + try the next language. Mirrors v1 which
+        // returned null on unknown errors — but per-language so a single
+        // odd error doesn't blank out the whole priority list.
+        const errorType = error instanceof Error ? error.constructor.name : 'Error';
+        logger.debug(
+          { videoId, lang, errorType, message: errorMessage.substring(0, 80) },
+          'Transcript extraction error; trying next language'
+        );
       }
-
-      if (errorMessage.includes('Video unavailable')) {
-        logger.warn({ videoId }, 'Video unavailable');
-        return null;
-      }
-
-      if (errorMessage.toLowerCase().includes('rate limit')) {
-        throw error;
-      }
-
-      const errorType = error instanceof Error ? error.constructor.name : 'Error';
-      logger.debug(
-        { videoId, errorType, message: errorMessage.substring(0, 80) },
-        'Transcript extraction error'
-      );
-
-      return null;
     }
+
+    // Exhausted every configured language without a hit.
+    logger.debug(
+      { videoId, languages: this.languages },
+      'No transcript available in any configured language'
+    );
+    return null;
   }
 
   /**
    * Extract transcripts for a list of videos. One failure does not cause
    * the rest to fail — each entry's result is independent.
+   *
+   * `VideoId[]` at the boundary (invariant #3). The brand is structurally
+   * a string, so the runtime keys of the returned record are still bare
+   * video-id strings.
    */
-  async extractBatch(
-    videoIds: string[]
-  ): Promise<Record<string, TranscriptData | null>> {
+  async extractBatch(videoIds: VideoId[]): Promise<Record<string, TranscriptData | null>> {
     if (!Array.isArray(videoIds)) {
       throw new ValidationError('videoIds must be an array', {
         field: 'videoIds',
@@ -379,9 +405,7 @@ export class TranscriptExtractor {
         .toString()
         .padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
-    return `${minutes.toString().padStart(2, '0')}:${secs
-      .toString()
-      .padStart(2, '0')}`;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
 
   /**
