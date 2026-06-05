@@ -578,7 +578,7 @@ describe('GeminiParser', () => {
         summary: 'Test summary',
         content_type: 'tutorial',
         sentiment: 'positive',
-        model_used: 'gemini-1.5-flash',
+        model_used: 'gemini-3-flash-preview',
       });
     });
 

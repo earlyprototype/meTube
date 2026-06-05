@@ -48,7 +48,7 @@ const MAX_TRANSCRIPT_CHARS = 8000;
  * Default Gemini model. Matches the Python default. Override by passing
  * `model` to the constructor.
  */
-const DEFAULT_MODEL = 'gemini-1.5-flash';
+const DEFAULT_MODEL = 'gemini-3-flash-preview';
 
 /**
  * Lower temperature for more deterministic structured output. The prompt
@@ -104,7 +104,7 @@ export class GeminiParser {
    *
    * @param apiKey - Google Gemini API key. If absent, falls back to
    *                 `process.env.GEMINI_API_KEY`.
-   * @param model - Gemini model id. Defaults to `gemini-1.5-flash`.
+   * @param model - Gemini model id. Defaults to `gemini-3-flash-preview`.
    * @throws {ValidationError} If no API key is available from either source.
    */
   constructor(apiKey?: string, model: string = DEFAULT_MODEL) {
