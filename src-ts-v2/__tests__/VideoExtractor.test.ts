@@ -30,6 +30,7 @@ import { DatabaseManager } from '../database/connection.js';
 import { AIAnalysisRepository } from '../database/AIAnalysisRepository.js';
 import { ExtractionJobRepository } from '../database/ExtractionJobRepository.js';
 import { PlaylistItemRepository } from '../database/PlaylistItemRepository.js';
+import { TranscriptRepository } from '../database/TranscriptRepository.js';
 import { VideoRepository } from '../database/VideoRepository.js';
 import { AppError } from '../errors/index.js';
 import { asPlaylistId, asVideoId, type PlaylistId, type VideoId } from '../types/branded.js';
@@ -58,7 +59,7 @@ import {
  * `asPlaylistId`'s pattern.
  */
 function makePlaylistId(suffix: string): PlaylistId {
-  const padded = (`PL${suffix}`).padEnd(13, '0');
+  const padded = `PL${suffix}`.padEnd(13, '0');
   return asPlaylistId(padded);
 }
 
@@ -363,9 +364,7 @@ describe('VideoExtractor.extractPlaylist — happy path', () => {
     // Arrange
     const playlistId = makePlaylistId('entities1');
     const videoId = makeVideoId('entityvid01');
-    const detailsMap = new Map<VideoId, VideoDetails | null>([
-      [videoId, makeDetails(videoId)],
-    ]);
+    const detailsMap = new Map<VideoId, VideoDetails | null>([[videoId, makeDetails(videoId)]]);
 
     const youtubeClient = makeMockYouTubeClient({
       playlistInfo: {
@@ -478,6 +477,15 @@ describe('VideoExtractor.extractPlaylist — Whisper fallback', () => {
     // And because the call shape is correct, LLM analysis is persisted.
     const aiRepo = new AIAnalysisRepository(dbm);
     expect(aiRepo.getByVideo(videoId)).not.toBeNull();
+
+    // The Whisper-supplied transcript itself must also be persisted —
+    // catches the regression class where Gemini still receives the text
+    // but the pipeline forgets to call TranscriptRepository.upsert and
+    // the report layer sees no captions on disk.
+    const transcriptRepo = new TranscriptRepository(dbm);
+    const stored = transcriptRepo.findByVideoId(videoId);
+    expect(stored).toBeDefined();
+    expect(stored?.full_text).toBe('Whisper-transcribed text.');
   });
 
   it('does NOT call Whisper when feature is disabled in config', async () => {
@@ -495,9 +503,7 @@ describe('VideoExtractor.extractPlaylist — Whisper fallback', () => {
       playlistVideos: [makeItem('nowhispvid1', 0)],
       videoDetails: new Map([[videoId, makeDetails(videoId)]]),
     });
-    const transcriptExtractor = makeMockTranscriptExtractor(
-      new Map([[videoId, null]])
-    );
+    const transcriptExtractor = makeMockTranscriptExtractor(new Map([[videoId, null]]));
     const whisperExtractor = makeMockWhisperExtractor(
       new Map([[videoId, makeWhisperTranscript()]]),
       true
@@ -584,9 +590,7 @@ describe('VideoExtractor.extractPlaylist — idempotency', () => {
     expect(secondRun.processed).toBe(0);
     expect(secondRun.skipped).toBe(3);
     expect(secondRun.failed).toBe(0);
-    expect(secondRun.processed + secondRun.skipped + secondRun.failed).toBe(
-      secondRun.total
-    );
+    expect(secondRun.processed + secondRun.skipped + secondRun.failed).toBe(secondRun.total);
 
     // Per the v1 stub-bomb closure: playlist_items still updated on
     // skip (so a re-extract picks up newly-discovered membership).
@@ -829,12 +833,7 @@ describe('VideoExtractor.extractPlaylist — job tracking', () => {
     });
     const descriptionParser = makeMockDescriptionParser();
 
-    const extractor = new VideoExtractor(
-      dbm,
-      youtubeClient,
-      {},
-      { descriptionParser }
-    );
+    const extractor = new VideoExtractor(dbm, youtubeClient, {}, { descriptionParser });
 
     // Act + Assert — getPlaylistInfo returning null causes a hard throw
     // BEFORE the job row is created, so we expect an AppError and no
@@ -867,12 +866,7 @@ describe('VideoExtractor.extractPlaylist — job tracking', () => {
     };
     const descriptionParser = makeMockDescriptionParser();
 
-    const extractor = new VideoExtractor(
-      dbm,
-      youtubeClient,
-      {},
-      { descriptionParser }
-    );
+    const extractor = new VideoExtractor(dbm, youtubeClient, {}, { descriptionParser });
 
     // Act — per-video failures are isolated, not raised. The job row
     // still completes (with failed=1).
