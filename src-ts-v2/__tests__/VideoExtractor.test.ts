@@ -466,11 +466,18 @@ describe('VideoExtractor.extractPlaylist — Whisper fallback', () => {
     expect(result.failed).toBe(0);
     expect(transcriptExtractor.extract).toHaveBeenCalledWith(videoId);
     expect(whisperExtractor.extract).toHaveBeenCalledWith(videoId);
-    // Whisper-supplied transcript text reached Gemini
-    expect(geminiParser.parseTranscript).toHaveBeenCalledWith(
-      'Whisper-transcribed text.',
-      'No-Captions Video'
-    );
+    // Whisper-supplied transcript text reached Gemini as a single typed
+    // object ({ transcript, videoTitle }) — the contract the real
+    // GeminiParser.parseTranscript expects. This regression fails on the
+    // old two-positional-string call shape, which made the real parser
+    // throw ValidationError and silently skip LLM persistence.
+    expect(geminiParser.parseTranscript).toHaveBeenCalledWith({
+      transcript: 'Whisper-transcribed text.',
+      videoTitle: 'No-Captions Video',
+    });
+    // And because the call shape is correct, LLM analysis is persisted.
+    const aiRepo = new AIAnalysisRepository(dbm);
+    expect(aiRepo.getByVideo(videoId)).not.toBeNull();
   });
 
   it('does NOT call Whisper when feature is disabled in config', async () => {

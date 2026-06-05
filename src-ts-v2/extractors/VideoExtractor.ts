@@ -38,6 +38,7 @@
 import { z } from 'zod';
 
 import { AppError } from '../errors/index.js';
+import type { ParseTranscriptInput } from '../parsers/GeminiParser.js';
 import { GeminiResponseSchema, type GeminiResponse } from '../schemas/gemini.js';
 import { asVideoId, type PlaylistId, type VideoId } from '../types/index.js';
 import logger from '../utils/logger.js';
@@ -221,12 +222,14 @@ export interface DescriptionParserLike {
  * Zod-validated `GeminiResponse`. Returns null when the model is
  * unavailable or returns invalid JSON (the v1 `_empty_result` fallback
  * is the parser's responsibility, not ours).
+ *
+ * The input is the single typed object the real
+ * `GeminiParser.parseTranscript` accepts (`{ transcript, videoTitle }`),
+ * imported as `ParseTranscriptInput` so this seam can never drift from
+ * the concrete parser's contract again.
  */
 export interface GeminiParserLike {
-  parseTranscript(
-    transcriptText: string,
-    videoTitle: string
-  ): Promise<GeminiResponse | null>;
+  parseTranscript(input: ParseTranscriptInput): Promise<GeminiResponse | null>;
   readonly modelName: string;
 }
 
@@ -739,10 +742,10 @@ export class VideoExtractor {
     ) {
       onProgress({ kind: 'gemini', videoId, index, total });
       try {
-        const raw = await this.geminiParser.parseTranscript(
-          transcript.full_text,
-          details.title
-        );
+        const raw = await this.geminiParser.parseTranscript({
+          transcript: transcript.full_text,
+          videoTitle: details.title,
+        });
         if (raw !== null) {
           // Defence-in-depth: re-validate at the boundary. If the
           // sibling parser already validated, this is a no-op; if it
