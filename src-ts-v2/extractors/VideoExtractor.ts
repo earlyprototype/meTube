@@ -217,6 +217,27 @@ export interface DescriptionParserLike {
 }
 
 /**
+ * Input shape for `GeminiParserLike.parseTranscript` — a typed object so
+ * the call site is unambiguous (which field is transcript vs title) and
+ * the contract matches the concrete `GeminiParser.parseTranscript` in
+ * `src-ts-v2/parsers/GeminiParser.ts`.
+ *
+ * A15 closure: the previous interface declared `parseTranscript` with
+ * two positional string parameters, but the real GeminiParser takes a
+ * single `{ transcript, videoTitle }` object. That drift was masked
+ * because (a) the parser was deliberately not injected on the playlist
+ * path (A2/A3), (b) the existing test mocked the broken positional
+ * shape, and (c) the call-site catch wrapped the throw at `warn` which
+ * was invisible at the default Pino level (A26). Reconciled here so the
+ * interface mirrors the concrete contract — wiring the real parser now
+ * just works.
+ */
+export interface ParseTranscriptArgs {
+  readonly transcript: string;
+  readonly videoTitle: string;
+}
+
+/**
  * Expected `GeminiParser` surface — async LLM call, returns a parsed and
  * Zod-validated `GeminiResponse`. Returns null when the model is
  * unavailable or returns invalid JSON (the v1 `_empty_result` fallback

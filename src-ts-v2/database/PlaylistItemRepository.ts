@@ -79,8 +79,8 @@ export const PlaylistItemWithVideoSchema = z.object({
   v_definition: z.string().nullable().optional(),
   v_caption: z.number().int().nullable().optional(),
   v_licensed_content: z.number().int().nullable().optional(),
-  v_created_at: z.string().optional(),
-  v_updated_at: z.string().optional(),
+  v_created_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL) — mirrors VideoRowSchema; closes A13 drift
+  v_updated_at: z.string().nullable().optional(), // nullable per schema.ts: TEXT DEFAULT (no NOT NULL) — mirrors VideoRowSchema; closes A13 drift
 });
 
 export type PlaylistItemWithVideoRaw = z.infer<typeof PlaylistItemWithVideoSchema>;
