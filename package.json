@@ -2,11 +2,11 @@
   "name": "metube-ink",
   "version": "1.0.0",
   "description": "A comprehensive CLI tool for extracting and analysing YouTube videos with dual-layer transcript extraction (YouTube + Whisper AI fallback), automatic entity parsing from transcripts and descriptions, cached playlist discovery, and beautiful interactive HTML reports. Built with Ink.",
-  "main": "dist/cli.js",
+  "main": "dist/src-ts/cli.js",
   "type": "module",
   "bin": {
-    "metube": "./dist/cli.js",
-    "mtb": "./dist/cli.js"
+    "metube": "./dist/src-ts/cli.js",
+    "mtb": "./dist/src-ts/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -14,7 +14,7 @@
     "dev:init": "tsx src-ts/cli.tsx init",
     "dev:list": "tsx src-ts/cli.tsx playlist list",
     "dev:discover": "tsx src-ts/cli.tsx playlist discover",
-    "start": "node dist/cli.js",
+    "start": "node dist/src-ts/cli.js",
     "watch": "tsc --watch",
     "test": "vitest run",
     "test:backend": "tsx scripts/dev/test-backend-integration.ts",
@@ -37,7 +37,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@google-cloud/local-auth": "^3.0.1",
     "@google/generative-ai": "^0.24.1",
     "@inkjs/ui": "^2.0.0",
     "@types/node": "^25.0.9",

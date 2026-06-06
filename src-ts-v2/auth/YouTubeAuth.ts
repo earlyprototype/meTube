@@ -1,48 +1,60 @@
 /**
- * YouTubeAuth — OAuth 2.0 authentication for the YouTube Data API v3.
+ * YouTubeAuth - OAuth 2.0 authentication for the YouTube Data API v3.
  *
- * v2 replaces v1's hand-rolled flow (manual `generateAuthUrl` +
- * `getToken` round-trip + bespoke local server) with
- * `@google-cloud/local-auth`, mirroring Python's
- * `InstalledAppFlow.run_local_server()` ergonomic.
+ * This module restores v1's working hand-rolled OAuth flow inside v2's
+ * public API surface. The earlier Wave 3 rewrite swapped in
+ * `@google-cloud/local-auth`, which broke against the user's Google
+ * Cloud Console OAuth client configuration (the library picks an
+ * ephemeral redirect URI shape that does not match what's registered
+ * in their Console). The fix: keep v2's public-API shape so the Ink
+ * layer (src-ts/commands/*.tsx) does not need to change, but use v1's
+ * proven implementation under the hood:
  *
- * Why the rewrite:
- *   - The v1 manual flow was bug-prone: commit `3a35462` had to add
- *     `response_type='code'` explicitly because googleapis no longer
- *     auto-sets it for Desktop clients, and pinning port `3000` (not
- *     `80`) because Windows blocks low ports without admin.
- *   - The Python equivalent never had these problems because the
- *     library handles them. `@google-cloud/local-auth` is the
- *     equivalent for TS.
+ *   1. `OAuth2Client.generateAuthUrl(...)` with explicit
+ *      `redirect_uri`, `access_type: 'offline'`, `prompt: 'consent'`,
+ *      and `response_type: 'code'` (the v1 Windows fix from commit
+ *      `3a35462` - googleapis no longer auto-sets `response_type` for
+ *      Desktop clients).
+ *   2. Hand-rolled `OAuthServer` (`captureAuthorizationCode`) on
+ *      `localhost:3000` (the v1 port fix - port 80 requires admin on
+ *      Windows; port 3000 is the URI the user has registered in their
+ *      Console).
+ *   3. Redirect URI picked from `client_secret.json`'s `redirect_uris`
+ *      array (prefer `localhost:3000`, fall back to `localhost`, fall
+ *      back to first entry) - matches v1 exactly so the user's Console
+ *      config keeps working.
  *
- * What v2 adds on top of `@google-cloud/local-auth`:
- *   - OAuth `state` parameter generated per-authentication via
- *     `crypto.randomBytes(32).toString('hex')` and verified on the
- *     callback. `@google-cloud/local-auth` does not do this — the
- *     library binds a fresh ephemeral port per call which limits CSRF
- *     surface, but we still bake `state` in because RFC 6749 §10.12
- *     says so and it's free defence-in-depth.
- *   - Explicit port pinning (`3000`, not the library default of `0`
- *     for `installed` apps). The user's `client_secret.json` lists
- *     `http://localhost:3000` as the only allowed redirect URI, so
- *     ephemeral ports would mismatch. The audit-mandated port fix
- *     (`3a35462`) is preserved.
- *   - Pino logging throughout — no `console.*` calls. Token contents
- *     are NEVER logged (the closest is `tokensPath` for "saved to X").
- *   - `AppError` with explicit codes (`MISSING_CREDS`, `INVALID_TOKEN`,
- *     `LOCAL_AUTH_FAILED`, …) so call sites can branch on cause.
+ * v2 wins kept on top of the v1 flow:
+ *   - OAuth `state` parameter generated per-auth via
+ *     `crypto.randomBytes(32).toString('hex')` and threaded into
+ *     `captureAuthorizationCode`'s `expectedState`. RFC 6749 section
+ *     10.12 - cheap defence-in-depth.
+ *   - Pino logging throughout (no `console.*`). Token contents are
+ *     NEVER logged.
+ *   - `AppError` with explicit codes (`MISSING_CREDS`,
+ *     `INVALID_TOKEN`, `LOCAL_AUTH_FAILED`, `TOKENS_SAVE_FAILED`) so
+ *     callers can branch on cause.
+ *   - Zod-friendly shape-checking on `client_secret.json` and
+ *     `tokens.json` (manual narrow rather than a Zod schema - kept
+ *     simple because the shapes are tiny and stable).
  *
- * Public surface — kept minimal on purpose:
- *   - `authenticate(): Promise<OAuth2Client>` — one-shot end-to-end flow
- *   - `getCurrentAuthClient(): OAuth2Client | null` — accessor for
- *     callers that need to issue requests after auth has succeeded
- *   - `loadTokens(): OAuthTokens` — read tokens.json from disk
- *   - `saveTokens(client: OAuth2Client): void` — extract credentials
+ * Public surface - kept identical to the Wave 3 v2 so the Ink call
+ * sites do not move:
+ *   - `authenticate(): Promise<OAuth2Client>` - one-shot end-to-end
+ *     flow
+ *   - `getCurrentAuthClient(): OAuth2Client | null` - accessor for
+ *     callers that already share the client
+ *   - `loadTokens(): OAuthTokens` - read tokens.json from disk;
+ *     throws `INVALID_TOKEN` on missing/malformed (the Ink layer uses
+ *     try/catch as a disk probe and tolerates this)
+ *   - `saveTokens(client: OAuth2Client): void` - extract credentials
  *     from a live client and persist
+ *   - `hasValidTokens(): boolean` - whether the cached client has
+ *     non-expired tokens
  *
- * Sensitive-file contract: token contents are never printed or logged.
- * Tokens are written to disk with `fs.writeFileSync(..., 'utf-8')`.
- * Callers must keep `tokens.json` gitignored.
+ * Sensitive-file contract: token contents are never printed or
+ * logged. Tokens are written via `fs.writeFileSync(..., 'utf-8')` to
+ * `tokens.json` (gitignored).
  */
 
 import * as crypto from 'crypto';
@@ -50,21 +62,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { OAuth2Client, type Credentials } from 'google-auth-library';
-import { authenticate as localAuthAuthenticate } from '@google-cloud/local-auth';
 
 import { AppError, ValidationError } from '../errors/index.js';
 import logger from '../utils/logger.js';
-import type {
-  OAuthConfig,
-  OAuthCredentials,
-  OAuthTokens,
-  YouTubeAuthOptions,
-} from './types.js';
+import type { OAuthConfig, OAuthCredentials, OAuthTokens, YouTubeAuthOptions } from './types.js';
+import { captureAuthorizationCode, openBrowser } from './OAuthServer.js';
 
 /**
  * Default OAuth scopes. Read-only for listing playlists / videos plus
- * force-ssl for the rare endpoints (e.g. `playlistItems.insert`) that
- * need a write capability.
+ * force-ssl for the rare write endpoints (e.g.
+ * `playlistItems.insert`).
  */
 const DEFAULT_SCOPES: readonly string[] = [
   'https://www.googleapis.com/auth/youtube.readonly',
@@ -72,14 +79,14 @@ const DEFAULT_SCOPES: readonly string[] = [
 ];
 
 /**
- * Default local server port. NOT `80` — `80` requires admin on
- * Windows. `3000` matches what users actually put in their Google
- * Cloud Console redirect URIs.
+ * Default local server port. NOT 80 - 80 requires admin on Windows.
+ * 3000 matches what users actually register in their Google Cloud
+ * Console redirect URIs (the v1 audit fix from commit `3a35462`).
  */
 const DEFAULT_PORT = 3000;
 
 /**
- * Skew tolerance for "is the access token still valid?" — 5 minutes,
+ * Skew tolerance for "is the access token still valid?" - 5 minutes,
  * matching v1.
  */
 const TOKEN_EXPIRY_SKEW_MS = 5 * 60 * 1000;
@@ -92,7 +99,8 @@ const TOKEN_EXPIRY_SKEW_MS = 5 * 60 * 1000;
  *   ```ts
  *   const auth = new YouTubeAuth();
  *   const client = await auth.authenticate();
- *   // pass `client` into googleapis: google.youtube({ version: 'v3', auth: client })
+ *   // pass `client` into googleapis:
+ *   //   google.youtube({ version: 'v3', auth: client })
  *   ```
  */
 export class YouTubeAuth {
@@ -115,19 +123,24 @@ export class YouTubeAuth {
 
   /**
    * Drive an end-to-end auth flow:
-   *   1. If `tokens.json` exists and parses, hydrate an `OAuth2Client`
-   *      and return it (refresh transparently on next API call —
-   *      googleapis handles that).
-   *   2. Otherwise, run `@google-cloud/local-auth` to drive the
-   *      browser-based consent flow, verify the OAuth `state` echo, and
-   *      persist the tokens.
+   *   1. If `tokens.json` exists and parses, hydrate an
+   *      `OAuth2Client` and return it (googleapis refreshes
+   *      transparently on next API call).
+   *   2. Otherwise, run the v1-style local server flow: generate a
+   *      CSRF state, build the auth URL with explicit `redirect_uri`
+   *      + `response_type=code`, start the one-shot localhost:3000
+   *      server, open the browser, wait for the callback, exchange
+   *      the code for tokens, persist.
    *
-   * @throws {AppError} `MISSING_CREDS` if `client_secret.json` is missing or malformed
-   * @throws {AppError} `INVALID_TOKEN` if `tokens.json` exists but is malformed
-   * @throws {AppError} `LOCAL_AUTH_FAILED` if the local-auth flow fails for any reason
+   * @throws {AppError} `MISSING_CREDS` if `client_secret.json` is
+   *   missing or malformed
+   * @throws {AppError} `INVALID_TOKEN` if `tokens.json` exists but is
+   *   malformed
+   * @throws {AppError} `LOCAL_AUTH_FAILED` if the local-server flow
+   *   fails for any reason
    */
   async authenticate(): Promise<OAuth2Client> {
-    // 1. Validate credentials file exists and parses — we need it for
+    // 1. Validate credentials file exists and parses - we need it for
     //    both paths (rehydrate AND fresh flow).
     const creds = this.readCredentials();
 
@@ -141,61 +154,135 @@ export class YouTubeAuth {
         logger.info({ tokensPath: this.tokensPath }, 'Hydrated OAuth client from saved tokens');
         return client;
       } catch (err) {
-        // Saved tokens were broken — fall through to fresh flow rather
-        // than failing hard. The token file might be from a previous
-        // schema or hand-edited; either way the user benefits from
-        // re-authenticating instead of being stuck.
+        // Saved tokens were broken - propagate INVALID_TOKEN so the
+        // caller can choose to delete tokens.json and retry. Any
+        // other unexpected error falls through to the fresh flow
+        // rather than failing hard.
         if (err instanceof AppError && err.code === 'INVALID_TOKEN') {
           throw err;
         }
         logger.warn(
-          { tokensPath: this.tokensPath, errCode: err instanceof AppError ? err.code : 'unknown' },
-          'Saved tokens unusable, falling back to local-auth flow'
+          {
+            tokensPath: this.tokensPath,
+            errCode: err instanceof AppError ? err.code : 'unknown',
+          },
+          'Saved tokens unusable, falling back to local OAuth flow'
         );
       }
     }
 
-    // 3. No usable tokens — drive the browser flow. We generate a
-    //    `state` here for CSRF defence even though
-    //    `@google-cloud/local-auth` doesn't surface it — see comments
-    //    above on RFC 6749 §10.12.
+    // 3. No usable tokens - drive the browser flow. CSRF state goes
+    //    into the auth URL via `state=...` and into the OAuthServer
+    //    via `expectedState`; the server rejects mismatches before
+    //    the code is even exchanged.
     const state = crypto.randomBytes(32).toString('hex');
-    logger.info({ port: this.port, scopes: this.scopes }, 'Starting local-auth flow');
+    const redirectUri = this.pickRedirectUri(creds);
+    logger.info({ port: this.port, scopes: this.scopes, redirectUri }, 'Starting local OAuth flow');
 
-    let localClient: { credentials: Credentials };
+    const client = this.buildOAuth2Client(creds);
+
+    // v1 OAuth params - mirror EXACTLY. The user's Google Cloud
+    // Console OAuth client is configured for this shape.
+    //   - `access_type: 'offline'` - we want a refresh_token
+    //   - `prompt: 'consent'` - force the consent screen so Google
+    //     actually issues a refresh_token even on re-auth
+    //   - `response_type: 'code'` - REQUIRED by Google; the
+    //     googleapis library no longer auto-sets this for Desktop
+    //     clients (the v1 fix from commit `3a35462`, observed in
+    //     googleapis v170 / 2026-05-18)
+    //   - `redirect_uri` - pinned to the Console-registered URI
+    //   - `state` - CSRF defence
+    const authUrl = client.generateAuthUrl({
+      access_type: 'offline',
+      scope: [...this.scopes],
+      prompt: 'consent',
+      response_type: 'code',
+      redirect_uri: redirectUri,
+      state,
+    });
+
+    let code: string;
     try {
-      // NOTE: We pass `state` not via local-auth (which doesn't accept
-      // it) but as a contract for any future swap to a hand-rolled
-      // flow. The state stays in scope so subsequent verification
-      // hooks can use it.
-      //
-      // `@google-cloud/local-auth` pins its own nested copy of
-      // `google-auth-library` (v9 at time of writing), so the
-      // `OAuth2Client` it returns is structurally identical but
-      // nominally a different type from our top-level v10. We narrow
-      // to just the `credentials` we need and rebuild a fresh v10
-      // client to expose to callers — this avoids leaking the nested
-      // library version through our public API.
-      localClient = await localAuthAuthenticate({
-        keyfilePath: this.credentialsPath,
-        scopes: [...this.scopes],
+      // Start the capture server first so the redirect has somewhere
+      // to land before the browser actually navigates.
+      const capturePromise = captureAuthorizationCode({
+        port: this.port,
+        expectedState: state,
       });
+
+      // Always surface the auth URL to the user via stderr BEFORE
+      // attempting to open the browser. Pino's default level is `error`,
+      // so a `logger.warn` on browser-open failure would never reach the
+      // user - they'd be stuck staring at a hung terminal. Writing the
+      // URL to stderr unconditionally guarantees they can always grab it
+      // by hand, whether or not auto-open works.
+      //
+      // This is the SINGLE intentional exception to "no console.* in
+      // production code": the URL is non-sensitive, the user is staring
+      // at a terminal waiting for it, and we use process.stderr.write
+      // (not console.log) so it doesn't conflict with Ink's stdout
+      // takeover. The pre-commit stub hook checks for console.*; stderr
+      // writes are fine.
+      const banner = '========================================================================';
+      process.stderr.write(
+        `\n${banner}\n` +
+          'OAuth: open this URL in a browser to grant access\n' +
+          `${banner}\n` +
+          `${authUrl}\n` +
+          `${banner}\n\n`
+      );
+
+      // Best-effort browser launch. If it fails the user can still paste
+      // the URL printed above - the server is still listening.
+      try {
+        await openBrowser(authUrl);
+        logger.info('Browser launched for OAuth consent');
+      } catch (browserErr) {
+        logger.warn(
+          { errMsg: browserErr instanceof Error ? browserErr.message : String(browserErr) },
+          'Could not auto-open browser; paste the URL printed above manually'
+        );
+      }
+
+      code = await capturePromise;
     } catch (err) {
       logger.error(
         { errMsg: err instanceof Error ? err.message : String(err) },
-        'local-auth flow failed'
+        'Local OAuth flow failed'
       );
       throw new AppError('Local OAuth authentication failed', {
         code: 'LOCAL_AUTH_FAILED',
         cause: err,
-        context: { port: this.port, hasState: state.length > 0 },
+        context: { port: this.port, redirectUri, hasState: state.length > 0 },
       });
     }
 
-    // 4. Rebuild a top-level v10 client with the live credentials,
-    //    persist tokens, and remember the client.
-    const client = this.buildOAuth2Client(creds);
-    client.setCredentials(localClient.credentials);
+    // 4. Exchange the authorization code for tokens. Use the SAME
+    //    redirect_uri as the auth URL - Google validates that they
+    //    match.
+    let tokenResponse: { tokens: Credentials };
+    try {
+      tokenResponse = await client.getToken({ code, redirect_uri: redirectUri });
+    } catch (err) {
+      logger.error(
+        { errMsg: err instanceof Error ? err.message : String(err) },
+        'Token exchange failed'
+      );
+      throw new AppError('Failed to exchange authorization code for tokens', {
+        code: 'LOCAL_AUTH_FAILED',
+        cause: err,
+        context: { redirectUri },
+      });
+    }
+
+    if (!tokenResponse.tokens.access_token) {
+      throw new AppError('Token exchange returned no access_token', {
+        code: 'LOCAL_AUTH_FAILED',
+        context: { redirectUri },
+      });
+    }
+
+    client.setCredentials(tokenResponse.tokens);
     this.saveTokens(client);
     this.currentClient = client;
     logger.info({ tokensPath: this.tokensPath }, 'Authentication successful');
@@ -208,8 +295,8 @@ export class YouTubeAuth {
    * this process.
    *
    * Stateless callers should prefer `authenticate()`; this accessor
-   * exists for the inner-loop case where a higher layer wants to share
-   * the client.
+   * exists for the inner-loop case where a higher layer wants to
+   * share the client.
    */
   getCurrentAuthClient(): OAuth2Client | null {
     return this.currentClient;
@@ -218,7 +305,8 @@ export class YouTubeAuth {
   /**
    * Read tokens.json from disk and return the parsed shape.
    *
-   * @throws {AppError} `INVALID_TOKEN` if the file is missing, unparseable, or shape-broken
+   * @throws {AppError} `INVALID_TOKEN` if the file is missing,
+   *   unparseable, or shape-broken
    */
   loadTokens(): OAuthTokens {
     if (!fs.existsSync(this.tokensPath)) {
@@ -287,9 +375,9 @@ export class YouTubeAuth {
    * Persist the credentials from a live `OAuth2Client` to
    * `tokens.json`.
    *
-   * The file is written atomically-ish (single `writeFileSync`),
-   * permissions are left to umask. Tokens are NEVER logged — only the
-   * filesystem path is.
+   * The file is written with a single `writeFileSync`. Permissions
+   * are left to umask. Tokens are NEVER logged - only the filesystem
+   * path is.
    *
    * @throws {AppError} `TOKENS_SAVE_FAILED` if the write fails
    */
@@ -297,7 +385,7 @@ export class YouTubeAuth {
     const credentials = client.credentials;
 
     if (!credentials.access_token) {
-      throw new AppError('Cannot save tokens — client has no access_token', {
+      throw new AppError('Cannot save tokens - client has no access_token', {
         code: 'INVALID_TOKEN',
         context: { reason: 'no-access-token-on-client' },
       });
@@ -337,9 +425,9 @@ export class YouTubeAuth {
    * Whether the cached client has tokens that are present AND not
    * within the 5-minute expiry skew window.
    *
-   * Pure read — never makes a network call. The googleapis library
-   * refreshes on demand when a request actually fails with 401, so
-   * this accessor is for ergonomics ("am I logged in?") not for gating
+   * Pure read - never makes a network call. The googleapis library
+   * refreshes on demand when a request fails with 401, so this
+   * accessor is for ergonomics ("am I logged in?") not for gating
    * API calls.
    */
   hasValidTokens(): boolean {
@@ -362,7 +450,8 @@ export class YouTubeAuth {
   /**
    * Read and shape-check `client_secret.json` from disk.
    *
-   * @throws {AppError} `MISSING_CREDS` for missing / unreadable / malformed files
+   * @throws {AppError} `MISSING_CREDS` for missing / unreadable /
+   *   malformed files
    */
   private readCredentials(): OAuthCredentials {
     if (!fs.existsSync(this.credentialsPath)) {
@@ -404,10 +493,10 @@ export class YouTubeAuth {
     const config = parsed as OAuthConfig;
     const creds = config.installed ?? config.web;
     if (!creds) {
-      throw new ValidationError(
-        'Credentials file missing "installed" or "web" client section',
-        { field: 'credentialsPath', value: this.credentialsPath }
-      );
+      throw new ValidationError('Credentials file missing "installed" or "web" client section', {
+        field: 'credentialsPath',
+        value: this.credentialsPath,
+      });
     }
 
     if (
@@ -426,14 +515,29 @@ export class YouTubeAuth {
   }
 
   /**
-   * Construct an `OAuth2Client` from a credentials block, pinning the
-   * redirect URI to `localhost:<port>` so it matches the local server.
+   * Select the redirect URI from `client_secret.json`'s
+   * `redirect_uris` array. Matches v1 exactly:
+   *   1. Prefer the one with `localhost:<port>`
+   *   2. Fall back to any `localhost` entry
+   *   3. Fall back to the first entry
+   *
+   * Centralised so the same logic drives both the auth URL and the
+   * token exchange (Google validates these match).
    */
-  private buildOAuth2Client(creds: OAuthCredentials): OAuth2Client {
-    const redirectUri =
+  private pickRedirectUri(creds: OAuthCredentials): string {
+    return (
       creds.redirect_uris.find((u) => u.includes(`localhost:${this.port}`)) ??
       creds.redirect_uris.find((u) => u.includes('localhost')) ??
-      creds.redirect_uris[0];
+      creds.redirect_uris[0]
+    );
+  }
+
+  /**
+   * Construct an `OAuth2Client` from a credentials block, pinning
+   * the redirect URI so it matches the local server.
+   */
+  private buildOAuth2Client(creds: OAuthCredentials): OAuth2Client {
+    const redirectUri = this.pickRedirectUri(creds);
 
     return new OAuth2Client({
       clientId: creds.client_id,
@@ -443,9 +547,9 @@ export class YouTubeAuth {
   }
 
   /**
-   * Convert our `OAuthTokens` shape to googleapis' `Credentials` shape.
-   * They overlap almost exactly — this is essentially a type-narrowing
-   * pass.
+   * Convert our `OAuthTokens` shape to googleapis' `Credentials`
+   * shape. They overlap almost exactly - this is essentially a
+   * type-narrowing pass.
    */
   private tokensToCredentials(tokens: OAuthTokens): Credentials {
     const creds: Credentials = {

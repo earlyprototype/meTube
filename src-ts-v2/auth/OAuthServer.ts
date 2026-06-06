@@ -250,43 +250,26 @@ export async function captureAuthorizationCode(options: CaptureOptions = {}): Pr
 /**
  * Open a URL in the user's default browser, cross-platform.
  *
- * Best-effort: if the platform launcher fails the caller can fall back
- * to printing the URL for manual paste-in. The child process is
- * detached and un-refed so it cannot block process exit.
+ * Delegates to the `open` npm package, which handles cross-platform
+ * URL escaping correctly. The previous hand-rolled `cmd /c start ""`
+ * shell-out on Windows truncated OAuth URLs at the first `&` query
+ * separator because `cmd start` interprets `&` as a command separator
+ * — Google then rejected the request with "Required parameter is
+ * missing: response_type".
+ *
+ * `open` v11 returns `Promise<ChildProcess>` that resolves once the
+ * child process is spawned (not when the browser finishes rendering),
+ * which matches our best-effort contract.
  */
 export async function openBrowser(url: string): Promise<void> {
-  const { spawn } = await import('child_process');
-
-  let command: string;
-  let args: string[];
-
-  if (process.platform === 'win32') {
-    command = 'cmd';
-    args = ['/c', 'start', '', url];
-  } else if (process.platform === 'darwin') {
-    command = 'open';
-    args = [url];
-  } else {
-    command = 'xdg-open';
-    args = [url];
+  const open = (await import('open')).default;
+  try {
+    await open(url);
+  } catch (err) {
+    logger.warn({ err }, 'Failed to open browser automatically');
+    throw new AppError('Failed to open browser', {
+      code: 'OPEN_BROWSER_FAILED',
+      cause: err,
+    });
   }
-
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'ignore', detached: true });
-
-    child.on('error', (err) => {
-      logger.warn({ err }, 'Failed to open browser automatically');
-      reject(
-        new AppError('Failed to open browser', {
-          code: 'OPEN_BROWSER_FAILED',
-          cause: err,
-        })
-      );
-    });
-
-    child.on('spawn', () => {
-      child.unref();
-      resolve();
-    });
-  });
 }

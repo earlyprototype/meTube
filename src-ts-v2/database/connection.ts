@@ -25,7 +25,7 @@ import BetterSqlite3, { type Database, type RunResult, type Statement } from 'be
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { DatabaseError } from '../errors/index.js';
+import { AppError, DatabaseError } from '../errors/index.js';
 import logger from '../utils/logger.js';
 import { initSchema } from './schema.js';
 
@@ -146,9 +146,16 @@ export class DatabaseManager {
         },
         'transaction rollback'
       );
-      if (error instanceof DatabaseError) {
+      // Re-throw any v2 typed error (AppError subclass: DatabaseError,
+      // ValidationError, etc.) UNWRAPPED. Rewrapping destroys the typed
+      // identity that repository code depends on — a Zod parse failure
+      // must surface as ValidationError to the caller, not as
+      // "Transaction rolled back" with the real cause buried.
+      if (error instanceof AppError) {
         throw error;
       }
+      // Genuinely-unknown error (raw Error, TypeError, network error):
+      // wrap with cause set so the chain remains walkable.
       throw new DatabaseError('Transaction rolled back', {
         operation: 'withTransaction',
         cause: error,
@@ -165,9 +172,7 @@ export class DatabaseManager {
    * @typeParam TRow - Row shape the SELECT returns (caller-asserted; pair
    *                   with a Zod parse at the boundary for real safety).
    */
-  prepare<TParams extends readonly unknown[], TRow>(
-    sql: string
-  ): PreparedRead<TParams, TRow> {
+  prepare<TParams extends readonly unknown[], TRow>(sql: string): PreparedRead<TParams, TRow> {
     this.assertOpen();
     try {
       const stmt: Statement = this.db.prepare(sql);
