@@ -68,6 +68,9 @@
     "yt-dlp-exec": "^1.0.2",
     "zod": "^3.25.76"
   },
+  "overrides": {
+    "google-auth-library": "^10.0.0"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/cli-spinners": "^1.3.3",
