@@ -190,10 +190,7 @@ export function loadVideoCache(playlistId: string): CachedVideo[] | null {
  * @param videoNum - 1-indexed video position number.
  * @returns Cached video, or `null` if not found.
  */
-export function getVideoByNumber(
-  playlistId: string,
-  videoNum: number
-): CachedVideo | null {
+export function getVideoByNumber(playlistId: string, videoNum: number): CachedVideo | null {
   const videos = loadVideoCache(playlistId);
   if (!videos) {
     return null;

@@ -45,7 +45,11 @@ interface SeededVideo {
   readonly title: string;
 }
 
-function seedPlaylist(dbm: DatabaseManager, raw: string, title = 'fixture playlist'): SeededPlaylist {
+function seedPlaylist(
+  dbm: DatabaseManager,
+  raw: string,
+  title = 'fixture playlist'
+): SeededPlaylist {
   const id = asPlaylistId(raw);
   dbm.withTransaction((db) => {
     db.prepare(
@@ -104,9 +108,7 @@ describe('PlaylistItemRepository.addVideoToPlaylist', () => {
     const { id: playlistId } = seedPlaylist(dbm, 'PLstubbomb01');
     const { id: videoId } = seedVideo(dbm, 'dQw4w9WgXcQ');
 
-    const before = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items')
-      .get();
+    const before = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items').get();
     expect(before?.c).toBe(0);
 
     // Act
@@ -115,9 +117,7 @@ describe('PlaylistItemRepository.addVideoToPlaylist', () => {
     // Assert — row count increased, AND the row we get back carries the
     // playlist_id we passed in (not `undefined`, not the empty string,
     // not the videoId by accident).
-    const after = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items')
-      .get();
+    const after = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items').get();
     expect(after?.c).toBe(1);
 
     expect(inserted.playlist_id).toBe(playlistId);
@@ -129,9 +129,10 @@ describe('PlaylistItemRepository.addVideoToPlaylist', () => {
     // the INSERT committed, not just that the in-flight closure synthesised
     // a return shape.
     const reread = dbm
-      .prepare<[string, string], { playlist_id: string; video_id: string }>(
-        'SELECT playlist_id, video_id FROM playlist_items WHERE playlist_id = ? AND video_id = ?'
-      )
+      .prepare<
+        [string, string],
+        { playlist_id: string; video_id: string }
+      >('SELECT playlist_id, video_id FROM playlist_items WHERE playlist_id = ? AND video_id = ?')
       .get(playlistId, videoId);
 
     expect(reread?.playlist_id).toBe(playlistId);
@@ -152,9 +153,7 @@ describe('PlaylistItemRepository.addVideoToPlaylist', () => {
     expect(second.id).toBe(first.id);
     expect(second.position).toBe(0);
 
-    const count = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items')
-      .get();
+    const count = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items').get();
     expect(count?.c).toBe(1);
   });
 
@@ -177,13 +176,9 @@ describe('PlaylistItemRepository.addVideoToPlaylist', () => {
     const { id: videoId } = seedVideo(dbm, 'negposvideo');
 
     // Act + Assert
-    expect(() => repo.addVideoToPlaylist(playlistId, videoId, -1)).toThrow(
-      DatabaseError
-    );
+    expect(() => repo.addVideoToPlaylist(playlistId, videoId, -1)).toThrow(DatabaseError);
 
-    const count = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items')
-      .get();
+    const count = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items').get();
     expect(count?.c).toBe(0);
   });
 
@@ -207,13 +202,9 @@ describe('PlaylistItemRepository.addVideoToPlaylist', () => {
     const { id: videoId } = seedVideo(dbm, 'orphanvideo');
 
     // Act + Assert
-    expect(() => repo.addVideoToPlaylist(ghostPlaylist, videoId)).toThrow(
-      DatabaseError
-    );
+    expect(() => repo.addVideoToPlaylist(ghostPlaylist, videoId)).toThrow(DatabaseError);
 
-    const count = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items')
-      .get();
+    const count = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items').get();
     expect(count?.c).toBe(0);
   });
 
@@ -223,9 +214,7 @@ describe('PlaylistItemRepository.addVideoToPlaylist', () => {
     const ghostVideo = asVideoId('ghostvideo1');
 
     // Act + Assert
-    expect(() => repo.addVideoToPlaylist(playlistId, ghostVideo)).toThrow(
-      DatabaseError
-    );
+    expect(() => repo.addVideoToPlaylist(playlistId, ghostVideo)).toThrow(DatabaseError);
   });
 });
 
@@ -272,9 +261,7 @@ describe('PlaylistItemRepository — withTransaction rollback', () => {
       })
     ).toThrow();
 
-    const after = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items')
-      .get();
+    const after = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM playlist_items').get();
     expect(after?.c).toBe(0);
   });
 });
@@ -524,9 +511,7 @@ describe('PlaylistItemRepository — read accessors', () => {
     expect(items[0]?.video_id).toBe(aId);
     expect(items[1]?.video_id).toBe(bId);
     // Re-parse must succeed
-    items.forEach((it) =>
-      expect(() => PlaylistItemRowSchema.parse(it)).not.toThrow()
-    );
+    items.forEach((it) => expect(() => PlaylistItemRowSchema.parse(it)).not.toThrow());
   });
 
   it('getPlaylistsForVideo returns every junction row for a video', () => {

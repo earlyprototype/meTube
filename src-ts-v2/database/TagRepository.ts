@@ -37,12 +37,7 @@
 import type { Database } from 'better-sqlite3';
 
 import { DatabaseError } from '../errors/index.js';
-import {
-  TagRowSchema,
-  VideoTagRowSchema,
-  type TagRow,
-  type VideoTagRow,
-} from '../schemas/db.js';
+import { TagRowSchema, VideoTagRowSchema, type TagRow, type VideoTagRow } from '../schemas/db.js';
 import type { VideoId } from '../types/branded.js';
 import type { DatabaseManager } from './connection.js';
 
@@ -112,23 +107,18 @@ export class TagRepository {
         return existing;
       }
 
-      db.prepare('INSERT OR IGNORE INTO tags (tag) VALUES (?)').run(
-        normalized
-      );
+      db.prepare('INSERT OR IGNORE INTO tags (tag) VALUES (?)').run(normalized);
 
       const inserted = this.selectByNormalizedName(db, normalized);
       if (inserted === null) {
         // Should be unreachable: INSERT OR IGNORE leaves either our row or
         // a concurrent-inserter's row present; in either case the SELECT
         // must hit.
-        throw new DatabaseError(
-          'Tag row missing immediately after INSERT OR IGNORE',
-          {
-            operation: 'TagRepository.findOrCreate',
-            table: 'tags',
-            context: { normalized },
-          }
-        );
+        throw new DatabaseError('Tag row missing immediately after INSERT OR IGNORE', {
+          operation: 'TagRepository.findOrCreate',
+          table: 'tags',
+          context: { normalized },
+        });
       }
       return inserted;
     });
@@ -191,9 +181,10 @@ export class TagRepository {
           context: { normalized },
         });
       }
-      db.prepare(
-        'INSERT OR IGNORE INTO video_tags (video_id, tag_id) VALUES (?, ?)'
-      ).run(videoId, tagId);
+      db.prepare('INSERT OR IGNORE INTO video_tags (video_id, tag_id) VALUES (?, ?)').run(
+        videoId,
+        tagId
+      );
       return tagRow;
     });
   }
@@ -231,9 +222,10 @@ export class TagRepository {
             context: { normalized },
           });
         }
-        db.prepare(
-          'INSERT OR IGNORE INTO video_tags (video_id, tag_id) VALUES (?, ?)'
-        ).run(videoId, tagId);
+        db.prepare('INSERT OR IGNORE INTO video_tags (video_id, tag_id) VALUES (?, ?)').run(
+          videoId,
+          tagId
+        );
         attached.push(tagRow);
       }
       return attached;
@@ -277,9 +269,7 @@ export class TagRepository {
    */
   detachAllForVideo(videoId: VideoId): number {
     return this.dbm.withTransaction<number>((db: Database): number => {
-      const info = db
-        .prepare('DELETE FROM video_tags WHERE video_id = ?')
-        .run(videoId);
+      const info = db.prepare('DELETE FROM video_tags WHERE video_id = ?').run(videoId);
       return info.changes;
     });
   }
@@ -330,9 +320,7 @@ export class TagRepository {
    * uncommitted writes from the same transaction (read-your-own-writes).
    */
   private selectByNormalizedName(db: Database, normalized: string): TagRow | null {
-    const raw = db
-      .prepare('SELECT id, tag, created_at FROM tags WHERE tag = ?')
-      .get(normalized);
+    const raw = db.prepare('SELECT id, tag, created_at FROM tags WHERE tag = ?').get(normalized);
     if (raw === undefined) {
       return null;
     }
@@ -353,14 +341,11 @@ export class TagRepository {
     db.prepare('INSERT OR IGNORE INTO tags (tag) VALUES (?)').run(normalized);
     const inserted = this.selectByNormalizedName(db, normalized);
     if (inserted === null) {
-      throw new DatabaseError(
-        'Tag row missing immediately after INSERT OR IGNORE',
-        {
-          operation: 'TagRepository.findOrCreateInTx',
-          table: 'tags',
-          context: { normalized },
-        }
-      );
+      throw new DatabaseError('Tag row missing immediately after INSERT OR IGNORE', {
+        operation: 'TagRepository.findOrCreateInTx',
+        table: 'tags',
+        context: { normalized },
+      });
     }
     return inserted;
   }

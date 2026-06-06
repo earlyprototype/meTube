@@ -709,9 +709,7 @@ function PlaylistAddMine({
         let filtered = allPlaylists;
 
         if (privacyFilter && privacyFilter !== 'all') {
-          filtered = allPlaylists.filter(
-            (p) => p.privacyStatus?.toLowerCase() === privacyFilter
-          );
+          filtered = allPlaylists.filter((p) => p.privacyStatus?.toLowerCase() === privacyFilter);
         }
 
         // Filter out existing if --skip-existing
@@ -1254,9 +1252,7 @@ function PlaylistVideos({
           num: index + 1,
           video_id: video.video_id,
           title: video.title,
-          duration: video.duration_seconds
-            ? formatDuration(video.duration_seconds)
-            : undefined,
+          duration: video.duration_seconds ? formatDuration(video.duration_seconds) : undefined,
           has_transcript: undefined,
         }));
 

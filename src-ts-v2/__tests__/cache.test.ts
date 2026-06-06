@@ -144,9 +144,7 @@ describe('cache — loadVideoCache', () => {
 
   it('returns null when the requested playlist is not in the cache', () => {
     // Arrange — populate with one playlist
-    saveVideoCache('PLpresent', [
-      { num: 1, video_id: 'aaaaaaaaaaa', title: 'one' },
-    ]);
+    saveVideoCache('PLpresent', [{ num: 1, video_id: 'aaaaaaaaaaa', title: 'one' }]);
 
     // Act
     const result = loadVideoCache('PLabsent');
@@ -188,17 +186,11 @@ describe('cache — saveVideoCache + loadVideoCache round-trip', () => {
 
   it('preserves other playlists when overwriting one', () => {
     // Arrange
-    saveVideoCache('PLfirst', [
-      { num: 1, video_id: 'aaaaaaaaaaa', title: 'A' },
-    ]);
-    saveVideoCache('PLsecond', [
-      { num: 1, video_id: 'bbbbbbbbbbb', title: 'B' },
-    ]);
+    saveVideoCache('PLfirst', [{ num: 1, video_id: 'aaaaaaaaaaa', title: 'A' }]);
+    saveVideoCache('PLsecond', [{ num: 1, video_id: 'bbbbbbbbbbb', title: 'B' }]);
 
     // Act — overwrite first
-    saveVideoCache('PLfirst', [
-      { num: 1, video_id: 'ccccccccccc', title: 'C' },
-    ]);
+    saveVideoCache('PLfirst', [{ num: 1, video_id: 'ccccccccccc', title: 'C' }]);
 
     // Assert — second is untouched
     expect(loadVideoCache('PLfirst')?.[0].video_id).toBe('ccccccccccc');
@@ -212,9 +204,7 @@ describe('cache — saveVideoCache + loadVideoCache round-trip', () => {
 
     // Act — new save must not throw, must overwrite without inheriting drift
     expect(() =>
-      saveVideoCache('PLnew', [
-        { num: 1, video_id: 'aaaaaaaaaaa', title: 'A' },
-      ])
+      saveVideoCache('PLnew', [{ num: 1, video_id: 'aaaaaaaaaaa', title: 'A' }])
     ).not.toThrow();
 
     // Assert
@@ -320,10 +310,7 @@ describe('cache — loadPlaylistCache', () => {
   it('returns an empty array when the shape has drifted (Zod fails)', () => {
     // Arrange — `num` is a string, `id` is missing
     fs.mkdirSync(path.dirname(ws.playlistFile), { recursive: true });
-    fs.writeFileSync(
-      ws.playlistFile,
-      JSON.stringify([{ num: 'one', title: 'drifted' }])
-    );
+    fs.writeFileSync(ws.playlistFile, JSON.stringify([{ num: 'one', title: 'drifted' }]));
 
     // Act + Assert
     expect(loadPlaylistCache()).toEqual([]);

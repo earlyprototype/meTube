@@ -50,16 +50,7 @@ function insertVideo(dbm: DatabaseManager, videoId: VideoId, title = 'test'): vo
         video_id, title, channel_id, channel_title,
         published_at, duration, duration_seconds, is_short
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      videoId,
-      title,
-      'UCxxxx',
-      'ch',
-      '2024-01-01T00:00:00Z',
-      'PT3M33S',
-      213,
-      0
-    );
+    ).run(videoId, title, 'UCxxxx', 'ch', '2024-01-01T00:00:00Z', 'PT3M33S', 213, 0);
   });
 }
 
@@ -115,9 +106,7 @@ describe('TagRepository.findOrCreate', () => {
     expect(b.id).toBe(c.id);
     expect(a.tag).toBe('typescript');
 
-    const countRow = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags')
-      .get();
+    const countRow = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags').get();
     expect(countRow?.c).toBe(1);
   });
 
@@ -196,9 +185,10 @@ describe('TagRepository.attachToVideo', () => {
 
     // Assert — join row exists
     const joinCount = dbm
-      .prepare<[string, number], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_tags WHERE video_id = ? AND tag_id = ?'
-      )
+      .prepare<
+        [string, number],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM video_tags WHERE video_id = ? AND tag_id = ?')
       .get(videoId, tag.id as number);
     expect(joinCount?.c).toBe(1);
   });
@@ -212,9 +202,7 @@ describe('TagRepository.attachToVideo', () => {
 
     // Assert — same row, not a duplicate
     expect(attached.id).toBe(preexisting.id);
-    const tagCount = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags')
-      .get();
+    const tagCount = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags').get();
     expect(tagCount?.c).toBe(1);
   });
 
@@ -228,9 +216,7 @@ describe('TagRepository.attachToVideo', () => {
 
     // Assert — still exactly one join row
     const joinCount = dbm
-      .prepare<[string], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_tags WHERE video_id = ?'
-      )
+      .prepare<[string], { c: number }>('SELECT COUNT(*) AS c FROM video_tags WHERE video_id = ?')
       .get(videoId);
     expect(joinCount?.c).toBe(1);
   });
@@ -269,11 +255,7 @@ describe('TagRepository.attachManyToVideo', () => {
 
   it('attaches every supplied tag in one transaction', () => {
     // Act
-    const attached = repo.attachManyToVideo(videoId, [
-      'python',
-      'rust',
-      'typescript',
-    ]);
+    const attached = repo.attachManyToVideo(videoId, ['python', 'rust', 'typescript']);
 
     // Assert
     expect(attached.length).toBe(3);
@@ -283,12 +265,7 @@ describe('TagRepository.attachManyToVideo', () => {
 
   it('skips blank entries silently (Python parity)', () => {
     // Act
-    const attached = repo.attachManyToVideo(videoId, [
-      'kept',
-      '',
-      '   ',
-      'also-kept',
-    ]);
+    const attached = repo.attachManyToVideo(videoId, ['kept', '', '   ', 'also-kept']);
 
     // Assert
     expect(attached.length).toBe(2);
@@ -301,9 +278,7 @@ describe('TagRepository.attachManyToVideo', () => {
 
     // Assert
     expect(attached).toEqual([]);
-    const joinCount = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM video_tags')
-      .get();
+    const joinCount = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM video_tags').get();
     expect(joinCount?.c).toBe(0);
   });
 
@@ -527,29 +502,21 @@ describe('TagRepository — transactional rollback', () => {
         // Write a tag directly to the DB inside the outer txn.
         db.prepare('INSERT INTO tags (tag) VALUES (?)').run('will-rollback');
         const tagId = db
-          .prepare<[string], { id: number }>(
-            'SELECT id FROM tags WHERE tag = ?'
-          )
+          .prepare<[string], { id: number }>('SELECT id FROM tags WHERE tag = ?')
           .get('will-rollback')?.id;
         if (tagId === undefined) {
           throw new Error('expected the just-inserted tag to be visible');
         }
-        db.prepare(
-          'INSERT INTO video_tags (video_id, tag_id) VALUES (?, ?)'
-        ).run(videoId, tagId);
+        db.prepare('INSERT INTO video_tags (video_id, tag_id) VALUES (?, ?)').run(videoId, tagId);
 
         throw new TestRollbackError('boom');
       })
     ).toThrow();
 
     // Assert — neither the tag nor the join row survived
-    const tagCount = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags')
-      .get();
+    const tagCount = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags').get();
     expect(tagCount?.c).toBe(0);
-    const joinCount = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM video_tags')
-      .get();
+    const joinCount = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM video_tags').get();
     expect(joinCount?.c).toBe(0);
   });
 });
@@ -595,17 +562,13 @@ describe('TagRepository — concurrent findOrCreate semantics', () => {
     // throw, must not duplicate.
     expect(() =>
       dbm.withTransaction((db) => {
-        db.prepare('INSERT OR IGNORE INTO tags (tag) VALUES (?)').run(
-          'race-condition'
-        );
+        db.prepare('INSERT OR IGNORE INTO tags (tag) VALUES (?)').run('race-condition');
       })
     ).not.toThrow();
 
     // Assert — single row, both repos agree on its id
     expect(second.id).toBe(first.id);
-    const countRow = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags')
-      .get();
+    const countRow = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM tags').get();
     expect(countRow?.c).toBe(1);
   });
 
@@ -624,9 +587,7 @@ describe('TagRepository — concurrent findOrCreate semantics', () => {
 
     // Assert
     const joinCount = dbm
-      .prepare<[string], { c: number }>(
-        'SELECT COUNT(*) AS c FROM video_tags WHERE video_id = ?'
-      )
+      .prepare<[string], { c: number }>('SELECT COUNT(*) AS c FROM video_tags WHERE video_id = ?')
       .get(videoId);
     expect(joinCount?.c).toBe(1);
   });

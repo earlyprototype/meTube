@@ -185,8 +185,6 @@ export function initSchema(db: Database): void {
     db.exec(stmt);
   }
 
-  const insertVersion = db.prepare(
-    'INSERT OR IGNORE INTO schema_version (version) VALUES (?)'
-  );
+  const insertVersion = db.prepare('INSERT OR IGNORE INTO schema_version (version) VALUES (?)');
   insertVersion.run(SCHEMA_VERSION);
 }
