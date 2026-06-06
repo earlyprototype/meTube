@@ -649,6 +649,158 @@ describe('VideoStatisticRowSchema', () => {
 });
 
 // --------------------------------------------------------------------------
+// DB row schemas — nullable defaulted-timestamp regression guards
+// --------------------------------------------------------------------------
+//
+// Every column below is declared `TEXT DEFAULT CURRENT_TIMESTAMP` (or, for
+// `playlists.last_checked`, plain nullable `TEXT`) in `database/schema.ts`
+// WITHOUT `NOT NULL`. SQLite therefore permits NULL in these columns: an
+// explicit `INSERT ... VALUES (NULL)` stores NULL, and SQLite does not retro-
+// apply the default. The matching Zod field must be `.nullable()`, not plain
+// `.optional()` — `.optional()` accepts an absent key but REJECTS an explicit
+// `null`.
+//
+// These tests pin that distinction. Each takes an otherwise-valid row, sets
+// exactly one defaulted-timestamp field to `null`, and asserts the parse
+// succeeds. If any of these fails, a row schema has regressed a nullable
+// timestamp back to plain `.optional()` — the exact bug class that already
+// bit `videos.created_at` and the playlist-join schema.
+
+describe('nullable defaulted-timestamp columns accept null', () => {
+  it('accepts null for videos.created_at', () => {
+    // Arrange — valid row, created_at explicitly null
+    const row = {
+      video_id: 'dQw4w9WgXcQ',
+      title: 'A title',
+      channel_id: 'UCxxxx',
+      channel_title: 'A channel',
+      published_at: '2024-01-01T00:00:00Z',
+      duration: 'PT3M33S',
+      duration_seconds: 213,
+      is_short: 0,
+      created_at: null,
+    };
+
+    // Act + Assert
+    expect(() => VideoRowSchema.parse(row)).not.toThrow();
+  });
+
+  it('accepts null for videos.updated_at', () => {
+    // Arrange
+    const row = {
+      video_id: 'dQw4w9WgXcQ',
+      title: 'A title',
+      channel_id: 'UCxxxx',
+      channel_title: 'A channel',
+      published_at: '2024-01-01T00:00:00Z',
+      duration: 'PT3M33S',
+      duration_seconds: 213,
+      is_short: 0,
+      updated_at: null,
+    };
+
+    // Act + Assert
+    expect(() => VideoRowSchema.parse(row)).not.toThrow();
+  });
+
+  it('accepts null for video_statistics.recorded_at', () => {
+    // Arrange
+    const row = {
+      video_id: 'dQw4w9WgXcQ',
+      view_count: 1500000000,
+      like_count: 17000000,
+      comment_count: 2000000,
+      recorded_at: null,
+    };
+
+    // Act + Assert
+    expect(VideoStatisticRowSchema.safeParse(row).success).toBe(true);
+  });
+
+  it('accepts null for transcripts.extracted_at', () => {
+    // Arrange
+    const row = {
+      video_id: 'dQw4w9WgXcQ',
+      language: 'en',
+      full_text: 'we are no strangers to love',
+      extracted_at: null,
+    };
+
+    // Act + Assert
+    expect(TranscriptRowSchema.safeParse(row).success).toBe(true);
+  });
+
+  it('accepts null for extracted_entities.extracted_at', () => {
+    // Arrange
+    const row = {
+      video_id: 'dQw4w9WgXcQ',
+      entity_type: 'github_repo',
+      entity_value: 'tensorflow/tensorflow',
+      extracted_at: null,
+    };
+
+    // Act + Assert
+    expect(ExtractedEntityRowSchema.safeParse(row).success).toBe(true);
+  });
+
+  it('accepts null for tags.created_at', () => {
+    // Arrange
+    const row = { id: 1, tag: 'machine-learning', created_at: null };
+
+    // Act + Assert
+    expect(TagRowSchema.safeParse(row).success).toBe(true);
+  });
+
+  it('accepts null for playlists.created_at', () => {
+    // Arrange
+    const row = {
+      playlist_id: 'PLrAXtmRdnEQy6nuLMHjMZOz59Oq8B1X1L',
+      title: 'My playlist',
+      created_at: null,
+    };
+
+    // Act + Assert
+    expect(() => PlaylistRowSchema.parse(row)).not.toThrow();
+  });
+
+  it('accepts null for playlists.updated_at', () => {
+    // Arrange
+    const row = {
+      playlist_id: 'PLrAXtmRdnEQy6nuLMHjMZOz59Oq8B1X1L',
+      title: 'My playlist',
+      updated_at: null,
+    };
+
+    // Act + Assert
+    expect(() => PlaylistRowSchema.parse(row)).not.toThrow();
+  });
+
+  it('accepts null for playlists.last_checked', () => {
+    // Arrange — last_checked is plain nullable TEXT (no default, no NOT NULL)
+    const row = {
+      playlist_id: 'PLrAXtmRdnEQy6nuLMHjMZOz59Oq8B1X1L',
+      title: 'My playlist',
+      last_checked: null,
+    };
+
+    // Act + Assert
+    expect(() => PlaylistRowSchema.parse(row)).not.toThrow();
+  });
+
+  it('accepts null for ai_analysis.analyzed_at', () => {
+    // Arrange
+    const row = {
+      video_id: 'dQw4w9WgXcQ',
+      summary: 'Brief summary',
+      analyzed_at: null,
+    };
+
+    // Act + Assert
+    expect(AIAnalysisRowSchema.safeParse(row).success).toBe(true);
+  });
+});
+
+// --------------------------------------------------------------------------
 // Config schema
 // --------------------------------------------------------------------------
 

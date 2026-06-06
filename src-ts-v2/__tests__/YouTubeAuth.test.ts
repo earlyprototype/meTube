@@ -63,12 +63,14 @@ vi.mock('fs', async () => {
     readFileSync: vi.fn(),
     writeFileSync: vi.fn(),
     mkdirSync: vi.fn(),
+    chmodSync: vi.fn(),
     default: {
       ...actual,
       existsSync: vi.fn(),
       readFileSync: vi.fn(),
       writeFileSync: vi.fn(),
       mkdirSync: vi.fn(),
+      chmodSync: vi.fn(),
     },
   };
 });
@@ -172,6 +174,7 @@ beforeEach(() => {
   });
   vi.mocked(fs.writeFileSync).mockImplementation(() => undefined);
   vi.mocked(fs.mkdirSync).mockImplementation(() => undefined);
+  vi.mocked(fs.chmodSync).mockImplementation(() => undefined);
   vi.mocked(captureAuthorizationCode).mockReset();
   vi.mocked(openBrowser).mockReset();
   // Default openBrowser to succeed - individual tests override.
@@ -286,6 +289,36 @@ describe('YouTubeAuth.loadTokens / saveTokens - roundtrip', () => {
     expect(loaded.expiry_date).toBe(validTokens.expiry_date);
     expect(loaded.token_type).toBe('Bearer');
     expect(loaded.scope).toBe(validTokens.scope);
+  });
+
+  it('writes tokens.json owner-only (mode 0o600) and chmods after write', () => {
+    // tokens.json holds long-lived OAuth refresh + access tokens. On a
+    // multi-user POSIX host with a permissive umask it must land
+    // owner-only, not group/other-readable. writeFileSync's `mode` only
+    // applies on CREATE, so saveTokens also chmods to harden re-saves.
+    // (mode/chmod are no-ops on Windows; we assert the call args, never
+    // real on-disk permissions.)
+
+    // Arrange
+    arrangeCredentialsOnly();
+    const auth = new YouTubeAuth();
+    const client = new OAuth2Client();
+    client.setCredentials({ access_token: 'ya29.perm-check' });
+
+    // Act
+    auth.saveTokens(client);
+
+    // Assert - write requested owner-only mode
+    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
+    expect(writeCalls).toHaveLength(1);
+    const writeOptions = writeCalls[0][2];
+    expect(writeOptions).toMatchObject({ mode: 0o600 });
+
+    // Assert - chmod hardened the (possibly pre-existing) file to 0o600
+    const chmodCalls = vi.mocked(fs.chmodSync).mock.calls;
+    expect(chmodCalls).toHaveLength(1);
+    expect(String(chmodCalls[0][0])).toContain('tokens.json');
+    expect(chmodCalls[0][1]).toBe(0o600);
   });
 
   it('persists token_type default "Bearer" when client omits it', () => {

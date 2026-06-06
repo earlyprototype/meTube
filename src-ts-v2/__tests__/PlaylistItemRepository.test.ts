@@ -395,6 +395,64 @@ describe('PlaylistItemRepository.getItemsWithVideos', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.item.playlist_id).toBe(keepId);
   });
+
+  it('getItemsWithVideos parses a joined row with NULL videos.created_at and videos.updated_at without throwing (closes A13 drift)', () => {
+    // Arrange — seed a playlist normally, but craft a videos row with
+    // EXPLICIT NULL timestamps via raw SQL. seedVideo() doesn't provide
+    // created_at/updated_at, but SQLite fills its DEFAULT CURRENT_TIMESTAMP
+    // when columns are absent — so to reproduce the legacy pre-A11/A6 data
+    // shape we must spell out NULLs. This is exactly the blind spot the
+    // 2026-06-04 audit identified for the original A13 finding.
+    const { id: playlistId } = seedPlaylist(dbm, 'PLa13null001');
+    const videoId = asVideoId('a13nullvid1');
+
+    dbm.withTransaction((db) => {
+      db.prepare(
+        `INSERT INTO videos (
+           video_id, title, channel_id, channel_title,
+           published_at, duration, duration_seconds, is_short,
+           created_at, updated_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`
+      ).run(
+        videoId,
+        'NULL-timestamp video',
+        'UCfixture0001',
+        'fixture channel',
+        '2024-01-01T00:00:00Z',
+        'PT3M33S',
+        213,
+        0
+      );
+    });
+
+    repo.addVideoToPlaylist(playlistId, videoId, 1);
+
+    // Sanity-check the DB really holds NULLs (guards against a future
+    // schema migration that would invalidate the regression).
+    const rawCheck = dbm
+      .prepare<
+        [string],
+        { created_at: string | null; updated_at: string | null }
+      >('SELECT created_at, updated_at FROM videos WHERE video_id = ?')
+      .get(videoId);
+    expect(rawCheck?.created_at).toBeNull();
+    expect(rawCheck?.updated_at).toBeNull();
+
+    // Act + Assert — pre-A13 fix, this would throw ZodError -> DatabaseError
+    // because v_created_at / v_updated_at were `.string().optional()` and
+    // refused null.
+    const rows = repo.getItemsWithVideos(playlistId);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.item.video_id).toBe(videoId);
+    expect(rows[0]?.video.video_id).toBe(videoId);
+    expect(rows[0]?.video.title).toBe('NULL-timestamp video');
+    // The two columns must surface as `null` (not coerced to `undefined`),
+    // so downstream callers can distinguish "absent" from "explicitly null".
+    expect(rows[0]?.video.created_at).toBeNull();
+    expect(rows[0]?.video.updated_at).toBeNull();
+  });
 });
 
 // --------------------------------------------------------------------------

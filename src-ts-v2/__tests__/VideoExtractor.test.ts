@@ -707,7 +707,12 @@ describe('VideoExtractor.extractPlaylist — failure isolation', () => {
   });
 
   it('captures a Gemini parser throw as a soft failure without killing the video', async () => {
-    // Arrange
+    // Arrange. A15 closure: this test previously baked in the broken
+    // positional `parseTranscript(text, title)` mock shape (the BACKLOG
+    // MED entry flagged it). The mock now mirrors the concrete
+    // `GeminiParser.parseTranscript({ transcript, videoTitle })` contract
+    // so the test asserts soft-failure semantics against the corrected
+    // contract — not the historical drift.
     const playlistId = makePlaylistId('softfail1');
     const videoId = makeVideoId('softfailv01');
 
@@ -724,11 +729,15 @@ describe('VideoExtractor.extractPlaylist — failure isolation', () => {
     const transcriptExtractor = makeMockTranscriptExtractor(
       new Map([[videoId, makeCaptionsTranscript()]])
     );
+    // Object-arg-shape mock — `input` is `{ transcript, videoTitle }`.
+    const parseTranscriptMock = vi.fn(
+      async (_input: { transcript: string; videoTitle: string }) => {
+        throw new Error('Gemini exploded');
+      }
+    );
     const geminiParser: GeminiParserLike = {
       modelName: 'gemini-3-flash-preview',
-      parseTranscript: vi.fn(async () => {
-        throw new Error('Gemini exploded');
-      }),
+      parseTranscript: parseTranscriptMock,
     };
     const descriptionParser = makeMockDescriptionParser();
 
@@ -753,6 +762,220 @@ describe('VideoExtractor.extractPlaylist — failure isolation', () => {
       .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM extracted_entities')
       .get();
     expect(entityRow?.c).toBe(2); // 1 github_repo + 1 website
+
+    // Contract assertion: the parser was called with the object-arg
+    // shape (the A15-corrected contract), not the historical positional
+    // shape. If a future refactor silently reverts the call site, this
+    // assertion fails — the green-pass that flagged A15 cannot recur.
+    expect(parseTranscriptMock).toHaveBeenCalledTimes(1);
+    expect(parseTranscriptMock).toHaveBeenCalledWith({
+      transcript: 'This is a sample transcript.',
+      videoTitle: 'Sample',
+    });
+  });
+
+  it('A15 — Gemini parseTranscript call site uses {transcript, videoTitle} object arg (contract-correct)', async () => {
+    // A15 regression guard. Pinned regression: if the call site silently
+    // reverts to two positional strings the mock receives them as the
+    // first param (string) and the second as `undefined` for the
+    // object-shape assertion below, failing the test. Distinct from the
+    // soft-failure test: this one focuses purely on the call-site
+    // contract (happy path, no throw), keeping the contract assertion
+    // isolated from soft-failure semantics.
+    const playlistId = makePlaylistId('a15ctrct');
+    const videoId = makeVideoId('a15ctrctv01');
+    const captionTranscript = makeCaptionsTranscript();
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: {
+        playlistId,
+        title: 'A15 contract',
+        description: '',
+        videoCount: 1,
+      },
+      playlistVideos: [makeItem('a15ctrctv01', 0, 'A15 contract video')],
+      videoDetails: new Map([[videoId, makeDetails(videoId, 'A15 contract video')]]),
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(
+      new Map([[videoId, captionTranscript]])
+    );
+    // Real-shape mock: takes `{ transcript, videoTitle }` and returns
+    // a valid GeminiResponse fixture (happy path).
+    const parseTranscriptMock = vi.fn(
+      async (_input: { transcript: string; videoTitle: string }) => ({
+        topics: ['contract-pinning'],
+        github_repos: [],
+        websites: [],
+        people: [],
+        tags: [],
+        summary: 'Pinned contract.',
+        content_type: 'tutorial',
+        sentiment: 'neutral' as const,
+      })
+    );
+    const geminiParser: GeminiParserLike = {
+      modelName: 'gemini-3-flash-preview',
+      parseTranscript: parseTranscriptMock,
+    };
+    const descriptionParser = makeMockDescriptionParser();
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: true },
+      { transcriptExtractor, geminiParser, descriptionParser }
+    );
+
+    // Act
+    await extractor.extractPlaylist(playlistId);
+
+    // Assert — exactly one call, with the object-arg shape mirroring
+    // the concrete `GeminiParser.parseTranscript` signature.
+    expect(parseTranscriptMock).toHaveBeenCalledTimes(1);
+    expect(parseTranscriptMock).toHaveBeenCalledWith({
+      transcript: captionTranscript.full_text,
+      videoTitle: 'A15 contract video',
+    });
+
+    // Sanity: the first argument is an OBJECT, not a string. Pins the
+    // regression so a "fix" that passes the transcript text positionally
+    // also fails here (a string is not an object that matches the shape).
+    const firstCallArgs = parseTranscriptMock.mock.calls[0];
+    expect(firstCallArgs).toHaveLength(1);
+    expect(typeof firstCallArgs[0]).toBe('object');
+    expect(firstCallArgs[0]).not.toBeNull();
+  });
+});
+
+// --------------------------------------------------------------------------
+// Counter discipline — closes the 'counter-lie' bug surfaced 2026-05-29.
+//
+// The original symptom: extract job reported `processed=3, new=3, dur=0s`
+// while the DB showed zero new rows since the start of the day. Hypothesis
+// at PM-cycle open: with A14 (transcript upsert), A18 (Ink-boundary wiring),
+// and A26 (visibility) landed, the symptom may auto-resolve — the lie was
+// upstream (no rows landing) not in the counter logic itself.
+//
+// Probe finding: the per-video loop (extractPlaylist lines ~550-588) only
+// increments `processed` AFTER `processVideo` returns successfully, and
+// routes thrown exceptions to `failed`. With A14's transcript upsert living
+// INSIDE processVideo, a transcript-persistence throw bubbles up and counts
+// as `failed`, not `processed`. The counter-lie is auto-resolved by A14.
+//
+// These tests pin the discipline so a future refactor reintroducing the
+// pre-confirm increment is caught immediately:
+//   1. A repo throw mid-processVideo counts the video as `failed`, NOT
+//      `processed`. The processed counter must reflect actual successful
+//      persistence (the audit invariant: counters cannot exceed reality).
+//   2. The processed + skipped + failed === total invariant holds even
+//      when the loop is heterogeneous (some succeed, some fail).
+// --------------------------------------------------------------------------
+
+describe('VideoExtractor.extractPlaylist — counter discipline', () => {
+  let dbm: DatabaseManager;
+
+  beforeEach(() => {
+    dbm = new DatabaseManager(':memory:');
+  });
+
+  afterEach(() => {
+    dbm.close();
+  });
+
+  it('counter discipline — processed/new only increment after row persistence; throw mid-processVideo counts as failed not processed', async () => {
+    // Arrange — 3 videos. The TranscriptRepository is rigged to throw on
+    // the Nth (middle) video's upsert. With the discipline correct
+    // (increment AFTER processVideo returns) the throw bubbles to the
+    // outer per-video catch and counts as `failed=1`. With the discipline
+    // broken (increment-before-confirm) the middle video lies as
+    // `processed=1` and the run reports `processed=3, failed=0` while
+    // the transcript row never landed — the exact 2026-05-29 symptom.
+    const playlistId = makePlaylistId('cntdsc01');
+    const items = [
+      makeItem('cntdsvid01a', 0, 'Video A'),
+      makeItem('cntdsvid02b', 1, 'Video B (throws)'),
+      makeItem('cntdsvid03c', 2, 'Video C'),
+    ];
+    const detailsMap = new Map<VideoId, VideoDetails | null>();
+    const transcriptMap = new Map<VideoId, TranscriptResult | null>();
+    for (const item of items) {
+      detailsMap.set(item.videoId, makeDetails(item.videoId, item.title));
+      transcriptMap.set(item.videoId, makeCaptionsTranscript());
+    }
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: {
+        playlistId,
+        title: 'Counter discipline',
+        description: '',
+        videoCount: 3,
+      },
+      playlistVideos: items,
+      videoDetails: detailsMap,
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(transcriptMap);
+    const descriptionParser = makeMockDescriptionParser();
+
+    // Real TranscriptRepository on `:memory:` — but we spy on `upsert`
+    // and force it to throw for the middle video. This mirrors the
+    // exact pattern the 2026-05-29 bug would hit if it recurred: a
+    // persistence call inside processVideo fails mid-pipeline; the
+    // counter must reflect reality (failed=1), not optimism
+    // (processed=3).
+    const transcriptRepository = new TranscriptRepository(dbm);
+    const middleVideoId = items[1].videoId;
+    const realUpsert = transcriptRepository.upsert.bind(transcriptRepository);
+    vi.spyOn(transcriptRepository, 'upsert').mockImplementation(((
+      videoId: VideoId,
+      input: Parameters<typeof realUpsert>[1]
+    ) => {
+      if (videoId === middleVideoId) {
+        throw new Error('Transcript repo exploded on Nth video');
+      }
+      return realUpsert(videoId, input);
+    }) as typeof realUpsert);
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: false },
+      {
+        transcriptExtractor,
+        transcriptRepository,
+        descriptionParser,
+      }
+    );
+
+    // Act
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — counters reflect reality, not optimism.
+    expect(result.total).toBe(3);
+    expect(result.processed).toBe(2); // A and C only
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toBe(1); // B threw inside processVideo
+    expect(result.success).toBe(false);
+
+    // The audit invariant: processed + skipped + failed === total. The
+    // v1 PostExtractionMenu drift (which inspired this discipline) used
+    // to break this; the new contract is that it CANNOT break.
+    expect(result.processed + result.skipped + result.failed).toBe(result.total);
+
+    // Sanity: the persistence really did fail for B (no transcript row
+    // for B) and really did succeed for A and C (rows exist). This is
+    // what makes the counter assertion above honest — we're not just
+    // asserting the result object, we're asserting it MATCHES the DB.
+    expect(transcriptRepository.findByVideoId(items[0].videoId)).not.toBeUndefined();
+    expect(transcriptRepository.findByVideoId(items[1].videoId)).toBeUndefined();
+    expect(transcriptRepository.findByVideoId(items[2].videoId)).not.toBeUndefined();
+
+    // Audit-row sanity — videos_processed must mirror the in-memory
+    // `processed` counter (this was the bit the 2026-05-29 symptom
+    // amplified: the audit row reported processed=3 too).
+    const jobRepo = new ExtractionJobRepository(dbm);
+    const job = jobRepo.findById(result.jobId);
+    expect(job?.videos_processed).toBe(2);
+    expect(job?.new_videos).toBe(2);
   });
 });
 
