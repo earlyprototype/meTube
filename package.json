@@ -14,7 +14,7 @@
     "dev:init": "tsx src-ts/cli.tsx init",
     "dev:list": "tsx src-ts/cli.tsx playlist list",
     "dev:discover": "tsx src-ts/cli.tsx playlist discover",
-    "start": "node dist/cli.js",
+    "start": "node dist/src-ts/cli.js",
     "watch": "tsc --watch",
     "test": "vitest run",
     "test:backend": "tsx scripts/dev/test-backend-integration.ts",
