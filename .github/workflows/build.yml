@@ -18,7 +18,12 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - run: npm ci
+      - name: Install (include optional platform-specific deps)
+        run: |
+          npm ci || (rm -f package-lock.json && npm install --include=optional)
+          # npm ci can drop platform-specific optional deps (e.g. @rollup/rollup-linux-x64-gnu)
+          # when the lockfile was generated on a different OS. Fall back to a
+          # fresh install with optional deps if npm ci fails.
 
       - run: npm run build
 
