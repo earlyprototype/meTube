@@ -214,6 +214,7 @@ function makeMockWhisperExtractor(
 
 interface MockGeminiParser extends GeminiParserLike {
   readonly parseTranscript: ReturnType<typeof vi.fn>;
+  readonly getTags: ReturnType<typeof vi.fn>;
 }
 
 function makeMockGeminiParser(modelName = 'gemini-3-flash-preview'): MockGeminiParser {
@@ -228,6 +229,7 @@ function makeMockGeminiParser(modelName = 'gemini-3-flash-preview'): MockGeminiP
       content_type: 'tutorial',
       sentiment: 'neutral' as const,
     })),
+    getTags: vi.fn(() => ['programming', 'ai']),
     modelName,
   };
 }
@@ -235,6 +237,7 @@ function makeMockGeminiParser(modelName = 'gemini-3-flash-preview'): MockGeminiP
 interface MockDescriptionParser extends DescriptionParserLike {
   readonly parse: ReturnType<typeof vi.fn>;
   readonly extractEntitiesForDatabase: ReturnType<typeof vi.fn>;
+  readonly getTags: ReturnType<typeof vi.fn>;
 }
 
 function makeMockDescriptionParser(): MockDescriptionParser {
@@ -255,6 +258,7 @@ function makeMockDescriptionParser(): MockDescriptionParser {
         confidence: 100,
       },
     ]),
+    getTags: vi.fn(() => ['tutorial', 'tech']),
   };
 }
 
