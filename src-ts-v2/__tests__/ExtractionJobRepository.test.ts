@@ -608,8 +608,8 @@ describe('ExtractionJobRepository — closed DB discipline', () => {
     dbm.close();
 
     // Act + Assert
-    expect(() =>
-      repo.create({ playlist_id: playlistId, job_type: 'playlist' })
-    ).toThrow(DatabaseError);
+    expect(() => repo.create({ playlist_id: playlistId, job_type: 'playlist' })).toThrow(
+      DatabaseError
+    );
   });
 });

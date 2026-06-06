@@ -56,9 +56,7 @@ function seedVideo(dbm: DatabaseManager, videoId: VideoId): VideoId {
  * values, topics is non-empty so the key_points -> JSON round-trip has
  * data to assert against.
  */
-function makeGeminiResponse(
-  overrides: Partial<GeminiResponse> = {}
-): GeminiResponse {
+function makeGeminiResponse(overrides: Partial<GeminiResponse> = {}): GeminiResponse {
   return {
     topics: ['machine learning', 'rust', 'compilers'],
     github_repos: [{ name: 'serde-rs/serde', url: 'https://github.com/serde-rs/serde' }],
@@ -224,9 +222,7 @@ describe('AIAnalysisRepository.getByVideo — v1 stub-bomb closure', () => {
     // Assert — explicitly not undefined, explicitly not null, with real data
     expect(fetched).not.toBeUndefined();
     expect(fetched).not.toBeNull();
-    expect(fetched?.summary).toBe(
-      'The session that proved the report path works.'
-    );
+    expect(fetched?.summary).toBe('The session that proved the report path works.');
     expect(fetched?.contentType).toBe('demo');
     expect(fetched?.sentiment).toBe('positive');
     expect(fetched?.modelUsed).toBe(MODEL_USED);
@@ -271,9 +267,7 @@ describe('AIAnalysisRepository.upsert — input validation', () => {
     } as unknown as GeminiResponse;
 
     // Act + Assert
-    expect(() => repo.upsert(videoId, malformed, MODEL_USED)).toThrow(
-      DatabaseError
-    );
+    expect(() => repo.upsert(videoId, malformed, MODEL_USED)).toThrow(DatabaseError);
     // Nothing got persisted — the parse fired before the SQL did.
     expect(repo.count()).toBe(0);
   });
@@ -287,9 +281,7 @@ describe('AIAnalysisRepository.upsert — input validation', () => {
     } as unknown as GeminiResponse;
 
     // Act + Assert
-    expect(() => repo.upsert(videoId, malformed, MODEL_USED)).toThrow(
-      DatabaseError
-    );
+    expect(() => repo.upsert(videoId, malformed, MODEL_USED)).toThrow(DatabaseError);
     expect(repo.count()).toBe(0);
   });
 });

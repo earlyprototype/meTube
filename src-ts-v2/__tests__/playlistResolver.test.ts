@@ -174,9 +174,7 @@ describe('resolvePlaylistIdentifier — title source', () => {
     ]);
 
     // Act + Assert
-    await expect(resolvePlaylistIdentifier('python')).rejects.toThrow(
-      MultipleMatchesError
-    );
+    await expect(resolvePlaylistIdentifier('python')).rejects.toThrow(MultipleMatchesError);
   });
 });
 
@@ -201,19 +199,16 @@ describe('resolvePlaylistIdentifier — direct ID source (5 prefixes)', () => {
     ['LL', 'LLuAXFkgsw1L7xaCfnd5JJOw'],
     ['FL', 'FLuAXFkgsw1L7xaCfnd5JJOw'],
     ['RD', 'RDMM9bZkp7q19f0'],
-  ])(
-    'accepts a direct ID with the %s prefix',
-    async (_prefix, candidate) => {
-      // Arrange — no cache, no DB, so resolver must fall through to
-      // direct-ID path and return a successful resolution.
-      // Act
-      const result = await resolvePlaylistIdentifier(candidate);
+  ])('accepts a direct ID with the %s prefix', async (_prefix, candidate) => {
+    // Arrange — no cache, no DB, so resolver must fall through to
+    // direct-ID path and return a successful resolution.
+    // Act
+    const result = await resolvePlaylistIdentifier(candidate);
 
-      // Assert
-      expect(result?.source).toBe('direct');
-      expect(result?.id).toBe(candidate);
-    }
-  );
+    // Assert
+    expect(result?.source).toBe('direct');
+    expect(result?.id).toBe(candidate);
+  });
 
   it('rejects the OL prefix that v1 mistakenly accepted', async () => {
     // Arrange
@@ -307,9 +302,9 @@ describe('resolvePlaylistIdentifier — database source', () => {
     });
 
     // Act + Assert
-    await expect(
-      resolvePlaylistIdentifier('java', { db: dbm })
-    ).rejects.toThrow(MultipleMatchesError);
+    await expect(resolvePlaylistIdentifier('java', { db: dbm })).rejects.toThrow(
+      MultipleMatchesError
+    );
   });
 
   it('returns null when nothing matches in DB either', async () => {
@@ -351,9 +346,7 @@ describe('resolvePlaylistOrThrow', () => {
 
   it('throws a helpful error when nothing resolves', async () => {
     // Arrange + Act + Assert
-    await expect(resolvePlaylistOrThrow('whatever')).rejects.toThrow(
-      /Playlist not found/
-    );
+    await expect(resolvePlaylistOrThrow('whatever')).rejects.toThrow(/Playlist not found/);
   });
 });
 

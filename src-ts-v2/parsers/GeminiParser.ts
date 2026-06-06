@@ -32,10 +32,7 @@ import type { ZodError } from 'zod';
 
 import { AppError, ValidationError } from '../errors/index.js';
 import logger from '../utils/logger.js';
-import {
-  GeminiResponseSchema,
-  type GeminiResponse,
-} from '../schemas/gemini.js';
+import { GeminiResponseSchema, type GeminiResponse } from '../schemas/gemini.js';
 
 /**
  * Maximum characters of transcript passed to Gemini. Matches the Python
@@ -264,12 +261,9 @@ export class GeminiParser {
         'Gemini response failed schema validation'
       );
 
-      throw new ValidationError(
-        `Gemini response failed schema validation: ${issues}`,
-        {
-          cause: zodError,
-        }
-      );
+      throw new ValidationError(`Gemini response failed schema validation: ${issues}`, {
+        cause: zodError,
+      });
     }
   }
 

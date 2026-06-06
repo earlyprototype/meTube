@@ -25,9 +25,7 @@ import { z } from 'zod';
  * string and stores it raw; the v2 schema constrains to the known set with
  * `z.enum` so a misspelt model output fails validation early.
  */
-export const GeminiSentimentSchema = z
-  .enum(['positive', 'negative', 'neutral'])
-  .default('neutral');
+export const GeminiSentimentSchema = z.enum(['positive', 'negative', 'neutral']).default('neutral');
 
 /**
  * GitHub repo entry as emitted by Gemini under the `github_repos` key.

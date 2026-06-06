@@ -78,9 +78,7 @@ describe('PlaylistRepository — createOrUpdate (insert)', () => {
 
   it('throws ValidationError when title is missing on a fresh insert', () => {
     // Arrange + Act + Assert
-    expect(() =>
-      repo.createOrUpdate({ playlistId: asPlaylistId(PL_A) })
-    ).toThrow(ValidationError);
+    expect(() => repo.createOrUpdate({ playlistId: asPlaylistId(PL_A) })).toThrow(ValidationError);
   });
 });
 
@@ -345,9 +343,10 @@ describe('PlaylistRepository — rollback discipline', () => {
     // partway through.
     expect(() =>
       dbm.withTransaction((db) => {
-        db.prepare(
-          `INSERT INTO playlists (playlist_id, title) VALUES (?, ?)`
-        ).run(PL_A, 'duplicate'); // UNIQUE violation
+        db.prepare(`INSERT INTO playlists (playlist_id, title) VALUES (?, ?)`).run(
+          PL_A,
+          'duplicate'
+        ); // UNIQUE violation
       })
     ).toThrow(DatabaseError);
 

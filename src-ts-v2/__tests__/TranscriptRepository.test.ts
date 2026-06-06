@@ -15,10 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DatabaseManager } from '../database/connection.js';
-import {
-  TranscriptRepository,
-  type TranscriptInput,
-} from '../database/TranscriptRepository.js';
+import { TranscriptRepository, type TranscriptInput } from '../database/TranscriptRepository.js';
 import { DatabaseError } from '../errors/index.js';
 import { asVideoId, type VideoId } from '../types/branded.js';
 
@@ -95,9 +92,10 @@ describe('TranscriptRepository.upsert', () => {
     expect(replaced.is_auto_generated).toBe(0);
 
     const count = dbm
-      .prepare<readonly [], { c: number }>(
-        'SELECT COUNT(*) AS c FROM transcripts WHERE video_id = ?'
-      )
+      .prepare<
+        readonly [],
+        { c: number }
+      >('SELECT COUNT(*) AS c FROM transcripts WHERE video_id = ?')
       .get(vid);
     expect(count?.c).toBe(1);
   });
@@ -180,9 +178,7 @@ describe('TranscriptRepository.upsert', () => {
     const orphanId = asVideoId('aaaaaaaaaaa');
 
     // Act + Assert
-    expect(() => repo.upsert(orphanId, { fullText: 'no parent' })).toThrow(
-      DatabaseError
-    );
+    expect(() => repo.upsert(orphanId, { fullText: 'no parent' })).toThrow(DatabaseError);
   });
 });
 

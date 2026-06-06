@@ -44,9 +44,10 @@ describe('DatabaseManager — schema bootstrap', () => {
   it('creates every expected table after construction', () => {
     // Act
     const rows = dbm
-      .prepare<[], SqliteMasterTableRow>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-      )
+      .prepare<
+        [],
+        SqliteMasterTableRow
+      >("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all();
     const names = rows.map((r) => r.name);
 
@@ -59,9 +60,7 @@ describe('DatabaseManager — schema bootstrap', () => {
   it('seeds the schema_version row at construction time', () => {
     // Act
     const row = dbm
-      .prepare<[], { version: number }>(
-        'SELECT version FROM schema_version LIMIT 1'
-      )
+      .prepare<[], { version: number }>('SELECT version FROM schema_version LIMIT 1')
       .get();
 
     // Assert
@@ -110,9 +109,7 @@ describe('DatabaseManager.withTransaction — rollback', () => {
       })
     ).toThrow();
 
-    const count = dbm
-      .prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM videos')
-      .get();
+    const count = dbm.prepare<[], { c: number }>('SELECT COUNT(*) AS c FROM videos').get();
     expect(count?.c).toBe(0);
   });
 });
@@ -134,23 +131,15 @@ describe('DatabaseManager.withTransaction — happy path', () => {
       db.prepare(
         `INSERT INTO videos (video_id, title, channel_id, channel_title, published_at, duration, duration_seconds, is_short)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(
-        'dQw4w9WgXcQ',
-        'committed',
-        'UCxxxx',
-        'ch',
-        '2024-01-01T00:00:00Z',
-        'PT3M33S',
-        213,
-        0
-      );
+      ).run('dQw4w9WgXcQ', 'committed', 'UCxxxx', 'ch', '2024-01-01T00:00:00Z', 'PT3M33S', 213, 0);
     });
 
     // Act
     const row = dbm
-      .prepare<[string], { video_id: string; title: string }>(
-        'SELECT video_id, title FROM videos WHERE video_id = ?'
-      )
+      .prepare<
+        [string],
+        { video_id: string; title: string }
+      >('SELECT video_id, title FROM videos WHERE video_id = ?')
       .get('dQw4w9WgXcQ');
 
     // Assert
@@ -160,11 +149,7 @@ describe('DatabaseManager.withTransaction — happy path', () => {
   it('returns the callback return value to the caller', () => {
     // Arrange + Act
     const insertedId = dbm.withTransaction((db) => {
-      const info = db
-        .prepare(
-          `INSERT INTO tags (tag) VALUES (?)`
-        )
-        .run('machine-learning');
+      const info = db.prepare(`INSERT INTO tags (tag) VALUES (?)`).run('machine-learning');
       return info.lastInsertRowid;
     });
 
@@ -192,24 +177,11 @@ describe('DatabaseManager — branded ID round-trip', () => {
       db.prepare(
         `INSERT INTO videos (video_id, title, channel_id, channel_title, published_at, duration, duration_seconds, is_short)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(
-        vid,
-        'round-trip',
-        'UCxxxx',
-        'ch',
-        '2024-01-01T00:00:00Z',
-        'PT3M33S',
-        213,
-        0
-      );
+      ).run(vid, 'round-trip', 'UCxxxx', 'ch', '2024-01-01T00:00:00Z', 'PT3M33S', 213, 0);
     });
 
     // Act — pull the raw row, validate via Zod, re-brand the id
-    const raw = dbm
-      .prepare<[string], unknown>(
-        'SELECT * FROM videos WHERE video_id = ?'
-      )
-      .get(vid);
+    const raw = dbm.prepare<[string], unknown>('SELECT * FROM videos WHERE video_id = ?').get(vid);
 
     const parsed: VideoRow = VideoRowSchema.parse(raw);
     const rebranded = asVideoId(parsed.video_id);

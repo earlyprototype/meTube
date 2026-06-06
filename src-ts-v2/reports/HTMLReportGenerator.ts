@@ -271,10 +271,7 @@ export class HTMLReportGenerator {
     this.tagRepository = new TagRepository(this.db);
     this.aiAnalysisRepository = new AIAnalysisRepository(this.db);
 
-    logger.debug(
-      { templatesDir: this.templatesDir },
-      'HTMLReportGenerator initialised'
-    );
+    logger.debug({ templatesDir: this.templatesDir }, 'HTMLReportGenerator initialised');
   }
 
   // --------------------------------------------------------------------
@@ -354,10 +351,7 @@ export class HTMLReportGenerator {
    *                    `REPORT_RENDER_FAILED`, or
    *                    `REPORT_WRITE_FAILED`.
    */
-  async generatePlaylistReport(
-    playlistId: PlaylistId,
-    outputDir: string
-  ): Promise<string> {
+  async generatePlaylistReport(playlistId: PlaylistId, outputDir: string): Promise<string> {
     if (typeof outputDir !== 'string' || outputDir.length === 0) {
       throw new ValidationError('outputDir must be a non-empty string', {
         field: 'outputDir',
@@ -383,7 +377,12 @@ export class HTMLReportGenerator {
       });
     }
 
-    const reportData = this.buildPlaylistReportData(playlistId, playlist.title, playlist.description, videos);
+    const reportData = this.buildPlaylistReportData(
+      playlistId,
+      playlist.title,
+      playlist.description,
+      videos
+    );
     const html = this.renderPlaylistTemplate(reportData);
 
     ensureDirectory(outputDir);
@@ -466,7 +465,11 @@ export class HTMLReportGenerator {
       text: string;
     }
     let segments: ReportTranscriptSegment[] = [];
-    if (transcript.segments_json !== null && transcript.segments_json !== undefined && transcript.segments_json !== '') {
+    if (
+      transcript.segments_json !== null &&
+      transcript.segments_json !== undefined &&
+      transcript.segments_json !== ''
+    ) {
       try {
         const parsed: unknown = JSON.parse(transcript.segments_json);
         if (Array.isArray(parsed)) {
@@ -492,9 +495,7 @@ export class HTMLReportGenerator {
       }
     }
 
-    const wordCount = transcript.full_text
-      .split(/\s+/)
-      .filter((w) => w.length > 0).length;
+    const wordCount = transcript.full_text.split(/\s+/).filter((w) => w.length > 0).length;
 
     return {
       language: transcript.language,
@@ -628,10 +629,7 @@ export class HTMLReportGenerator {
       readonly title: string;
     }
 
-    const topicsMap = new Map<
-      string,
-      { name: string; count: number; videos: VideoRef[] }
-    >();
+    const topicsMap = new Map<string, { name: string; count: number; videos: VideoRef[] }>();
     const reposMap = new Map<
       string,
       { name: string; url: string | undefined; videos: VideoRef[] }
@@ -640,10 +638,7 @@ export class HTMLReportGenerator {
       string,
       { name: string; url: string | undefined; videos: VideoRef[] }
     >();
-    const peopleMap = new Map<
-      string,
-      { name: string; count: number; videos: VideoRef[] }
-    >();
+    const peopleMap = new Map<string, { name: string; count: number; videos: VideoRef[] }>();
 
     const videoSummaries: PlaylistVideoSummary[] = [];
 
@@ -774,9 +769,7 @@ export class HTMLReportGenerator {
     const durationFormatted = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
     const transcriptPercentage =
-      videos.length === 0
-        ? 0
-        : Math.round((videosWithTranscripts / videos.length) * 100);
+      videos.length === 0 ? 0 : Math.round((videosWithTranscripts / videos.length) * 100);
 
     return {
       playlist: {
