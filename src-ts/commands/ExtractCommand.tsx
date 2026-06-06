@@ -392,6 +392,7 @@ export function buildGeminiAdapter(
     return {
       modelName: model,
       parseTranscript: (input) => parser.parseTranscript(input),
+      getTags: (parsedResult) => parser.getTags(parsedResult),
     };
   } catch (err) {
     logger.warn(
