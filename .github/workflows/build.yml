@@ -18,12 +18,14 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install (include optional platform-specific deps)
+      - name: Install (rebuild lockfile so optional platform deps install)
+        # The committed lockfile is generated on Windows and drops the
+        # Linux-specific Rollup native binary (@rollup/rollup-linux-x64-gnu),
+        # which vitest needs to start. Regenerate the lockfile fresh on Linux
+        # so npm pulls the right optional binary for this runner.
         run: |
-          npm ci || (rm -f package-lock.json && npm install --include=optional)
-          # npm ci can drop platform-specific optional deps (e.g. @rollup/rollup-linux-x64-gnu)
-          # when the lockfile was generated on a different OS. Fall back to a
-          # fresh install with optional deps if npm ci fails.
+          rm -f package-lock.json
+          npm install --include=optional
 
       - run: npm run build
 
