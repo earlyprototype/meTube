@@ -1,4 +1,5 @@
 """Whisper-based transcript extraction for videos without YouTube transcripts"""
+import logging
 import os
 import shutil
 import warnings
@@ -8,6 +9,7 @@ import tempfile
 from rich.console import Console
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 class WhisperTranscriptExtractor:
@@ -101,6 +103,10 @@ class WhisperTranscriptExtractor:
                 return None
                 
         except Exception as e:
+            logger.exception(
+                'whisper audio download failed',
+                extra={'video_id': video_id, 'output_path': str(output_path)},
+            )
             console.print(f"  [red]Audio download failed[/red]")
             return None
     
@@ -142,6 +148,10 @@ class WhisperTranscriptExtractor:
             }
             
         except Exception as e:
+            logger.exception(
+                'whisper transcription failed',
+                extra={'audio_path': audio_path, 'model': self.model_name},
+            )
             console.print(f"  [red]Transcription failed[/red]")
             return None
     
@@ -151,8 +161,8 @@ class WhisperTranscriptExtractor:
             if os.path.exists(audio_path):
                 os.remove(audio_path)
         except Exception as e:
-            # Silent cleanup failure - not critical
-            pass
+            # Cleanup failure is not critical - log and continue
+            logger.debug('temp cleanup failed: %s', e, exc_info=True)
     
     def extract(self, video_id: str) -> Optional[Dict]:
         """

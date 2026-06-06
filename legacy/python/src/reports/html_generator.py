@@ -176,36 +176,9 @@ class HTMLReportGenerator:
         
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
-        
+
         return str(output_path)
-    
-    def generate_playlist_report(
-        self,
-        video_ids: List[str],
-        output_filename: str = "playlist_report.html"
-    ) -> Optional[str]:
-        """
-        Generate a consolidated report for multiple videos
-        
-        Args:
-            video_ids: List of YouTube video IDs
-            output_filename: Output filename
-            
-        Returns:
-            Path to generated HTML file
-        """
-        # For now, generate individual reports for each video
-        # A full implementation would create a multi-video summary page
-        report_paths = []
-        
-        for video_id in video_ids:
-            report_path = self.generate_video_report(video_id)
-            if report_path:
-                report_paths.append(report_path)
-        
-        print(f"Generated {len(report_paths)} individual video reports")
-        return report_paths[0] if report_paths else None
-    
+
     @staticmethod
     def _format_timestamp(seconds: float) -> str:
         """Format seconds as MM:SS or HH:MM:SS"""

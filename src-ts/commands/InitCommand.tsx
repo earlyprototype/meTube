@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp } from 'ink';
 import Spinner from 'ink-spinner';
-import { YouTubeAuth } from '../auth/YouTubeAuth.js';
-import { DatabaseManager } from '../database/connection.js';
+import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
+import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { StatusPanel } from '../components/StatusPanel.js';
+import logger from '../../src-ts-v2/utils/logger.js';
 
 interface InitCommandProps {
   force?: boolean;
@@ -22,10 +23,10 @@ export function InitCommand({ force = false, onComplete }: InitCommandProps) {
   useEffect(() => {
     async function init() {
       try {
-        // Step 1: Check database
+        // Step 1: Check database — v2 DatabaseManager opens lazily in the
+        // constructor and schema-bootstraps; close() is idempotent.
         setMessage('Checking database...');
         const db = new DatabaseManager('data/metube.db');
-        db.getConnection();
         db.close();
 
         // Step 2: Authenticate
@@ -37,35 +38,44 @@ export function InitCommand({ force = false, onComplete }: InitCommandProps) {
           tokensPath: 'tokens.json',
         });
 
-        if (!force && auth.hasValidTokens()) {
-          setMessage('Already authenticated with valid tokens');
-          setStatus('success');
-          // In REPL mode, call onComplete; in direct mode, exit after 2 seconds
-          if (onComplete) {
-            onComplete();
-          } else {
-            setTimeout(() => exit(), 2000);
-          }
-          return;
-        }
-
-        const authenticated = await auth.authenticate(force);
-
-        if (authenticated) {
-          setStatus('success');
-          setMessage('Authentication successful!');
-          // In REPL mode, call onComplete; in direct mode, exit after 2 seconds
-          if (onComplete) {
-            onComplete();
-          } else {
-            setTimeout(() => exit(), 2000);
+        // v2 has no `force` parameter on authenticate(); the equivalent is
+        // to delete the tokens file before calling. v2 also short-circuits
+        // when tokens.json is valid (hydrates and returns), so we only
+        // explicitly skip the call when --force is NOT set AND tokens
+        // parse cleanly off disk.
+        if (force) {
+          // Force re-authentication: delete existing tokens if present
+          const fs = await import('fs');
+          if (fs.existsSync('tokens.json')) {
+            fs.unlinkSync('tokens.json');
+            logger.info('Deleted tokens.json for forced re-authentication');
           }
         } else {
-          setStatus('error');
-          setError('Authentication failed');
-          if (!onComplete) {
-            setTimeout(() => exit(), 100);
+          try {
+            auth.loadTokens();
+            setMessage('Already authenticated with valid tokens');
+            setStatus('success');
+            if (onComplete) {
+              onComplete();
+            } else {
+              setTimeout(() => exit(), 2000);
+            }
+            return;
+          } catch {
+            // Tokens missing or malformed — fall through to fresh auth.
           }
+        }
+
+        // v2 authenticate() returns an OAuth2Client on success and throws
+        // AppError on failure. Treat reaching here as success.
+        await auth.authenticate();
+
+        setStatus('success');
+        setMessage('Authentication successful!');
+        if (onComplete) {
+          onComplete();
+        } else {
+          setTimeout(() => exit(), 2000);
         }
       } catch (err) {
         setStatus('error');

@@ -1,6 +1,6 @@
 {
   "name": "metube-ink",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "A comprehensive CLI tool for extracting and analysing YouTube videos with dual-layer transcript extraction (YouTube + Whisper AI fallback), automatic entity parsing from transcripts and descriptions, cached playlist discovery, and beautiful interactive HTML reports. Built with Ink.",
   "main": "dist/cli.js",
   "type": "module",
@@ -21,10 +21,10 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint \"src-ts/**/*.{ts,tsx}\"",
-    "lint:fix": "eslint \"src-ts/**/*.{ts,tsx}\" --fix",
-    "format": "prettier --write \"src-ts/**/*.{ts,tsx}\"",
-    "format:check": "prettier --check \"src-ts/**/*.{ts,tsx}\""
+    "lint": "eslint \"src-ts/**/*.{ts,tsx}\" \"src-ts-v2/**/*.{ts,tsx}\"",
+    "lint:fix": "eslint \"src-ts/**/*.{ts,tsx}\" \"src-ts-v2/**/*.{ts,tsx}\" --fix",
+    "format": "prettier --write \"src-ts/**/*.{ts,tsx}\" \"src-ts-v2/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src-ts/**/*.{ts,tsx}\" \"src-ts-v2/**/*.{ts,tsx}\""
   },
   "keywords": [
     "youtube",
@@ -37,6 +37,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@google-cloud/local-auth": "^3.0.1",
     "@google/generative-ai": "^0.24.1",
     "@inkjs/ui": "^2.0.0",
     "@types/node": "^25.0.9",
@@ -64,7 +65,11 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "youtube-transcript": "^1.2.1",
-    "yt-dlp-exec": "^1.0.2"
+    "yt-dlp-exec": "^1.0.2",
+    "zod": "^3.25.76"
+  },
+  "overrides": {
+    "google-auth-library": "^10.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

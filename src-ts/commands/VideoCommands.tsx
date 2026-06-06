@@ -6,15 +6,22 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
-import { YouTubeAuth } from '../auth/YouTubeAuth.js';
-import { YouTubeClient } from '../api/YouTubeClient.js';
-import { DatabaseManager } from '../database/connection.js';
-import { VideoExtractor } from '../extractors/VideoExtractor.js';
+import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
+import { YouTubeClient } from '../../src-ts-v2/api/YouTubeClient.js';
+import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
+import { VideoRepository } from '../../src-ts-v2/database/VideoRepository.js';
+import { StatisticsRepository } from '../../src-ts-v2/database/StatisticsRepository.js';
+import { EntityRepository } from '../../src-ts-v2/database/EntityRepository.js';
+import { TranscriptRepository } from '../../src-ts-v2/database/TranscriptRepository.js';
+import { DescriptionParser } from '../../src-ts-v2/parsers/DescriptionParser.js';
+import { TranscriptExtractor } from '../../src-ts-v2/extractors/TranscriptExtractor.js';
+import { WhisperExtractor } from '../../src-ts-v2/extractors/WhisperExtractor.js';
+import { asVideoId } from '../../src-ts-v2/types/branded.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { ProgressDisplay } from '../components/ProgressDisplay.js';
 import { ReportCommand } from './ReportCommand.js';
 import { symbols, inkColors } from '../utils/colors.js';
-import logger from '../utils/logger.js';
+import logger from '../../src-ts-v2/utils/logger.js';
 
 interface VideoCommandsProps {
   subcommand?: string;
@@ -103,44 +110,97 @@ function VideoAdd({
 
         logger.info({ input: videoInput, extractedId }, 'Extracting video ID');
 
+        // Brand the ID at the boundary — v2 APIs require VideoId.
+        const brandedId = asVideoId(extractedId);
+
         // Initialize services
         const auth = new YouTubeAuth();
-        await auth.authenticate();
-        const client = new YouTubeClient(auth);
+        const oauthClient = await auth.authenticate();
+        const client = new YouTubeClient(oauthClient);
         const db = new DatabaseManager('data/metube.db');
 
-        // Configure extractor
-        const extractor = new VideoExtractor(client, db, {
-          autoTranscript: !flags.noTranscript,
-          autoLlmParse: !flags.noLlm,
-          enableWhisper: !flags.noWhisper,
-          onProgress: (prog) => {
-            // Map progress status to ProgressDisplay compatible status
-            const statusMap: Record<
-              string,
-              'downloading' | 'transcribing' | 'parsing' | 'saving' | 'completed'
-            > = {
-              processing: 'downloading',
-              complete: 'completed',
-              failed: 'saving',
-              skipped: 'saving',
-            };
-            setProgressStatus(statusMap[prog.status] || 'downloading');
-            if (prog.videoTitle) {
-              setVideoTitle(prog.videoTitle);
-            }
-          },
+        setStatus('extracting');
+        setProgressStatus('downloading');
+
+        // v2 VideoExtractor only exposes extractPlaylist; there is no
+        // public single-video method. Drive the pipeline manually using
+        // the same building blocks the playlist pipeline uses.
+        const details = await client.getVideoById(brandedId);
+        if (!details) {
+          setError(`Video not found: ${videoInput}. Check the URL or ID is correct.`);
+          setStatus('error');
+          db.close();
+          return;
+        }
+        setVideoTitle(details.title || extractedId);
+
+        // Persist video + statistics. Repository methods own their own
+        // transactions.
+        const videoRepo = new VideoRepository(db);
+        videoRepo.createOrUpdate({
+          video_id: brandedId,
+          title: details.title,
+          description: details.description,
+          channel_id: details.channelId,
+          channel_title: details.channelTitle,
+          published_at: details.publishedAt,
+          duration: details.duration,
+          duration_seconds: details.durationSeconds,
+          is_short: details.isShort,
+          category_id: details.categoryId ?? null,
+          caption: details.caption ?? null,
+          licensed_content: details.licensedContent ?? null,
         });
 
-        setStatus('extracting');
+        const statsRepo = new StatisticsRepository(db);
+        statsRepo.recordSnapshot(brandedId, {
+          viewCount: details.viewCount ?? 0,
+          likeCount: details.likeCount ?? 0,
+          commentCount: details.commentCount ?? 0,
+        });
 
-        // Extract video
-        const result = await extractor.extractSingleVideo(extractedId);
-
-        if (result && result.videoData) {
-          setVideoTitle(result.videoData.title || extractedId);
+        // Transcript stage — YouTube first, Whisper fallback if enabled.
+        if (!flags.noTranscript) {
+          setProgressStatus('transcribing');
+          const whisper = !flags.noWhisper ? new WhisperExtractor() : undefined;
+          const transcriptExtractor = new TranscriptExtractor({
+            whisperExtractor: whisper,
+          });
+          const transcript = await transcriptExtractor.extract(brandedId);
+          if (transcript) {
+            const transcriptRepo = new TranscriptRepository(db);
+            transcriptRepo.upsert(brandedId, {
+              language: transcript.language,
+              fullText: transcript.full_text,
+              segments: transcript.segments,
+              isAutoGenerated: transcript.is_auto_generated,
+            });
+          }
         }
 
+        // Description-driven entities (LLM-free path; --no-llm is the
+        // current flag's intent. Gemini wiring is out of this command's
+        // single-video scope.)
+        if (!flags.noLlm) {
+          setProgressStatus('parsing');
+          const parser = new DescriptionParser();
+          const parsed = parser.parse(details.title, details.description);
+          const entities = parser.extractEntitiesForDatabase(parsed);
+          if (entities.length > 0) {
+            const entityRepo = new EntityRepository(db);
+            entityRepo.insertMany(
+              brandedId,
+              entities.map((e) => ({
+                type: e.type,
+                value: e.value,
+                url: e.url,
+                confidence: e.confidence,
+              }))
+            );
+          }
+        }
+
+        setProgressStatus('completed');
         db.close();
 
         // Generate report if requested

@@ -3,9 +3,10 @@ import { Box, Text } from 'ink';
 import { ReplShell } from './ReplShell.js';
 import { Sidebar } from './Sidebar.js';
 import { inkColors, symbols } from '../utils/colors.js';
-import { DatabaseManager } from '../database/connection.js';
-import { PlaylistRepository, VideoRepository } from '../database/repositories.js';
-import { YouTubeAuth } from '../auth/YouTubeAuth.js';
+import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
+import { PlaylistRepository } from '../../src-ts-v2/database/PlaylistRepository.js';
+import { VideoRepository } from '../../src-ts-v2/database/VideoRepository.js';
+import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
 
 interface ReplModeProps {
   onCommand: (
@@ -90,17 +91,26 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
   useEffect(() => {
     function loadStats() {
       try {
-        // Check authentication
+        // Check authentication — v2 YouTubeAuth has no isAuthenticated();
+        // we probe disk via loadTokens() and catch on failure.
         const auth = new YouTubeAuth();
-        const isAuthenticated = auth.isAuthenticated();
+        let isAuthenticated = false;
+        try {
+          auth.loadTokens();
+          isAuthenticated = true;
+        } catch {
+          isAuthenticated = false;
+        }
 
-        // Get counts from database
+        // Get counts from database — v2 repos use findAll(), not getAll().
+        // v2 PlaylistRepository.findAll defaults to enabledOnly: true; the
+        // Sidebar wants all tracked playlists so we opt out.
         const db = new DatabaseManager('data/metube.db');
         const playlistRepo = new PlaylistRepository(db);
         const videoRepo = new VideoRepository(db);
 
-        const playlists = playlistRepo.getAll();
-        const videos = videoRepo.getAll();
+        const playlists = playlistRepo.findAll({ enabledOnly: false });
+        const videos = videoRepo.findAll();
 
         db.close();
 
@@ -132,14 +142,20 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
   const refreshStats = () => {
     try {
       const auth = new YouTubeAuth();
-      const isAuthenticated = auth.isAuthenticated();
+      let isAuthenticated = false;
+      try {
+        auth.loadTokens();
+        isAuthenticated = true;
+      } catch {
+        isAuthenticated = false;
+      }
 
       const db = new DatabaseManager('data/metube.db');
       const playlistRepo = new PlaylistRepository(db);
       const videoRepo = new VideoRepository(db);
 
-      const playlists = playlistRepo.getAll();
-      const videos = videoRepo.getAll();
+      const playlists = playlistRepo.findAll({ enabledOnly: false });
+      const videos = videoRepo.findAll();
 
       db.close();
 

@@ -1,4 +1,5 @@
 """Transcript extraction using youtube-transcript-api"""
+import logging
 import time
 from typing import List, Dict, Optional
 from rich.console import Console
@@ -11,6 +12,7 @@ from youtube_transcript_api._errors import (
 )
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 class TranscriptExtractor:
@@ -117,9 +119,16 @@ class TranscriptExtractor:
                         break
                     except NoTranscriptFound:
                         continue
-            except Exception:
+            except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable):
+                # Expected: no manual transcript available; fall through to auto-generated.
                 pass
-            
+            except Exception:
+                logger.exception(
+                    "Unexpected error iterating manual transcripts for video_id=%s",
+                    video_id,
+                )
+                # Don't re-raise; let execution continue to auto-generated fallback
+
             # Fall back to auto-generated transcripts
             if not transcript:
                 try:
@@ -130,8 +139,15 @@ class TranscriptExtractor:
                             break
                         except NoTranscriptFound:
                             continue
-                except Exception:
+                except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable):
+                    # Expected: no auto-generated transcript available; fall through.
                     pass
+                except Exception:
+                    logger.exception(
+                        "Unexpected error iterating auto-generated transcripts for video_id=%s",
+                        video_id,
+                    )
+                    # Don't re-raise; let execution continue to "any available" fallback
             
             # If still no transcript, try any available transcript
             if not transcript:

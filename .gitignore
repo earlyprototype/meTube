@@ -87,6 +87,10 @@ data/temp_audio/
 .windsurf/
 .copilot/
 
+# MCP server configuration carries absolute, machine-specific paths —
+# track .mcp.json.example as the portable template instead.
+.mcp.json
+
 # Kanbanger local sync + worker state
 .kanban.json
 .kanban.lock

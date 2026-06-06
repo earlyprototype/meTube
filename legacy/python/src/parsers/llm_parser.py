@@ -8,6 +8,9 @@ import google.generativeai as genai
 
 console = Console()
 
+# Limit transcript length passed to Gemini to avoid token limits
+MAX_TRANSCRIPT_CHARS = 8000
+
 
 class GeminiParser:
     """Parse transcripts using Google Gemini for entity extraction"""
@@ -90,7 +93,7 @@ class GeminiParser:
 Video Title: {video_title}
 
 Transcript:
-{transcript_text[:8000]}  # Limit to avoid token limits
+{transcript_text[:MAX_TRANSCRIPT_CHARS]}
 
 Please extract the following information and return as JSON:
 
