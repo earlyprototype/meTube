@@ -16,9 +16,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
-      - run: npm ci
+      - name: Install (rebuild lockfile for target platform)
+        # The committed lockfile is generated on Windows and lacks the
+        # Linux-specific Rollup native binary (@rollup/rollup-linux-x64-gnu),
+        # which vitest needs to start. npm ci is strict and won't fetch
+        # optional deps absent from the lockfile, so we drop it and let npm
+        # resolve fresh for ubuntu-latest.
+        run: |
+          rm -f package-lock.json
+          npm install --include=optional --ignore-scripts
+          npm rebuild
 
       - run: npm run build
 

@@ -61,7 +61,7 @@ Set up Google Cloud OAuth credentials (YouTube Data API v3, Desktop app type), d
 
 ```sh
 cp env.example .env          # add GEMINI_API_KEY for LLM entity parsing
-metube init                  # interactive OAuth via @google-cloud/local-auth; writes tokens.json
+metube init                  # interactive OAuth on http://localhost:3000; writes tokens.json
 metube playlist discover     # cache your playlists with short reference numbers
 metube playlist add 3        # add by cache number, ID, URL, or title search
 metube extract playlist 3    # run the dual-transcript pipeline
