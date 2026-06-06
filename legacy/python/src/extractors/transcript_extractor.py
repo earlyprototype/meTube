@@ -127,7 +127,7 @@ class TranscriptExtractor:
                     "Unexpected error iterating manual transcripts for video_id=%s",
                     video_id,
                 )
-                raise
+                # Don't re-raise; let execution continue to auto-generated fallback
 
             # Fall back to auto-generated transcripts
             if not transcript:
@@ -147,7 +147,7 @@ class TranscriptExtractor:
                         "Unexpected error iterating auto-generated transcripts for video_id=%s",
                         video_id,
                     )
-                    raise
+                    # Don't re-raise; let execution continue to "any available" fallback
             
             # If still no transcript, try any available transcript
             if not transcript:
