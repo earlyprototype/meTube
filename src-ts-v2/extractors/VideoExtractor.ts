@@ -53,6 +53,7 @@ import {
 import { PlaylistItemRepository } from '../database/PlaylistItemRepository.js';
 import { PlaylistRepository } from '../database/PlaylistRepository.js';
 import { StatisticsRepository } from '../database/StatisticsRepository.js';
+import { TagRepository } from '../database/TagRepository.js';
 import { TranscriptRepository } from '../database/TranscriptRepository.js';
 import { VideoRepository } from '../database/VideoRepository.js';
 
@@ -212,6 +213,7 @@ export interface DatabaseEntity {
 export interface DescriptionParserLike {
   parse(title: string, description: string): ParsedDescription;
   extractEntitiesForDatabase(parsed: ParsedDescription): readonly DatabaseEntity[];
+  getTags(parsed: ParsedDescription): string[];
 }
 
 /**
@@ -227,6 +229,7 @@ export interface DescriptionParserLike {
  */
 export interface GeminiParserLike {
   parseTranscript(input: ParseTranscriptInput): Promise<GeminiResponse | null>;
+  getTags(parsedResult: GeminiResponse): string[];
   readonly modelName: string;
 }
 
@@ -348,6 +351,7 @@ export interface VideoExtractorDeps {
   readonly aiAnalysisRepository?: AIAnalysisRepository;
   readonly extractionJobRepository?: ExtractionJobRepository;
   readonly transcriptRepository?: TranscriptRepository;
+  readonly tagRepository?: TagRepository;
 }
 
 // --------------------------------------------------------------------------
@@ -383,6 +387,7 @@ export class VideoExtractor {
   private readonly aiAnalysisRepository: AIAnalysisRepository;
   private readonly extractionJobRepository: ExtractionJobRepository;
   private readonly transcriptRepository: TranscriptRepository;
+  private readonly tagRepository: TagRepository;
 
   /**
    * Construct a VideoExtractor.
@@ -427,6 +432,7 @@ export class VideoExtractor {
     this.aiAnalysisRepository = deps.aiAnalysisRepository ?? new AIAnalysisRepository(db);
     this.extractionJobRepository = deps.extractionJobRepository ?? new ExtractionJobRepository(db);
     this.transcriptRepository = deps.transcriptRepository ?? new TranscriptRepository(db);
+    this.tagRepository = deps.tagRepository ?? new TagRepository(db);
 
     // Siblings: injected siblings win. When not injected we leave them
     // null and require the test (or production wiring) to have passed
@@ -693,6 +699,14 @@ export class VideoExtractor {
       commentCount: details.commentCount,
     });
 
+    // Step 2a: persist YouTube snippet tags. Matches Python behavior at
+    // `legacy/python/src/extractors/video_extractor.py:149-150` where
+    // `TagRepository.add_tags_to_video` is called immediately after the
+    // video row is written.
+    if (details.tags.length > 0) {
+      this.tagRepository.attachManyToVideo(videoId, details.tags);
+    }
+
     // Step 3: playlist-items join row. Closes the v1 PlaylistAddMine /
     // PlaylistSync stub-bomb — the row is now actually inserted, and
     // the repository's regression test asserts row count increased.
@@ -731,6 +745,14 @@ export class VideoExtractor {
     // path; LLM augments, doesn't replace.
     const description = this.descriptionParser.parse(details.title, details.description);
     const descriptionEntities = this.descriptionParser.extractEntitiesForDatabase(description);
+
+    // Step 5a: persist description-derived tags. Matches Python behavior at
+    // `legacy/python/src/extractors/video_extractor.py:170-172` where
+    // `TagRepository.add_tags_to_video` is called after description parsing.
+    const descriptionTags = this.descriptionParser.getTags(description);
+    if (descriptionTags.length > 0) {
+      this.tagRepository.attachManyToVideo(videoId, descriptionTags);
+    }
 
     // Step 6: Gemini LLM analysis (optional). Requires a transcript +
     // an enabled parser.
@@ -771,15 +793,30 @@ export class VideoExtractor {
       }
     }
 
-    // Step 7: persist entities (description + LLM combined). Single
-    // transaction for the whole batch — EntityRepository.insertMany
-    // wraps it.
+    // Step 7: persist entities (description + LLM combined). When
+    // reprocessing (`skipExisting: false`), clear prior entities to avoid
+    // duplication. Matches Python behavior at
+    // `legacy/python/src/extractors/video_extractor.py:208-209` where
+    // `EntityRepository.delete_by_video` is called before inserting.
+    if (!this.config.skipExisting) {
+      this.entityRepository.deleteByVideoId(videoId);
+    }
     const entities = this.buildEntityBatch(descriptionEntities, geminiResult);
     if (entities.length > 0) {
       this.entityRepository.insertMany(videoId, entities);
     }
 
-    // Step 8: persist AI analysis (closes the v1 stub-bomb at
+    // Step 8: persist LLM-derived tags. Matches Python behavior at
+    // `legacy/python/src/extractors/video_extractor.py:216-218` where
+    // `TagRepository.add_tags_to_video` is called with `llm_parser.get_tags`.
+    if (geminiResult !== null && this.geminiParser !== null) {
+      const geminiTags = this.geminiParser.getTags(geminiResult);
+      if (geminiTags.length > 0) {
+        this.tagRepository.attachManyToVideo(videoId, geminiTags);
+      }
+    }
+
+    // Step 9: persist AI analysis (closes the v1 stub-bomb at
     // HTMLReportGenerator.ts:391-394 that always returned undefined).
     if (geminiResult !== null) {
       this.aiAnalysisRepository.upsert(

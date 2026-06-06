@@ -287,7 +287,7 @@ export class WhisperExtractor {
       const pythonScript = `
 import sys
 import json
-sys.path.insert(0, '${process.cwd().replace(/\\/g, '/')}')
+sys.path.insert(0, '${process.cwd().replace(/\\/g, '/')}/legacy/python')
 from src.extractors.whisper_extractor import WhisperTranscriptExtractor
 
 config = {
