@@ -20,5 +20,5 @@
     "types": ["node"]
   },
   "include": ["src-ts/**/*", "src-ts-v2/**/*"],
-  "exclude": ["node_modules", "dist", "src", "venv", "src-ts/**/__tests__/**", "src-ts/**/*.test.ts", "src-ts-v2/**/__tests__/**", "src-ts-v2/**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "src", "venv", "src-ts/**/__tests__/**", "src-ts/**/*.test.ts", "src-ts/**/*.test.tsx", "src-ts-v2/**/__tests__/**", "src-ts-v2/**/*.test.ts", "src-ts-v2/**/*.test.tsx"]
 }

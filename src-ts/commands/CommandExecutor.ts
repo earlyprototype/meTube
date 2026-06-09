@@ -20,6 +20,13 @@ interface ExecuteCommandOptions {
   args?: string[];
   flags?: Record<string, any>;
   onComplete?: () => void;
+  /**
+   * REPL-only: lets a command swap the currently-rendered inline component
+   * for a different one (e.g. the post-extraction menu asking to navigate to
+   * the just-extracted playlist's video list). Undefined in direct-CLI mode,
+   * in which case commands fall back to `useApp().exit()` behaviour.
+   */
+  onNavigate?: (next: React.ReactElement | null) => void;
 }
 
 /**
@@ -34,6 +41,7 @@ export function executeCommandLogic({
   args = [],
   flags = {},
   onComplete,
+  onNavigate,
 }: ExecuteCommandOptions): React.ReactElement {
   if (cmd === 'init') {
     return React.createElement(InitCommand, {
@@ -66,6 +74,7 @@ export function executeCommandLogic({
       id: args[0],
       flags,
       onComplete,
+      onNavigate,
     });
   }
 

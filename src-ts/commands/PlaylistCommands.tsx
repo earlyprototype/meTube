@@ -147,7 +147,7 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
 }
 
 // Subcommand: Discover (interactive)
-function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
+export function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
   const [status, setStatus] = useState<
     'loading' | 'picking' | 'adding' | 'done' | 'prompt_extract' | 'error'
   >('loading');
@@ -1177,7 +1177,7 @@ function PlaylistSync({
 }
 
 // Subcommand: Videos (show numbered list of videos in a playlist)
-function PlaylistVideos({
+export function PlaylistVideos({
   playlistId,
   onComplete,
 }: {
