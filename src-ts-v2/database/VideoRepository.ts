@@ -33,12 +33,25 @@
  */
 
 import type { Database } from 'better-sqlite3';
+import { z } from 'zod';
 
 import { DatabaseError, ValidationError } from '../errors/index.js';
 import { VideoRowSchema, type VideoRow } from '../schemas/db.js';
 import { asVideoId, asPlaylistId, type PlaylistId, type VideoId } from '../types/index.js';
 import logger from '../utils/logger.js';
 import { DatabaseManager } from './connection.js';
+
+/**
+ * `VideoRowSchema` extended with the `has_transcript` flag column produced
+ * by `findByPlaylistWithTranscriptFlag`'s `EXISTS(...)` sub-select. SQLite
+ * returns the EXISTS result as an INTEGER 0/1, so the column is modeled as
+ * `z.number().int()` here and converted to `boolean` at the map step.
+ */
+const VideoRowWithTranscriptFlagSchema = VideoRowSchema.extend({
+  has_transcript: z.number().int(),
+});
+
+type VideoRowWithTranscriptFlag = z.infer<typeof VideoRowWithTranscriptFlagSchema>;
 
 /**
  * Domain-shaped video record returned by `VideoRepository` methods.
@@ -360,6 +373,54 @@ export class VideoRepository {
       }
       throw new DatabaseError('Failed to list videos by playlist', {
         operation: 'findByPlaylist',
+        table: 'videos',
+        cause: error,
+        context: { playlistId },
+      });
+    }
+  }
+
+  /**
+   * List all videos in a playlist, each tagged with whether a transcript
+   * row exists for it. Ordered by `position` then `added_at` (same order
+   * as `findByPlaylist`).
+   *
+   * Backs the A9 transcript-visibility surface: the playlist view can show
+   * "transcript ✓ / ✗" per video without an N+1 of `TranscriptRepository
+   * .exists` calls — the `EXISTS(...)` sub-select resolves the flag in the
+   * same scan. The flag is exposed as a `boolean` (the SQLite 0/1 is
+   * normalised at the map step).
+   *
+   * @throws {DatabaseError} On SQL failure.
+   * @throws {ValidationError} If a persisted `video_id` cannot be re-branded.
+   */
+  findByPlaylistWithTranscriptFlag(
+    playlistId: PlaylistId
+  ): Array<VideoRecord & { has_transcript: boolean }> {
+    try {
+      const rows = this.db
+        .prepare<readonly string[], unknown>(
+          `SELECT v.*, EXISTS(SELECT 1 FROM transcripts t WHERE t.video_id = v.video_id) AS has_transcript
+           FROM videos v
+           JOIN playlist_items pi ON v.video_id = pi.video_id
+           WHERE pi.playlist_id = ?
+           ORDER BY pi.position, pi.added_at`
+        )
+        .all(playlistId);
+
+      return rows.map((row) => {
+        const parsed: VideoRowWithTranscriptFlag = VideoRowWithTranscriptFlagSchema.parse(row);
+        return {
+          ...rowToRecord(parsed),
+          has_transcript: parsed.has_transcript === 1,
+        };
+      });
+    } catch (error) {
+      if (error instanceof DatabaseError || error instanceof ValidationError) {
+        throw error;
+      }
+      throw new DatabaseError('Failed to list videos by playlist with transcript flag', {
+        operation: 'findByPlaylistWithTranscriptFlag',
         table: 'videos',
         cause: error,
         context: { playlistId },
