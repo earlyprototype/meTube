@@ -44,6 +44,7 @@ vi.mock('googleapis', () => {
 import type { OAuth2Client } from 'google-auth-library';
 
 import { YouTubeClient } from '../api/YouTubeClient.js';
+import type { SkippedPageItem } from '../api/types.js';
 import { RateLimiter } from '../api/RateLimiter.js';
 import { RetryHandler } from '../api/RetryHandler.js';
 import { AppError, ValidationError } from '../errors/index.js';
@@ -165,6 +166,46 @@ function makePlaylistItemEntry(
     },
     contentDetails: {
       videoId: videoIdRaw,
+      videoPublishedAt: '2023-06-01T00:00:00Z',
+    },
+  };
+}
+
+/**
+ * Build a DEGENERATE `playlistItems.list` item — the real shape YouTube
+ * returns for a private or deleted video inside a playlist. The item
+ * still parses against `YouTubePlaylistItemSchema` (now that `default`
+ * thumbnail is optional), but it is "unavailable": `thumbnails` is the
+ * empty object `{}` and `contentDetails.videoPublishedAt` is ABSENT.
+ * The title is YouTube's placeholder ('Private video' / 'Deleted video').
+ *
+ * This is the exact payload that used to kill the whole extraction run
+ * (the `default` thumbnail being required threw a Zod error that the
+ * strict page parse propagated). The tolerant path must parse it, then
+ * classify it as `unavailable` and skip-and-record it.
+ */
+function makeUnavailablePlaylistItemEntry(
+  videoIdRaw: string,
+  position: number,
+  title = 'Private video',
+  playlistIdRaw = 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+): Record<string, unknown> {
+  return {
+    id: `pli-${position}`,
+    snippet: {
+      publishedAt: '2023-06-01T00:00:00Z',
+      channelId: 'UCchchchchchchchchchchc',
+      title,
+      channelTitle: 'A channel',
+      playlistId: playlistIdRaw,
+      position,
+      // Degenerate: YouTube strips the thumbnail set to {} for
+      // private/deleted videos but still lists the item.
+      thumbnails: {},
+    },
+    contentDetails: {
+      videoId: videoIdRaw,
+      // videoPublishedAt deliberately ABSENT — the unavailability signal.
     },
   };
 }
@@ -279,10 +320,13 @@ describe('YouTubeClient.getVideoById', () => {
       },
     });
 
-    // Act + Assert
+    // Act + Assert — single-resource contract still THROWS (no
+    // skip-and-record); the enriched message names the method and the
+    // first failing field path so operators aren't left guessing.
     await expect(client.getVideoById(asVideoId('dQw4w9WgXcQ'))).rejects.toMatchObject({
       name: 'AppError',
       code: 'YOUTUBE_API_PARSE_ERROR',
+      message: expect.stringContaining('getVideoById'),
     });
   });
 
@@ -371,11 +415,13 @@ describe('YouTubeClient.getPlaylistById', () => {
       },
     });
 
-    // Act + Assert
+    // Act + Assert — single-resource contract still THROWS; the enriched
+    // message names the method.
     await expect(
       client.getPlaylistById(asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'))
     ).rejects.toMatchObject({
       code: 'YOUTUBE_API_PARSE_ERROR',
+      message: expect.stringContaining('getPlaylistById'),
     });
   });
 });
@@ -471,9 +517,12 @@ describe('YouTubeClient.getPlaylistItems', () => {
     expect(asPlaylistId(playlistId as string)).toBe('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
   });
 
-  it('throws AppError with YOUTUBE_API_PARSE_ERROR on shape-broken page', async () => {
-    // Arrange — first page is fine, second page is malformed (item
-    // missing snippet) — Zod must reject before re-pagination.
+  it('skips a shape-broken item and records it, completing pagination (no throw)', async () => {
+    // Arrange — first page has one good item + nextPageToken; second page
+    // carries a malformed item (missing snippet). Tolerant behaviour: the
+    // bad item is skipped-and-recorded as `shape_mismatch`, the good
+    // page-1 item is returned, and pagination still completes. The page
+    // parse boundary used to throw here and kill the whole run.
     const playlistIdRaw = 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
     playlistItemsListMock
       .mockResolvedValueOnce({
@@ -487,10 +536,133 @@ describe('YouTubeClient.getPlaylistItems', () => {
       });
 
     const client = makeClient();
+    const skipped: SkippedPageItem[] = [];
+
+    // Act
+    const items = await client.getPlaylistItems(asPlaylistId(playlistIdRaw), {
+      onSkipped: (s) => skipped.push(s),
+    });
+
+    // Assert — page-1 good item came back; pagination ran both pages.
+    expect(items).toHaveLength(1);
+    expect(items[0]?.videoId).toBe('aaaaaaaaaaa');
+    expect(playlistItemsListMock).toHaveBeenCalledTimes(2);
+
+    // The malformed item was recorded as a shape_mismatch whose issue
+    // paths point at the missing `snippet`.
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]?.reason).toBe('shape_mismatch');
+    expect(skipped[0]?.method).toBe('getPlaylistItems');
+    expect(skipped[0]?.issues?.some((p) => p.includes('snippet'))).toBe(true);
+  });
+
+  it('parses + skips degenerate private/deleted videos, returning only available items', async () => {
+    // Arrange — a real mixed page: 2 good items + 1 'Private video' + 1
+    // 'Deleted video'. The two degenerate entries parse (default thumb is
+    // optional) but are classified `unavailable` and skipped. One dead
+    // video used to throw and kill the whole run.
+    const playlistIdRaw = 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+    playlistItemsListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          makePlaylistItemEntry('goodvideo01', 0, playlistIdRaw),
+          makeUnavailablePlaylistItemEntry('privvideo01', 1, 'Private video', playlistIdRaw),
+          makePlaylistItemEntry('goodvideo02', 2, playlistIdRaw),
+          makeUnavailablePlaylistItemEntry('delvideo001', 3, 'Deleted video', playlistIdRaw),
+        ],
+      },
+    });
+
+    const client = makeClient();
+    const skipped: SkippedPageItem[] = [];
+
+    // Act
+    const items = await client.getPlaylistItems(asPlaylistId(playlistIdRaw), {
+      onSkipped: (s) => skipped.push(s),
+    });
+
+    // Assert — only the two available videos come back.
+    expect(items).toHaveLength(2);
+    expect(items.map((it) => it.videoId)).toEqual(['goodvideo01', 'goodvideo02']);
+
+    // onSkipped fired twice, both `unavailable`, carrying the placeholder
+    // title + position + raw videoId of each dead video.
+    expect(skipped).toHaveLength(2);
+    expect(skipped.every((s) => s.reason === 'unavailable')).toBe(true);
+    expect(skipped[0]).toMatchObject({
+      reason: 'unavailable',
+      method: 'getPlaylistItems',
+      videoId: 'privvideo01',
+      position: 1,
+      title: 'Private video',
+    });
+    expect(skipped[1]).toMatchObject({
+      reason: 'unavailable',
+      method: 'getPlaylistItems',
+      videoId: 'delvideo001',
+      position: 3,
+      title: 'Deleted video',
+    });
+  });
+
+  it('keeps an item with empty thumbnails when videoPublishedAt IS present (tolerance pin)', async () => {
+    // Arrange — `thumbnails: {}` but `videoPublishedAt` PRESENT. This is
+    // an AVAILABLE video that just happens to have lost its thumbnail set;
+    // it must NOT be classified unavailable. Maps with thumbnailUrl
+    // undefined. Pins the partition predicate to the videoPublishedAt
+    // signal, not the thumbnail.
+    const playlistIdRaw = 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+    playlistItemsListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          {
+            id: 'pli-0',
+            snippet: {
+              publishedAt: '2023-06-01T00:00:00Z',
+              channelId: 'UCchchchchchchchchchchc',
+              title: 'Thumbless but live',
+              channelTitle: 'A channel',
+              playlistId: playlistIdRaw,
+              position: 0,
+              thumbnails: {}, // empty, but the video is live
+            },
+            contentDetails: {
+              videoId: 'livethumb01',
+              videoPublishedAt: '2023-06-01T00:00:00Z', // present → available
+            },
+          },
+        ],
+      },
+    });
+
+    const client = makeClient();
+    const skipped: SkippedPageItem[] = [];
+
+    // Act
+    const items = await client.getPlaylistItems(asPlaylistId(playlistIdRaw), {
+      onSkipped: (s) => skipped.push(s),
+    });
+
+    // Assert — kept, not skipped; thumbnailUrl falls back to undefined.
+    expect(skipped).toHaveLength(0);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.videoId).toBe('livethumb01');
+    expect(items[0]?.thumbnailUrl).toBeUndefined();
+  });
+
+  it('throws YOUTUBE_API_PARSE_ERROR when the page ENVELOPE is malformed (data: null)', async () => {
+    // Arrange — the envelope itself is broken (not an item). The lenient
+    // envelope parse must still throw, with a legible message naming the
+    // method and a field path.
+    const playlistIdRaw = 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+    playlistItemsListMock.mockResolvedValueOnce({ data: null });
+
+    const client = makeClient();
 
     // Act + Assert
     await expect(client.getPlaylistItems(asPlaylistId(playlistIdRaw))).rejects.toMatchObject({
       code: 'YOUTUBE_API_PARSE_ERROR',
+      message: expect.stringContaining('getPlaylistItems'),
     });
   });
 });
@@ -547,6 +719,43 @@ describe('YouTubeClient.getMyPlaylists', () => {
 
     // Assert
     expect(playlists).toEqual([]);
+  });
+
+  it('skips a shape-broken playlist and records it (no throw)', async () => {
+    // Arrange — one valid playlist + one missing the required
+    // `contentDetails.itemCount`. The bad one is skipped-and-recorded as
+    // `shape_mismatch`; the valid one comes back.
+    const client = makeClient();
+    playlistsListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          makePlaylistItem({
+            id: `PL${'a'.repeat(32)}`,
+            snippet: {
+              ...(makePlaylistItem().snippet as Record<string, unknown>),
+              title: 'Valid playlist',
+            },
+          }),
+          {
+            id: `PL${'b'.repeat(32)}`,
+            snippet: makePlaylistItem().snippet,
+            contentDetails: {}, // missing itemCount → shape_mismatch
+          },
+        ],
+      },
+    });
+    const skipped: SkippedPageItem[] = [];
+
+    // Act
+    const playlists = await client.getMyPlaylists({ onSkipped: (s) => skipped.push(s) });
+
+    // Assert
+    expect(playlists).toHaveLength(1);
+    expect(playlists[0]?.title).toBe('Valid playlist');
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]?.reason).toBe('shape_mismatch');
+    expect(skipped[0]?.method).toBe('getMyPlaylists');
+    expect(skipped[0]?.issues?.some((p) => p.includes('itemCount'))).toBe(true);
   });
 });
 
@@ -609,12 +818,23 @@ describe('YouTubeClient.searchPlaylists', () => {
     expect(searchListMock).not.toHaveBeenCalled();
   });
 
-  it('throws AppError with YOUTUBE_API_PARSE_ERROR when results are shape-broken', async () => {
-    // Arrange — id.playlistId missing
+  it('skips a shape-broken search result and records it, returning the valid subset (no throw)', async () => {
+    // Arrange — one valid hit + one malformed (id.playlistId missing).
+    // Tolerant behaviour: the malformed item is skipped-and-recorded as
+    // `shape_mismatch`, the valid hit is returned, no throw.
     const client = makeClient();
     searchListMock.mockResolvedValueOnce({
       data: {
         items: [
+          {
+            id: { kind: 'youtube#playlist', playlistId: 'PLvalidsearch00000000000000000' },
+            snippet: {
+              publishedAt: '2024-03-01T00:00:00Z',
+              channelId: 'UCgood',
+              title: 'good',
+              channelTitle: 'good',
+            },
+          },
           {
             id: { kind: 'youtube#playlist' /* playlistId missing */ },
             snippet: {
@@ -627,11 +847,17 @@ describe('YouTubeClient.searchPlaylists', () => {
         ],
       },
     });
+    const skipped: SkippedPageItem[] = [];
 
-    // Act + Assert
-    await expect(client.searchPlaylists('anything')).rejects.toMatchObject({
-      code: 'YOUTUBE_API_PARSE_ERROR',
-    });
+    // Act
+    const results = await client.searchPlaylists('anything', { onSkipped: (s) => skipped.push(s) });
+
+    // Assert — valid subset returned, malformed item recorded.
+    expect(results).toHaveLength(1);
+    expect(results[0]?.playlistId).toBe('PLvalidsearch00000000000000000');
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]?.reason).toBe('shape_mismatch');
+    expect(skipped[0]?.method).toBe('searchPlaylists');
   });
 });
 

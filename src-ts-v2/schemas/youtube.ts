@@ -35,11 +35,18 @@ export const YouTubeThumbnailSchema = z.object({
 
 /**
  * Standard "thumbnails" container — keys are size names (`default`,
- * `medium`, `high`, `standard`, `maxres`). Only `default` is consistently
- * present; the rest are optional.
+ * `medium`, `high`, `standard`, `maxres`). Every size is optional.
+ *
+ * `default` is *usually* present, but private/deleted videos surface a
+ * degenerate `thumbnails: {}` (empty object) inside their playlistItem
+ * snippet — YouTube strips the thumbnail set when the underlying video is
+ * no longer viewable, while still returning the item. Marking `default`
+ * `.optional()` lets that empty-object shape parse instead of throwing,
+ * so a single dead video can't reject the whole page. Callers read
+ * `thumbnails.default?.url` and fall back to `undefined`.
  */
 export const YouTubeThumbnailsSchema = z.object({
-  default: YouTubeThumbnailSchema,
+  default: YouTubeThumbnailSchema.optional(),
   medium: YouTubeThumbnailSchema.optional(),
   high: YouTubeThumbnailSchema.optional(),
   standard: YouTubeThumbnailSchema.optional(),
@@ -182,6 +189,25 @@ export function YouTubePageResponseSchema<T extends z.ZodTypeAny>(
     prevPageToken: z.string().optional(),
   });
 }
+
+/**
+ * Lenient paged-response envelope. Validates the page *wrapper*
+ * (`items` array + pagination tokens) without validating the items
+ * themselves — `items` is `z.array(z.unknown())`, so a degenerate item
+ * inside the page cannot reject the envelope.
+ *
+ * Used by the tolerant page-fetch boundaries in `YouTubeClient`: parse
+ * the envelope here (an envelope-level failure — e.g. `data: null` —
+ * still throws, with a legible message), then `safeParse` each item
+ * individually so private/deleted videos get skipped-and-recorded rather
+ * than killing the whole run. A missing `items` field defaults to `[]`
+ * (an empty playlist page is valid).
+ */
+export const YouTubeLenientPageSchema = z.object({
+  items: z.array(z.unknown()).default([]),
+  nextPageToken: z.string().optional(),
+  prevPageToken: z.string().optional(),
+});
 
 // --------------------------------------------------------------------------
 // Inferred TypeScript types

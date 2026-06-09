@@ -38,13 +38,14 @@ import {
   YouTubeVideoSchema,
   YouTubePlaylistSchema,
   YouTubePlaylistItemSchema,
-  YouTubePageResponseSchema,
+  YouTubeLenientPageSchema,
 } from '../schemas/youtube.js';
 import {
   YOUTUBE_API_COSTS,
   type YouTubePlaylist,
   type YouTubeVideo,
   type YouTubePlaylistItem,
+  type SkippedPageItem,
 } from './types.js';
 import { RateLimiter } from './RateLimiter.js';
 import { RetryHandler } from './RetryHandler.js';
@@ -78,8 +79,6 @@ const YouTubeSearchPlaylistItemSchema = z.object({
     publishedAt: z.string(),
   }),
 });
-
-const YouTubeSearchPlaylistsPageSchema = YouTubePageResponseSchema(YouTubeSearchPlaylistItemSchema);
 
 /**
  * v2 lightweight search-result type. Distinct from `YouTubePlaylist`
@@ -214,7 +213,9 @@ export class YouTubeClient {
       viewCount: this.parseStat(parsed.statistics?.viewCount),
       likeCount: this.parseStat(parsed.statistics?.likeCount),
       commentCount: this.parseStat(parsed.statistics?.commentCount),
-      thumbnailUrl: parsed.snippet.thumbnails.default.url,
+      // `default` thumbnail is now optional (degenerate items carry
+      // `thumbnails: {}`); fall back to undefined, never null.
+      thumbnailUrl: parsed.snippet.thumbnails.default?.url,
       tags: parsed.snippet.tags,
       categoryId: parsed.snippet.categoryId,
       caption: this.parseBoolStr(parsed.contentDetails.caption),
@@ -236,7 +237,8 @@ export class YouTubeClient {
       title: parsed.snippet.title,
       description: parsed.snippet.description ?? '',
       itemCount: parsed.contentDetails.itemCount,
-      thumbnailUrl: parsed.snippet.thumbnails?.default.url,
+      // Snippet container AND `default` are both optional here.
+      thumbnailUrl: parsed.snippet.thumbnails?.default?.url,
       channelId: parsed.snippet.channelId,
       channelTitle: parsed.snippet.channelTitle,
       publishedAt: parsed.snippet.publishedAt,
@@ -260,7 +262,9 @@ export class YouTubeClient {
       channelId: parsed.snippet.channelId,
       channelTitle: parsed.snippet.channelTitle,
       addedAt: parsed.snippet.publishedAt,
-      thumbnailUrl: parsed.snippet.thumbnails.default.url,
+      // Degenerate (private/deleted) items carry `thumbnails: {}`; fall
+      // back to undefined, never null.
+      thumbnailUrl: parsed.snippet.thumbnails.default?.url,
     };
   }
 
@@ -288,13 +292,104 @@ export class YouTubeClient {
         { errors: result.error.flatten(), ...context },
         'YouTube API response failed schema validation'
       );
-      throw new AppError('YouTube API response shape mismatch', {
-        code: 'YOUTUBE_API_PARSE_ERROR',
-        cause: result.error,
-        context,
-      });
+      // Surface the first few concrete issues in the thrown message so an
+      // operator sees *which field* mismatched without digging into the
+      // cause chain. A bare "shape mismatch" was the diagnosis dead-end
+      // this enrichment closes.
+      const issues = result.error.issues;
+      const summary =
+        issues
+          .slice(0, 3)
+          .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+          .join('; ') + (issues.length > 3 ? ` (+${issues.length - 3} more)` : '');
+      throw new AppError(
+        `YouTube API response shape mismatch (${String(context.method ?? 'unknown')}): ${summary}`,
+        {
+          code: 'YOUTUBE_API_PARSE_ERROR',
+          cause: result.error,
+          context,
+        }
+      );
     }
     return result.data;
+  }
+
+  /**
+   * Probe schema for harvesting human-useful identifiers off a
+   * shape-mismatched playlistItem so the `SkippedPageItem` record can
+   * still carry a title / position / videoId even though the item failed
+   * its real schema. EVERY field is optional and nested objects are
+   * `.optional()` — this schema must never itself fail to parse, so it can
+   * surface whatever partial data the degenerate item happens to carry.
+   */
+  private static readonly SKIPPED_ITEM_PROBE = z.object({
+    snippet: z
+      .object({
+        title: z.string().optional(),
+        position: z.number().optional(),
+      })
+      .optional(),
+    contentDetails: z
+      .object({
+        videoId: z.string().optional(),
+      })
+      .optional(),
+  });
+
+  /**
+   * Parse the items of a single page individually. Each item is
+   * `safeParse`d against `itemSchema`; a failure does NOT throw — instead
+   * the item is harvested for identifiers via {@link SKIPPED_ITEM_PROBE}
+   * and pushed onto the returned `skipped` array as a `shape_mismatch`
+   * record (with flattened Zod issue paths), and a warning is logged.
+   *
+   * This is the per-item tolerance that lets one degenerate item (private
+   * / deleted video, or a genuinely malformed payload) be dropped without
+   * killing the whole paginated run.
+   *
+   * @typeParam S - Zod schema for an individual item.
+   * @param itemSchema - Schema each raw item is validated against.
+   * @param rawItems - The raw `items` array off a (lenient-parsed) page.
+   * @param context - `{ method, ... }` identifying context for the records
+   *                  and logs.
+   * @returns The successfully-parsed items plus the skip records. Never throws.
+   */
+  private parsePageItems<S extends z.ZodTypeAny>(
+    itemSchema: S,
+    rawItems: readonly unknown[],
+    context: { method: string } & Record<string, unknown>
+  ): { parsed: Array<z.infer<S>>; skipped: SkippedPageItem[] } {
+    const parsed: Array<z.infer<S>> = [];
+    const skipped: SkippedPageItem[] = [];
+
+    for (const raw of rawItems) {
+      const result = itemSchema.safeParse(raw);
+      if (result.success) {
+        parsed.push(result.data);
+        continue;
+      }
+
+      // Harvest identifiers off the malformed item without re-throwing.
+      const probe = YouTubeClient.SKIPPED_ITEM_PROBE.safeParse(raw);
+      const ident = probe.success ? probe.data : {};
+      const issues = result.error.issues.map((issue) => issue.path.join('.'));
+
+      const record: SkippedPageItem = {
+        reason: 'shape_mismatch',
+        method: context.method,
+        videoId: ident.contentDetails?.videoId,
+        position: ident.snippet?.position,
+        title: ident.snippet?.title,
+        issues,
+      };
+      skipped.push(record);
+      logger.warn(
+        { ...context, videoId: record.videoId, position: record.position, issues },
+        'Skipped a shape-mismatched item in a YouTube page response'
+      );
+    }
+
+    return { parsed, skipped };
   }
 
   // ------------------------------------------------------------------
@@ -398,16 +493,31 @@ export class YouTubeClient {
    * `nextPageToken`. This is the v2 foreclosure of v1's 50-cap bug in
    * `getPlaylistVideos`.
    *
+   * Per-item tolerant: a private/deleted video (degenerate item with
+   * `thumbnails: {}` and no `videoPublishedAt`) or a genuinely malformed
+   * item is SKIPPED and reported via `opts.onSkipped` rather than throwing
+   * — one dead video no longer kills the whole run. Only an
+   * envelope-level failure (e.g. `data: null`) still throws. Skip records
+   * are flushed to `onSkipped` after the page attempt succeeds, so a
+   * retried attempt's partial skips never double-fire.
+   *
    * Maps to `legacy/python/src/api/youtube_client.py:get_playlist_videos`.
    *
    * @param playlistId - Branded YouTube playlist ID
-   * @returns Every item in the playlist, in API page order
-   * @throws {AppError} On API failure or schema mismatch
+   * @param opts - Optional `onSkipped` callback invoked once per dropped
+   *               item (private/deleted or shape-mismatched). Additive —
+   *               existing callers omit it and are unaffected.
+   * @returns Every AVAILABLE item in the playlist, in API page order
+   * @throws {AppError} On envelope-level parse failure or API failure
    */
-  async getPlaylistItems(playlistId: PlaylistId): Promise<YouTubePlaylistItem[]> {
+  async getPlaylistItems(
+    playlistId: PlaylistId,
+    opts?: { onSkipped?: (s: SkippedPageItem) => void }
+  ): Promise<YouTubePlaylistItem[]> {
     const allItems: YouTubePlaylistItem[] = [];
     let pageToken: string | undefined;
     let pageCount = 0;
+    let totalSkipped = 0;
 
     do {
       pageCount += 1;
@@ -429,6 +539,7 @@ export class YouTubeClient {
 
       const page = await this.retryHandler.execute<{
         items: YouTubePlaylistItem[];
+        skipped: SkippedPageItem[];
         nextPageToken?: string;
       }>('getPlaylistItems', async () => {
         // Token consumed per attempt; see getVideoById for rationale.
@@ -446,16 +557,44 @@ export class YouTubeClient {
             pageToken: pageToken ?? undefined,
           });
 
-          const parsedPage = this.parseResponse(
-            YouTubePageResponseSchema(YouTubePlaylistItemSchema),
-            response.data,
+          // Envelope parse (lenient) — items validated individually below.
+          // An envelope-level failure (e.g. `data: null`) still throws,
+          // now with a legible message naming the method + field path.
+          const envelope = this.parseResponse(YouTubeLenientPageSchema, response.data, {
+            method: 'getPlaylistItems',
+            playlistId,
+            pageCount,
+          });
+
+          const { parsed, skipped } = this.parsePageItems(
+            YouTubePlaylistItemSchema,
+            envelope.items,
             { method: 'getPlaylistItems', playlistId, pageCount }
           );
 
-          return {
-            items: parsedPage.items.map((it) => this.toPlaylistItem(it)),
-            nextPageToken: parsedPage.nextPageToken,
-          };
+          // Partition the PARSED items: a degenerate private/deleted video
+          // has an empty `thumbnails` (no `default`) AND no
+          // `videoPublishedAt`. Those are `unavailable` (skipped); the rest
+          // map to domain objects.
+          const items: YouTubePlaylistItem[] = [];
+          for (const it of parsed) {
+            const isUnavailable =
+              it.snippet.thumbnails.default === undefined &&
+              it.contentDetails.videoPublishedAt === undefined;
+            if (isUnavailable) {
+              skipped.push({
+                reason: 'unavailable',
+                method: 'getPlaylistItems',
+                videoId: it.contentDetails.videoId,
+                position: it.snippet.position,
+                title: it.snippet.title,
+              });
+              continue;
+            }
+            items.push(this.toPlaylistItem(it));
+          }
+
+          return { items, skipped, nextPageToken: envelope.nextPageToken };
         } catch (error) {
           if (error instanceof AppError) throw error;
           logger.error({ error, playlistId, pageCount }, 'Failed to fetch playlist page');
@@ -468,11 +607,18 @@ export class YouTubeClient {
       });
 
       allItems.push(...page.items);
+      // Flush skip records only AFTER the page attempt succeeded —
+      // retry-safety: a retried attempt's partial skips must not
+      // double-fire to the caller.
+      for (const record of page.skipped) {
+        totalSkipped += 1;
+        opts?.onSkipped?.(record);
+      }
       pageToken = page.nextPageToken;
     } while (pageToken);
 
     logger.info(
-      { playlistId, totalItems: allItems.length, pages: pageCount },
+      { playlistId, totalItems: allItems.length, skipped: totalSkipped, pages: pageCount },
       'Fetched all playlist items'
     );
 
@@ -483,15 +629,26 @@ export class YouTubeClient {
    * Fetch ALL playlists owned by the authenticated user, paginating to
    * completion via `nextPageToken`.
    *
+   * Per-item tolerant like {@link getPlaylistItems}: a malformed playlist
+   * item is skipped-and-reported via `opts.onSkipped` (always
+   * `shape_mismatch` — playlists have no `unavailable` class) rather than
+   * throwing. Only an envelope-level failure still throws. Skip records
+   * flush after the page attempt succeeds (retry-safety).
+   *
    * Maps to `legacy/python/src/api/youtube_client.py:get_my_playlists`.
    *
-   * @returns Every playlist owned by the authenticated account
-   * @throws {AppError} On API failure or schema mismatch
+   * @param opts - Optional `onSkipped` callback invoked once per dropped
+   *               playlist. Additive — existing callers unaffected.
+   * @returns Every well-formed playlist owned by the authenticated account
+   * @throws {AppError} On envelope-level parse failure or API failure
    */
-  async getMyPlaylists(): Promise<YouTubePlaylist[]> {
+  async getMyPlaylists(opts?: {
+    onSkipped?: (s: SkippedPageItem) => void;
+  }): Promise<YouTubePlaylist[]> {
     const allPlaylists: YouTubePlaylist[] = [];
     let pageToken: string | undefined;
     let pageCount = 0;
+    let totalSkipped = 0;
 
     do {
       pageCount += 1;
@@ -512,6 +669,7 @@ export class YouTubeClient {
 
       const page = await this.retryHandler.execute<{
         items: YouTubePlaylist[];
+        skipped: SkippedPageItem[];
         nextPageToken?: string;
       }>('getMyPlaylists', async () => {
         // Token consumed per attempt; see getVideoById for rationale.
@@ -526,15 +684,21 @@ export class YouTubeClient {
             pageToken: pageToken ?? undefined,
           });
 
-          const parsedPage = this.parseResponse(
-            YouTubePageResponseSchema(YouTubePlaylistSchema),
-            response.data,
+          const envelope = this.parseResponse(YouTubeLenientPageSchema, response.data, {
+            method: 'getMyPlaylists',
+            pageCount,
+          });
+
+          const { parsed, skipped } = this.parsePageItems(
+            YouTubePlaylistSchema,
+            envelope.items,
             { method: 'getMyPlaylists', pageCount }
           );
 
           return {
-            items: parsedPage.items.map((it) => this.toPlaylist(it)),
-            nextPageToken: parsedPage.nextPageToken,
+            items: parsed.map((it) => this.toPlaylist(it)),
+            skipped,
+            nextPageToken: envelope.nextPageToken,
           };
         } catch (error) {
           if (error instanceof AppError) throw error;
@@ -548,11 +712,16 @@ export class YouTubeClient {
       });
 
       allPlaylists.push(...page.items);
+      // Flush after success (retry-safety; see getPlaylistItems).
+      for (const record of page.skipped) {
+        totalSkipped += 1;
+        opts?.onSkipped?.(record);
+      }
       pageToken = page.nextPageToken;
     } while (pageToken);
 
     logger.info(
-      { totalPlaylists: allPlaylists.length, pages: pageCount },
+      { totalPlaylists: allPlaylists.length, skipped: totalSkipped, pages: pageCount },
       'Fetched all user playlists'
     );
 
@@ -569,12 +738,23 @@ export class YouTubeClient {
    * Callers needing full playlist data should follow up with
    * `getPlaylistById` per hit.
    *
+   * Per-item tolerant: a malformed search hit is skipped-and-reported via
+   * `opts.onSkipped` (always `shape_mismatch`) rather than throwing. Only
+   * an envelope-level failure still throws. `search.list` is single-page
+   * here (maxResults: 50, no pagination), so skip records flush once after
+   * the attempt succeeds.
+   *
    * @param query - Free-form search query
-   * @returns Up to 50 matching playlists
+   * @param opts - Optional `onSkipped` callback invoked once per dropped
+   *               hit. Additive — existing callers unaffected.
+   * @returns Up to 50 matching well-formed playlists
    * @throws {ValidationError} If the query is empty
-   * @throws {AppError} On API failure or schema mismatch
+   * @throws {AppError} On envelope-level parse failure or API failure
    */
-  async searchPlaylists(query: string): Promise<YouTubePlaylistSearchResult[]> {
+  async searchPlaylists(
+    query: string,
+    opts?: { onSkipped?: (s: SkippedPageItem) => void }
+  ): Promise<YouTubePlaylistSearchResult[]> {
     if (typeof query !== 'string' || query.trim().length === 0) {
       throw new ValidationError('Search query must be a non-empty string', {
         field: 'query',
@@ -595,12 +775,18 @@ export class YouTubeClient {
           maxResults: 50,
         });
 
-        const parsedPage = this.parseResponse(YouTubeSearchPlaylistsPageSchema, response.data, {
+        const envelope = this.parseResponse(YouTubeLenientPageSchema, response.data, {
           method: 'searchPlaylists',
           query,
         });
 
-        const results: YouTubePlaylistSearchResult[] = parsedPage.items.map((it) => ({
+        const { parsed, skipped } = this.parsePageItems(
+          YouTubeSearchPlaylistItemSchema,
+          envelope.items,
+          { method: 'searchPlaylists', query }
+        );
+
+        const results: YouTubePlaylistSearchResult[] = parsed.map((it) => ({
           playlistId: asPlaylistId(it.id.playlistId),
           title: it.snippet.title,
           description: it.snippet.description ?? '',
@@ -609,7 +795,15 @@ export class YouTubeClient {
           publishedAt: it.snippet.publishedAt,
         }));
 
-        logger.info({ query, count: results.length }, 'Playlist search complete');
+        // Single-page endpoint: flush skip records once, after success.
+        for (const record of skipped) {
+          opts?.onSkipped?.(record);
+        }
+
+        logger.info(
+          { query, count: results.length, skipped: skipped.length },
+          'Playlist search complete'
+        );
         return results;
       } catch (error) {
         if (error instanceof AppError) throw error;
