@@ -665,6 +665,95 @@ describe('YouTubeClient.getPlaylistItems', () => {
       message: expect.stringContaining('getPlaylistItems'),
     });
   });
+
+  it('fires onSkipped exactly once for a degenerate item even when the page attempt is retried', async () => {
+    // Arrange — RETRY-ENABLED client. Every other skip test in this file
+    // builds the client with `retryableErrors: []` (via makeClient), so no
+    // retry ever happens: the skip path is never exercised while a page
+    // attempt is actually retried. This test closes that coverage gap. The
+    // first page attempt fails with a retryable 503; the second attempt
+    // succeeds with one good item + one degenerate 'Private video'.
+    // `getPlaylistItems` collects skip records INSIDE the RetryHandler page
+    // closure and flushes them to `opts.onSkipped` only AFTER the page
+    // attempt resolves — so across the retry the single degenerate item
+    // must be reported EXACTLY ONCE, never twice.
+    //
+    // Scope of the guard (precise, so a future reader isn't misled): in the
+    // CURRENT control flow the failing attempt rejects at the SDK call,
+    // BEFORE the page is built, so it records no skips — flushing inside vs
+    // outside the closure is observationally identical for this arrangement.
+    // What this test pins is the observable contract — exactly-once delivery
+    // of a degenerate skip when a page attempt is retried — and it is the
+    // ONLY skip test that runs with retry enabled. It is a contract pin and
+    // a coverage pin, not a mutation-kill for the flush's exact position
+    // (no public input can make a failed attempt both build a skip and then
+    // throw retryably, given the partition loop returns immediately on
+    // success). The pin still catches a real future regression: a refactor
+    // that introduces a throwable step between skip-building and the flush,
+    // or one that re-flushes already-built records on retry.
+    const playlistIdRaw = 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+
+    // Simulate a transient failure on the first attempt. NOTE: the page
+    // closure's own catch (YouTubeClient.ts) re-wraps a raw SDK Error into
+    // an AppError('Failed to fetch playlist items'), whose message would NOT
+    // contain '503' — so a raw Error would be swallowed as non-retryable and
+    // never retried. The closure passes a pre-existing AppError straight
+    // through (`if (error instanceof AppError) throw error`), so we reject
+    // with the already-wrapped shape the closure itself produces for a
+    // transient error, carrying '503' in the message. RetryHandler.isRetryable
+    // then matches the '503' substring and retries. The second attempt
+    // resolves a single page (no nextPageToken → one page) with one available
+    // video + one degenerate private video.
+    playlistItemsListMock
+      .mockRejectedValueOnce(new AppError('503 Service Unavailable', { code: 'YOUTUBE_API_ERROR' }))
+      .mockResolvedValueOnce({
+        data: {
+          items: [
+            makePlaylistItemEntry('goodvideo01', 0, playlistIdRaw),
+            makeUnavailablePlaylistItemEntry('privvideo01', 1, 'Private video', playlistIdRaw),
+          ],
+        },
+      });
+
+    // maxRetries: 1 allows exactly one retry; '503' is in retryableErrors
+    // (RetryHandler also matches it unconditionally, but listing it keeps
+    // intent explicit). Tiny delays keep the real-timer backoff at ~1ms,
+    // matching the RetryHandler suite's real-timer approach — no fake
+    // timers needed.
+    const client = new YouTubeClient(fakeOAuth, {
+      rateLimiter: new RateLimiter({ maxRequests: 10000, windowMs: 1000 }),
+      retryHandler: new RetryHandler({
+        maxRetries: 1,
+        baseDelayMs: 1,
+        maxDelayMs: 1,
+        retryableErrors: ['503'],
+      }),
+    });
+    const skipped: SkippedPageItem[] = [];
+
+    // Act
+    const items = await client.getPlaylistItems(asPlaylistId(playlistIdRaw), {
+      onSkipped: (s) => skipped.push(s),
+    });
+
+    // Assert — the page attempt was retried (failed once, then succeeded).
+    expect(playlistItemsListMock).toHaveBeenCalledTimes(2);
+
+    // Only the available video came back.
+    expect(items).toHaveLength(1);
+    expect(items[0]?.videoId).toBe('goodvideo01');
+
+    // The degenerate item was reported EXACTLY ONCE — the failed first
+    // attempt must not contribute a duplicate skip record.
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]).toMatchObject({
+      reason: 'unavailable',
+      method: 'getPlaylistItems',
+      videoId: 'privvideo01',
+      position: 1,
+      title: 'Private video',
+    });
+  });
 });
 
 // --------------------------------------------------------------------
