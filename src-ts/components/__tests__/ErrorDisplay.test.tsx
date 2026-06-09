@@ -7,7 +7,10 @@ describe('ErrorDisplay', () => {
   it('should render error message', () => {
     const { lastFrame } = render(<ErrorDisplay message="Test error" />);
     expect(lastFrame()).toContain('Test error');
-    expect(lastFrame()).toContain('X Error');
+    // ErrorDisplay prefixes the header with symbols.cross ('✗'); the
+    // pre-test orphaned assertion ('X Error') was stale and only
+    // surfaced now that the vitest include glob picks up .test.tsx.
+    expect(lastFrame()).toContain('✗ Error');
   });
 
   it('should render suggestions when provided', () => {

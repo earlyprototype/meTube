@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Text } from 'ink';
+import React, { useEffect, useRef, useState } from 'react';
+import { useApp } from 'ink';
 import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
 import { YouTubeClient } from '../../src-ts-v2/api/YouTubeClient.js';
 import {
@@ -27,6 +27,7 @@ import { resolvePlaylistIdentifier } from '../../src-ts-v2/utils/playlistResolve
 import { safeTitle } from '../utils/terminal.js';
 import logger from '../../src-ts-v2/utils/logger.js';
 import type { VideoId, PlaylistId } from '../../src-ts-v2/types/branded.js';
+import { PlaylistVideos, PlaylistDiscover } from './PlaylistCommands.js';
 
 interface ExtractCommandProps {
   type: string;
@@ -37,9 +38,21 @@ interface ExtractCommandProps {
     all?: boolean;
   };
   onComplete?: () => void;
+  /**
+   * REPL-only: component-swap navigation. When the post-extraction menu's
+   * navigation options fire (view playlist info / extract another), the
+   * command replaces itself inline by calling onNavigate with the next
+   * component. Undefined in direct-CLI mode — handlers fall back to
+   * exiting via `useApp().exit()`.
+   */
+  onNavigate?: (next: React.ReactElement | null) => void;
 }
 
-export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandProps) {
+export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: ExtractCommandProps) {
+  // Ink's exit handle for direct-CLI mode. In REPL mode the renderer is
+  // a single long-lived Ink instance so exit() is never called there; we
+  // gate on the presence of onNavigate to choose the right behaviour.
+  const { exit } = useApp();
   const [status, setStatus] = useState<'initializing' | 'extracting' | 'done' | 'menu' | 'error'>(
     'initializing'
   );
@@ -80,7 +93,18 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
   // string. We brand at the boundary when calling v2 repository methods.
   const [extractedPlaylistId, setExtractedPlaylistId] = useState<string>('');
 
+  // One-shot guard: extract() must fire exactly once per mount. The
+  // shipped v1.0.0 effect listed `[type, id, flags, onComplete]` as deps,
+  // which meant any parent re-render that passed a fresh `onComplete`
+  // closure (e.g. the inline arrow in cli.tsx REPL wiring) would re-fire
+  // extraction of the same playlist. The ref short-circuits the second
+  // invocation deterministically without depending on dep-array hygiene.
+  const startedRef = useRef(false);
+
   useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+
     async function extract() {
       try {
         // Handle --all flag for batch extraction
@@ -294,15 +318,34 @@ export function ExtractCommand({ type, id, flags, onComplete }: ExtractCommandPr
         skippedCount={progress.skippedCount}
         totalVideos={progress.total}
         onViewPlaylistInfo={() => {
-          // TODO: Navigate to playlist videos command
-          if (onComplete) onComplete();
+          // REPL mode: swap this ExtractCommand for the just-extracted
+          // playlist's PlaylistVideos view. Direct mode: nothing left to
+          // navigate to — exit cleanly.
+          if (onNavigate) {
+            onNavigate(<PlaylistVideos playlistId={extractedPlaylistId} onComplete={onComplete} />);
+          } else {
+            exit();
+          }
         }}
         onExtractMore={() => {
-          // TODO: Navigate back to extraction
-          if (onComplete) onComplete();
+          // REPL mode: swap for the PlaylistDiscover picker so the user
+          // can choose a different playlist. Direct mode: exit cleanly —
+          // there's no host to navigate within.
+          if (onNavigate) {
+            onNavigate(<PlaylistDiscover key={Date.now()} onComplete={onComplete} onNavigate={onNavigate} />);
+          } else {
+            exit();
+          }
         }}
         onMainMenu={() => {
-          if (onComplete) onComplete();
+          // REPL mode: clear the inline component so the user lands back
+          // at the bare REPL prompt to type the next command. Direct mode:
+          // exit the Ink instance.
+          if (onNavigate) {
+            onNavigate(null);
+          } else {
+            exit();
+          }
         }}
       />
     );

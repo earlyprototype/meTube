@@ -125,6 +125,12 @@ if (!command) {
           onComplete: () => {
             // Command completed in REPL - component stays visible
           },
+          // Component-swap navigation: lets commands (e.g. the
+          // post-extraction menu) replace the currently-rendered inline
+          // component without leaving REPL. Passing null clears the
+          // component back to the bare REPL prompt — the "Return to Main
+          // Menu" path.
+          onNavigate: (next) => setComponent(next),
         });
 
         // Display component inline in REPL

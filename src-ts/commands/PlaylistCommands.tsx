@@ -27,9 +27,10 @@ interface PlaylistCommandsProps {
   args: string[];
   flags: Record<string, any>;
   onComplete?: () => void;
+  onNavigate?: (next: React.ReactElement | null) => void;
 }
 
-export function PlaylistCommands({ subcommand, args, flags, onComplete }: PlaylistCommandsProps) {
+export function PlaylistCommands({ subcommand, args, flags, onComplete, onNavigate }: PlaylistCommandsProps) {
   if (!subcommand) {
     return (
       <ErrorDisplay
@@ -50,7 +51,7 @@ export function PlaylistCommands({ subcommand, args, flags, onComplete }: Playli
   if (subcommand === 'list') {
     return <PlaylistList onComplete={onComplete} />;
   } else if (subcommand === 'discover') {
-    return <PlaylistDiscover onComplete={onComplete} />;
+    return <PlaylistDiscover onComplete={onComplete} onNavigate={onNavigate} />;
   } else if (subcommand === 'add') {
     return <PlaylistAdd playlistId={args[0]} onComplete={onComplete} />;
   } else if (subcommand === 'add-mine') {
@@ -147,7 +148,13 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
 }
 
 // Subcommand: Discover (interactive)
-function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
+export function PlaylistDiscover({
+  onComplete,
+  onNavigate,
+}: {
+  onComplete?: () => void;
+  onNavigate?: (next: React.ReactElement | null) => void;
+}) {
   const [status, setStatus] = useState<
     'loading' | 'picking' | 'adding' | 'done' | 'prompt_extract' | 'error'
   >('loading');
@@ -246,6 +253,7 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
         playlistTitle={selected?.title}
         videoCount={selected?.itemCount || 0}
         onComplete={onComplete}
+        onNavigate={onNavigate}
       />
     );
   }
@@ -272,17 +280,21 @@ function PlaylistDiscover({ onComplete }: { onComplete?: () => void }) {
 }
 
 // Extract prompt after adding playlist
+interface ExtractPromptProps {
+  playlistId: string;
+  playlistTitle: string;
+  videoCount: number;
+  onComplete?: () => void;
+  onNavigate?: (next: React.ReactElement | null) => void;
+}
+
 function ExtractPrompt({
   playlistId,
   playlistTitle,
   videoCount,
   onComplete,
-}: {
-  playlistId: string;
-  playlistTitle: string;
-  videoCount: number;
-  onComplete?: () => void;
-}) {
+  onNavigate,
+}: ExtractPromptProps) {
   const { exit } = useApp();
   const [answer, setAnswer] = useState<'waiting' | 'yes' | 'no'>('waiting');
 
@@ -302,7 +314,13 @@ function ExtractPrompt({
         <Box marginBottom={1}>
           <Text color="green">Starting extraction of {safeTitle(playlistTitle)}...</Text>
         </Box>
-        <ExtractCommand type="playlist" id={playlistId} flags={{}} onComplete={onComplete} />
+        <ExtractCommand
+          type="playlist"
+          id={playlistId}
+          flags={{}}
+          onComplete={onComplete}
+          onNavigate={onNavigate}
+        />
       </Box>
     );
   }
@@ -1177,7 +1195,7 @@ function PlaylistSync({
 }
 
 // Subcommand: Videos (show numbered list of videos in a playlist)
-function PlaylistVideos({
+export function PlaylistVideos({
   playlistId,
   onComplete,
 }: {
