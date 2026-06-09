@@ -50,10 +50,16 @@ import {
   type YouTubeClientLike,
 } from '../../../src-ts-v2/extractors/VideoExtractor.js';
 
+import type { SkippedPageItem } from '../../../src-ts-v2/api/types.js';
+import type { YouTubeClient } from '../../../src-ts-v2/api/YouTubeClient.js';
+import type { YouTubePlaylistItem } from '../../../src-ts-v2/api/types.js';
+import { asVideoId, asPlaylistId } from '../../../src-ts-v2/types/branded.js';
+
 import {
   buildGeminiAdapter,
   buildVideoExtractorConfig,
   buildVideoExtractorDeps,
+  makeYouTubeClientAdapter,
 } from '../ExtractCommand.js';
 
 // --------------------------------------------------------------------------
@@ -232,5 +238,105 @@ describe('VideoExtractor accepts the production config + deps', () => {
           buildVideoExtractorDeps()
         )
     ).not.toThrow();
+  });
+});
+
+// --------------------------------------------------------------------------
+// makeYouTubeClientAdapter
+//
+// The adapter bridges the v2 YouTubeClient surface
+// (getPlaylistById/getPlaylistItems/getVideoById) onto the
+// YouTubeClientLike shape VideoExtractor consumes. Wave 2 added two
+// behaviours that need pinning:
+//   1. It forwards the tolerant-page-fetch `onSkipped` callback into
+//      `getPlaylistItems`, so degenerate (private/deleted) playlist items
+//      surface to the caller instead of vanishing at the page boundary.
+//   2. It still maps each raw playlist item onto a PlaylistVideoItem and
+//      honours the `maxResults` cap.
+// --------------------------------------------------------------------------
+
+describe('makeYouTubeClientAdapter', () => {
+  const PLAYLIST_ID = asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
+
+  function makeItem(videoId: string, position: number): YouTubePlaylistItem {
+    return {
+      videoId: asVideoId(videoId),
+      playlistId: PLAYLIST_ID,
+      position,
+      title: `Video ${position}`,
+      channelId: 'UCxxxxxxxxxxxxxxxxxxxxxxxx',
+      channelTitle: 'Test Channel',
+      addedAt: '2024-01-01T00:00:00Z',
+    };
+  }
+
+  /**
+   * Minimal stub matching the slice of YouTubeClient the adapter calls.
+   * `getPlaylistItems` fires `onSkipped` once with an 'unavailable' record
+   * (mirroring a private/deleted item dropped from the page) before
+   * returning the available items.
+   */
+  function makeStubClient(items: YouTubePlaylistItem[]): YouTubeClient {
+    return {
+      async getPlaylistItems(
+        _playlistId: unknown,
+        opts?: { onSkipped?: (s: SkippedPageItem) => void }
+      ): Promise<readonly YouTubePlaylistItem[]> {
+        opts?.onSkipped?.({
+          reason: 'unavailable',
+          method: 'getPlaylistItems',
+          videoId: 'deletedVid0',
+          position: 99,
+        });
+        return items;
+      },
+    } as unknown as YouTubeClient;
+  }
+
+  it('forwards onSkipped records from getPlaylistItems to the caller', async () => {
+    const collected: SkippedPageItem[] = [];
+    const client = makeStubClient([makeItem('vid00000001', 0)]);
+
+    const adapter = makeYouTubeClientAdapter(client, {
+      onSkipped: (s) => collected.push(s),
+    });
+    await adapter.getPlaylistVideos(PLAYLIST_ID);
+
+    expect(collected).toHaveLength(1);
+    expect(collected[0].reason).toBe('unavailable');
+    expect(collected[0].videoId).toBe('deletedVid0');
+  });
+
+  it('maps raw playlist items onto PlaylistVideoItem shape', async () => {
+    const client = makeStubClient([makeItem('vid00000001', 0), makeItem('vid00000002', 1)]);
+
+    const adapter = makeYouTubeClientAdapter(client);
+    const result = await adapter.getPlaylistVideos(PLAYLIST_ID);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].videoId).toBe('vid00000001');
+    expect(result[0].title).toBe('Video 0');
+    expect(result[0].position).toBe(0);
+  });
+
+  it('honours the maxResults cap', async () => {
+    const client = makeStubClient([
+      makeItem('vid00000001', 0),
+      makeItem('vid00000002', 1),
+      makeItem('vid00000003', 2),
+    ]);
+
+    const adapter = makeYouTubeClientAdapter(client);
+    const result = await adapter.getPlaylistVideos(PLAYLIST_ID, { maxResults: 2 });
+
+    expect(result).toHaveLength(2);
+  });
+
+  it('does not throw when no onSkipped handler is supplied', async () => {
+    const client = makeStubClient([makeItem('vid00000001', 0)]);
+
+    const adapter = makeYouTubeClientAdapter(client);
+
+    await expect(adapter.getPlaylistVideos(PLAYLIST_ID)).resolves.toHaveLength(1);
   });
 });

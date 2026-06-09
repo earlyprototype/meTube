@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from 'ink';
 import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
 import { YouTubeClient } from '../../src-ts-v2/api/YouTubeClient.js';
+import type { SkippedPageItem } from '../../src-ts-v2/api/types.js';
+import { AppError } from '../../src-ts-v2/errors/AppError.js';
 import {
   VideoExtractor,
   type ExtractProgressEvent,
@@ -88,6 +90,20 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
   });
   const [startTime] = useState(new Date());
   const [error, setError] = useState<string | null>(null);
+  // Compact, legible rendering of an AppError's code + context, surfaced
+  // to the user via ErrorDisplay's details block. Null for non-AppError
+  // failures (which carry their message only).
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  // Truthful end-of-run summary counters. `unavailable` and
+  // `shapeMismatch` are tallied from the tolerant-page-fetch skip
+  // callback; the verified* fields are DB truth read back from the
+  // ExtractResult after the run.
+  const [runSummary, setRunSummary] = useState<{
+    unavailableCount: number;
+    shapeMismatchCount: number;
+    verifiedVideoRows?: number;
+    verifiedTranscriptRows?: number;
+  }>({ unavailableCount: 0, shapeMismatchCount: 0 });
   const [playlistTitle, setPlaylistTitle] = useState<string>('');
   // Stored as a string brand — the PostExtractionMenu accepts a raw
   // string. We brand at the boundary when calling v2 repository methods.
@@ -163,11 +179,19 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         setExtractedPlaylistId(actualPlaylistId);
         setStatus('extracting');
 
+        // Collect items the API listed but the tolerant page-fetch dropped
+        // (private/deleted, or shape-mismatched). Surfaced in the
+        // end-of-run summary so the counts add up for the user.
+        const skipped: SkippedPageItem[] = [];
+
         // v2 VideoExtractor expects a YouTubeClientLike shape with methods
         // (getPlaylistInfo, getPlaylistVideos, getVideoDetails) that differ
         // from the actual YouTubeClient (getPlaylistById, getPlaylistItems,
-        // getVideoById). Adapter bridges the names + result shapes.
-        const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient);
+        // getVideoById). Adapter bridges the names + result shapes, and
+        // forwards the skip callback.
+        const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient, {
+          onSkipped: (s) => skipped.push(s),
+        });
 
         // Wire the full dual-transcript + LLM pipeline. Without the
         // TranscriptExtractor / WhisperExtractor / GeminiParser injected
@@ -200,10 +224,24 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           whisperProgress: undefined,
         });
 
+        // Derive the truthful summary: partition the collected skips by
+        // reason, and read back the post-run DB truth from the result.
+        const unavailableCount = skipped.filter((s) => s.reason === 'unavailable').length;
+        const shapeMismatchCount = skipped.filter((s) => s.reason === 'shape_mismatch').length;
+        setRunSummary({
+          unavailableCount,
+          shapeMismatchCount,
+          verifiedVideoRows: result.verifiedVideoRows,
+          verifiedTranscriptRows: result.verifiedTranscriptRows,
+        });
+
         db.close();
         setStatus('menu');
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+        if (err instanceof AppError) {
+          setErrorDetails(formatAppErrorDetails(err));
+        }
         setStatus('error');
       }
     }
@@ -232,7 +270,12 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         const auth = new YouTubeAuth();
         const oauthClient = await auth.authenticate();
         const youTubeClient = new YouTubeClient(oauthClient);
-        const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient);
+        // Aggregate skips across every playlist in the batch — same
+        // tolerant-page-fetch callback as the single-playlist path.
+        const skipped: SkippedPageItem[] = [];
+        const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient, {
+          onSkipped: (s) => skipped.push(s),
+        });
         const extractor = new VideoExtractor(
           db,
           ytAdapter,
@@ -243,6 +286,8 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         let totalProcessed = 0;
         let totalFailed = 0;
         let totalSkipped = 0;
+        let totalVerifiedVideoRows = 0;
+        let totalVerifiedTranscriptRows = 0;
         let playlistsFailed = 0;
 
         setStatus('extracting');
@@ -260,6 +305,8 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
             totalProcessed += result.processed;
             totalFailed += result.failed;
             totalSkipped += result.skipped;
+            totalVerifiedVideoRows += result.verifiedVideoRows;
+            totalVerifiedTranscriptRows += result.verifiedTranscriptRows;
 
             setProgress({
               current: i + 1,
@@ -289,6 +336,16 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           whisperProgress: undefined,
         });
 
+        // Truthful end-of-run summary aggregated across the whole batch.
+        const unavailableCount = skipped.filter((s) => s.reason === 'unavailable').length;
+        const shapeMismatchCount = skipped.filter((s) => s.reason === 'shape_mismatch').length;
+        setRunSummary({
+          unavailableCount,
+          shapeMismatchCount,
+          verifiedVideoRows: totalVerifiedVideoRows,
+          verifiedTranscriptRows: totalVerifiedTranscriptRows,
+        });
+
         db.close();
         setStatus('done');
 
@@ -297,6 +354,9 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+        if (err instanceof AppError) {
+          setErrorDetails(formatAppErrorDetails(err));
+        }
         setStatus('error');
       }
     }
@@ -305,7 +365,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
   }, [type, id, flags, onComplete]);
 
   if (status === 'error') {
-    return <ErrorDisplay message={error || 'Extraction failed'} />;
+    return <ErrorDisplay message={error || 'Extraction failed'} details={errorDetails ?? undefined} />;
   }
 
   if (status === 'menu') {
@@ -317,6 +377,10 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         failureCount={progress.failureCount}
         skippedCount={progress.skippedCount}
         totalVideos={progress.total}
+        unavailableCount={runSummary.unavailableCount}
+        shapeMismatchCount={runSummary.shapeMismatchCount}
+        verifiedVideoRows={runSummary.verifiedVideoRows}
+        verifiedTranscriptRows={runSummary.verifiedTranscriptRows}
         onViewPlaylistInfo={() => {
           // REPL mode: swap this ExtractCommand for the just-extracted
           // playlist's PlaylistVideos view. Direct mode: nothing left to
@@ -447,13 +511,55 @@ export function buildGeminiAdapter(
 }
 
 /**
+ * Render an AppError's `code` + `context` into a compact one-line detail
+ * string for ErrorDisplay's details block. The Wave 1 parseResponse
+ * enrichment already folds field paths into `error.message`; this is
+ * belt-and-braces so the user also sees the machine-readable code and any
+ * structured context the error carried. Returns null when there is nothing
+ * useful to add (no context and a generic code).
+ */
+export function formatAppErrorDetails(err: AppError): string | null {
+  const parts: string[] = [];
+  if (err.code && err.code !== 'APP_ERROR') {
+    parts.push(err.code);
+  }
+  if (err.context && Object.keys(err.context).length > 0) {
+    const ctx = Object.entries(err.context)
+      .map(([key, value]) => `${key}: ${formatContextValue(value)}`)
+      .join(', ');
+    parts.push(ctx);
+  }
+  return parts.length > 0 ? parts.join(' — ') : null;
+}
+
+/**
+ * Compact a single context value for inline display. Objects/arrays are
+ * JSON-stringified; primitives are rendered directly. Keeps the details
+ * line legible rather than dumping a multi-line blob.
+ */
+function formatContextValue(value: unknown): string {
+  if (value === null || value === undefined) return String(value);
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '[unserializable]';
+    }
+  }
+  return String(value);
+}
+
+/**
  * Adapter: bridges v2 YouTubeClient (getPlaylistById / getPlaylistItems /
  * getVideoById) into the shape v2 VideoExtractor expects
  * (getPlaylistInfo / getPlaylistVideos / getVideoDetails). This is a
  * Wave 3 sibling-drift papered over at the Ink boundary; the proper fix
  * is to reconcile names inside src-ts-v2/ in a follow-up.
  */
-function makeYouTubeClientAdapter(client: YouTubeClient): YouTubeClientLike {
+export function makeYouTubeClientAdapter(
+  client: YouTubeClient,
+  adapterOpts?: { onSkipped?: (s: SkippedPageItem) => void }
+): YouTubeClientLike {
   return {
     async getPlaylistInfo(playlistId: PlaylistId): Promise<PlaylistInfo | null> {
       const pl = await client.getPlaylistById(playlistId);
@@ -469,7 +575,10 @@ function makeYouTubeClientAdapter(client: YouTubeClient): YouTubeClientLike {
       playlistId: PlaylistId,
       opts: PlaylistVideoOptions = {}
     ): Promise<readonly PlaylistVideoItem[]> {
-      const items = await client.getPlaylistItems(playlistId);
+      // Forward the tolerant-page-fetch skip callback so degenerate
+      // (private/deleted) or shape-mismatched items surface to the caller
+      // instead of vanishing silently at the page boundary.
+      const items = await client.getPlaylistItems(playlistId, { onSkipped: adapterOpts?.onSkipped });
       const capped = opts.maxResults !== undefined ? items.slice(0, opts.maxResults) : items;
       return capped.map((it) => ({
         videoId: it.videoId,

@@ -23,6 +23,27 @@ interface PostExtractionMenuProps {
    * Success: 0 / Failed: 0" output that read as "did nothing."
    */
   skippedCount?: number;
+  /**
+   * Playlist items the YouTube API listed but that are degenerate
+   * (private/deleted): empty thumbnails, no publish date. Not errors — the
+   * playlist legitimately still lists them — but the user should know they
+   * exist and weren't extracted.
+   */
+  unavailableCount?: number;
+  /**
+   * Playlist items dropped because their API payload failed shape
+   * validation (malformed data or an unmodelled YouTube response change).
+   * Worth surfacing distinctly from the benign "unavailable" case.
+   */
+  shapeMismatchCount?: number;
+  /**
+   * Post-run DB truth: how many `videos` rows actually exist for the
+   * processed IDs. When provided, surfaced as a "Saved to DB" line and
+   * cross-checked against the claimed extracted count.
+   */
+  verifiedVideoRows?: number;
+  /** Post-run DB truth: how many `transcripts` rows actually landed. */
+  verifiedTranscriptRows?: number;
   onViewPlaylistInfo?: () => void;
   onExtractMore?: () => void;
   onMainMenu?: () => void;
@@ -35,6 +56,10 @@ export function PostExtractionMenu({
   failureCount,
   totalVideos,
   skippedCount = 0,
+  unavailableCount,
+  shapeMismatchCount,
+  verifiedVideoRows,
+  verifiedTranscriptRows,
   onViewPlaylistInfo,
   onExtractMore,
   onMainMenu,
@@ -92,6 +117,31 @@ export function PostExtractionMenu({
           <Text dimColor> {symbols.bullet} </Text>
           <Text color="red">Failed: {failureCount}</Text>
         </Box>
+        {unavailableCount !== undefined && unavailableCount > 0 && (
+          <Box>
+            <Text dimColor>Unavailable in playlist (private/deleted): {unavailableCount}</Text>
+          </Box>
+        )}
+        {shapeMismatchCount !== undefined && shapeMismatchCount > 0 && (
+          <Box>
+            <Text color="yellow">Skipped (malformed API data): {shapeMismatchCount}</Text>
+          </Box>
+        )}
+        {verifiedVideoRows !== undefined && verifiedTranscriptRows !== undefined && (
+          <Box>
+            <Text dimColor>
+              Saved to DB: {verifiedVideoRows} videos, {verifiedTranscriptRows} transcripts
+            </Text>
+          </Box>
+        )}
+        {verifiedVideoRows !== undefined && verifiedVideoRows < successCount && (
+          <Box>
+            <Text color="red">
+              Warning: claimed {successCount} extracted but only {verifiedVideoRows} video rows found
+              in DB
+            </Text>
+          </Box>
+        )}
       </Box>
 
       {/* Menu */}

@@ -21,19 +21,40 @@ describe('ErrorDisplay', () => {
     expect(lastFrame()).toContain('2. Then try this');
   });
 
-  it('should render debug info when DEBUG env is set', () => {
-    process.env.DEBUG = 'true';
-    const { lastFrame } = render(<ErrorDisplay message="Test error" details="Stack trace here" />);
-    expect(lastFrame()).toContain('Debug info:');
-    expect(lastFrame()).toContain('Stack trace here');
+  // Wave 2: the details block no longer hides behind the DEBUG env var.
+  // Callers that pass `details` (e.g. the extraction error path passing an
+  // AppError's code + compact context) mean it for the end user, so the
+  // block renders whenever details are present. The label moved from
+  // "Debug info:" to "Details:".
+  it('renders details WITHOUT the DEBUG env set', () => {
+    const savedDebug = process.env.DEBUG;
     delete process.env.DEBUG;
+    const { lastFrame } = render(<ErrorDisplay message="Test error" details="Stack trace here" />);
+    expect(lastFrame()).toContain('Details:');
+    expect(lastFrame()).toContain('Stack trace here');
+    if (savedDebug === undefined) {
+      delete process.env.DEBUG;
+    } else {
+      process.env.DEBUG = savedDebug;
+    }
   });
 
-  it('should not render debug info when DEBUG env is not set', () => {
-    delete process.env.DEBUG;
+  it('still renders details when DEBUG env IS set (no longer the gate)', () => {
+    const savedDebug = process.env.DEBUG;
+    process.env.DEBUG = 'true';
     const { lastFrame } = render(<ErrorDisplay message="Test error" details="Stack trace here" />);
-    expect(lastFrame()).not.toContain('Debug info:');
-    expect(lastFrame()).not.toContain('Stack trace here');
+    expect(lastFrame()).toContain('Details:');
+    expect(lastFrame()).toContain('Stack trace here');
+    if (savedDebug === undefined) {
+      delete process.env.DEBUG;
+    } else {
+      process.env.DEBUG = savedDebug;
+    }
+  });
+
+  it('omits the details block when no details are passed', () => {
+    const { lastFrame } = render(<ErrorDisplay message="Test error" />);
+    expect(lastFrame()).not.toContain('Details:');
   });
 
   it('should render with border', () => {

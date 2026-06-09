@@ -1250,8 +1250,10 @@ export function PlaylistVideos({
 
         setPlaylist(pl);
 
-        // Get videos for this playlist — v2 findByPlaylist.
-        const playlistVideos = videoRepo.findByPlaylist(actualPlaylistId);
+        // Get videos for this playlist — each row tagged with whether a
+        // transcript exists (resolved in-query via EXISTS, no N+1). Backs
+        // the A9 transcript-visibility column below.
+        const playlistVideos = videoRepo.findByPlaylistWithTranscriptFlag(actualPlaylistId);
 
         if (playlistVideos.length === 0) {
           setError(
@@ -1272,7 +1274,7 @@ export function PlaylistVideos({
           video_id: video.video_id,
           title: video.title,
           duration: video.duration_seconds ? formatDuration(video.duration_seconds) : undefined,
-          has_transcript: undefined,
+          has_transcript: video.has_transcript,
         }));
 
         // Save to cache for future reference
