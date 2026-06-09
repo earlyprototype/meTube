@@ -268,9 +268,11 @@ this project.
 
 **If the Kanbanger tools aren't available** in this session, the per-project
 `.venv` is probably not provisioned on this machine (it's gitignored, so a
-fresh clone won't have it). Re-provision and restart the session:
+fresh clone won't have it). Re-provision and restart the session — substitute
+`<kanbanger-source>` with your local clone of `kanbanger-partymix` and
+`<project-dir>` with the absolute path to this project root:
 
 ```bash
-python "C:/Users/Fab2/Desktop/AI/_tools/kanbanger-partymix/scripts/setup-venv.py" "C:/Users/Fab2/Desktop/AI/_tools/_metube"
+python "<kanbanger-source>/scripts/setup-venv.py" "<project-dir>"
 ```
 <!-- kanbanger:end -->
