@@ -34,10 +34,10 @@
 *   [ ] [Audit/MED] A28 — branded PlaylistId erased to any[] in bulk-add and sync (PlaylistCommands.tsx:798,1005) - Branded PlaylistId is erased into a useState any-array then passed to createOrUpdate with no asPlaylistId revalidation in performBulkAdd and performSync, defeating the branded-ID invariant. Full detail and fix in docs/PHASE3-AMENDMENTS.md A28.
 
 ## DOING
-*   [ ] [Audit/MED] A23 — dead config knobs never consumed by VideoExtractor (VideoExtractor.ts:240-263) - transcriptLanguage, transcriptLanguages, transcriptRateLimitMs, geminiApiKey, and whisperModel are parsed but never consumed — a documented config surface that silently does nothing. Full detail and fix in docs/PHASE3-AMENDMENTS.md A23.
 
 
 ## REVIEW
+*   [ ] [Audit/MED] A23 — dead config knobs never consumed by VideoExtractor (VideoExtractor.ts:240-263) - transcriptLanguage, transcriptLanguages, transcriptRateLimitMs, geminiApiKey, and whisperModel are parsed but never consumed — a documented config surface that silently does nothing. Full detail and fix in docs/PHASE3-AMENDMENTS.md A23.
 *   [ ] [Audit/MED] A22 — tokens.json written with default file permissions, no mode 0600 (YouTubeAuth.ts:411-413) - tokens.json (long-lived OAuth refresh token, write scope) is written with default perms and the parent dir with no mode — group/other-readable on multi-user POSIX with permissive umask. No-op on Windows. Full detail and fix in docs/PHASE3-AMENDMENTS.md A22.
 *   [ ] [Audit/MED] A20 — no schema test feeds NULL to a nullable-default timestamp column (schemas.test.ts:355-643) - No schema unit test passes null for a nullable-default timestamp column, so the optional-vs-nullable distinction (the A13 bug class) is untestable for every table. Full detail and fix in docs/PHASE3-AMENDMENTS.md A20.
 *   [ ] [Audit/MED] A16 — WhisperExtractor has no test file (WhisperExtractor.ts:278-384) - The marquee Whisper fallback class has no unit test — subprocess spawn, JSON-marker parse, unvalidated cast, duration math, and close/error/unlink lifecycle are uncovered. Verify current code first as the tree moved since the audit. Full detail and fix in docs/PHASE3-AMENDMENTS.md A16.

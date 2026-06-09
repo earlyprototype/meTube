@@ -1607,3 +1607,224 @@ describe('VideoExtractor.processVideo — soft-failure visibility (A26)', () => 
     expect(matchingDebugCalls).toHaveLength(0);
   });
 });
+
+// --------------------------------------------------------------------------
+// Audit-write resilience — closes A24.
+//
+// `ExtractionJobRepository.updateStatus` ends with a non-safe
+// `ExtractionJobRowSchema.parse` (ExtractionJobRepository.ts:251) plus a
+// `withTransaction` that can throw `SqliteError`. Before A24, an audit-row
+// hiccup on the success path turned a good run into a thrown
+// `PLAYLIST_EXTRACTION_FAILED` (discarding the computed `ExtractResult`),
+// and an audit-row throw on the failure path shadowed the original cause
+// and reached the caller in its place. Both are now wrapped:
+//
+//   - Success path: an `updateStatus('completed', ...)` throw is caught,
+//     logged at error level, and the computed `ExtractResult` is still
+//     returned. The run succeeded; the audit-row write being unreliable
+//     must not destroy the answer.
+//   - Failure path: the `updateStatus('failed', ...)` write is nested in
+//     its own try/catch so a secondary failure cannot shadow the original
+//     cause being rethrown. The original error reaches the caller intact.
+//
+// These tests pin both contracts.
+// --------------------------------------------------------------------------
+
+describe('VideoExtractor.extractPlaylist — audit-write resilience (A24)', () => {
+  let dbm: DatabaseManager;
+
+  beforeEach(() => {
+    dbm = new DatabaseManager(':memory:');
+  });
+
+  afterEach(() => {
+    dbm.close();
+    vi.restoreAllMocks();
+  });
+
+  it('A24 success path — returns computed ExtractResult even when the audit completion write throws, and logs at error', async () => {
+    // Arrange — 1 video, full pipeline succeeds; the extraction-job
+    // repo's `updateStatus('completed', ...)` is rigged to throw (the
+    // exact scenario where a ZodError from `ExtractionJobRowSchema.parse`
+    // or a `SqliteError` from `withTransaction` would bubble out). Before
+    // A24 this turned the good run into a thrown
+    // `PLAYLIST_EXTRACTION_FAILED`; after A24 the run still returns the
+    // computed result and the audit error is logged loudly.
+    const errorSpy = vi.spyOn(logger, 'error');
+
+    const playlistId = makePlaylistId('a24ok01');
+    const videoId = makeVideoId('a24okvid001');
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'A24 ok', description: '', videoCount: 1 },
+      playlistVideos: [makeItem('a24okvid001', 0, 'A24 ok video')],
+      videoDetails: new Map([[videoId, makeDetails(videoId, 'A24 ok video')]]),
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(
+      new Map([[videoId, makeCaptionsTranscript()]])
+    );
+    const descriptionParser = makeMockDescriptionParser();
+
+    // Real ExtractionJobRepository so `create` lands a row (needed so
+    // the jobId in the result is real); spy on `updateStatus` and force
+    // a throw ONLY when status is 'completed' so we hit the success-path
+    // wrapper exactly.
+    const extractionJobRepository = new ExtractionJobRepository(dbm);
+    const realUpdate = extractionJobRepository.updateStatus.bind(extractionJobRepository);
+    const auditError = new Error('Audit row read-back failed (Zod schema parse)');
+    vi.spyOn(extractionJobRepository, 'updateStatus').mockImplementation(((
+      jobId: Parameters<typeof realUpdate>[0],
+      status: Parameters<typeof realUpdate>[1],
+      opts: Parameters<typeof realUpdate>[2]
+    ) => {
+      if (status === 'completed') {
+        throw auditError;
+      }
+      return realUpdate(jobId, status, opts);
+    }) as typeof realUpdate);
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: false },
+      { transcriptExtractor, extractionJobRepository, descriptionParser }
+    );
+
+    // Act — must NOT throw despite the audit-row failure.
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — the computed result reached the caller intact.
+    expect(result.total).toBe(1);
+    expect(result.processed).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(result.success).toBe(true);
+    expect(result.playlistId).toBe(playlistId);
+
+    // The video really persisted (the run truly succeeded — this is what
+    // makes "still return the result" honest).
+    const videoRepo = new VideoRepository(dbm);
+    expect(videoRepo.exists(videoId)).toBe(true);
+
+    // The audit-write failure was logged loudly at ERROR level with the
+    // original computed-result context and the audit error message.
+    const matchingErrorCalls = errorSpy.mock.calls.filter(
+      ([payload, msg]) =>
+        typeof msg === 'string' &&
+        msg === 'Audit write failed on completion (returning computed result anyway)' &&
+        typeof payload === 'object' &&
+        payload !== null &&
+        'playlistId' in payload &&
+        'err' in payload &&
+        (payload as { playlistId: unknown }).playlistId === playlistId &&
+        (payload as { err: unknown }).err === auditError.message
+    );
+    expect(matchingErrorCalls).toHaveLength(1);
+  });
+
+  it('A24 failure path — original cause is rethrown even when the audit failure write also throws', async () => {
+    // Arrange — drive a whole-loop failure (the outer catch path) AND
+    // a secondary audit failure on the failure-path write. Before A24
+    // the secondary audit error SHADOWED the original cause and reached
+    // the caller in its place; after A24 the original cause is preserved
+    // (wrapped in AppError with `cause: originalError`) and the
+    // secondary failure is logged as its own breadcrumb.
+    //
+    // Drive site: spy on `logger.info` for the post-completion "Playlist
+    // extraction complete" call and force it to throw. That throw lives
+    // INSIDE the outer try (after the wrapped completion write, after
+    // result construction) and is NOT caught by any inner try-catch, so
+    // it routes to the outer catch — which then attempts the 'failed'
+    // updateStatus, which we ALSO rig to throw. The contract: the
+    // ORIGINAL `logger.info` throw must reach the caller (wrapped in
+    // AppError as `cause`), not the secondary audit error.
+    const errorSpy = vi.spyOn(logger, 'error');
+
+    const playlistId = makePlaylistId('a24fail1');
+    const videoId = makeVideoId('a24failv001');
+    const originalError = new Error('Logger pipeline exploded (primary whole-loop failure)');
+    const secondaryAuditError = new Error('Secondary audit failure (failed-status write)');
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'A24 fail', description: '', videoCount: 1 },
+      playlistVideos: [makeItem('a24failv001', 0, 'A24 fail video')],
+      videoDetails: new Map([[videoId, makeDetails(videoId, 'A24 fail video')]]),
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(
+      new Map([[videoId, makeCaptionsTranscript()]])
+    );
+    const descriptionParser = makeMockDescriptionParser();
+
+    // Spy on the post-completion logger.info to throw the ORIGINAL
+    // cause. This throw is inside the outer try (after the wrapped
+    // completion-write) so it routes to the outer catch path.
+    const realInfo = logger.info.bind(logger);
+    vi.spyOn(logger, 'info').mockImplementation(((...args: Parameters<typeof realInfo>) => {
+      const msg = args[1];
+      if (typeof msg === 'string' && msg === 'Playlist extraction complete') {
+        throw originalError;
+      }
+      return realInfo(...args);
+    }) as typeof realInfo);
+
+    // Rig the failure-path 'failed' updateStatus write to also throw.
+    // ('completed' path is left alone so it succeeds — we don't want to
+    // accidentally exercise the success-path wrapper here.)
+    const extractionJobRepository = new ExtractionJobRepository(dbm);
+    const realUpdate = extractionJobRepository.updateStatus.bind(extractionJobRepository);
+    vi.spyOn(extractionJobRepository, 'updateStatus').mockImplementation(((
+      jobId: Parameters<typeof realUpdate>[0],
+      status: Parameters<typeof realUpdate>[1],
+      opts: Parameters<typeof realUpdate>[2]
+    ) => {
+      if (status === 'failed') {
+        throw secondaryAuditError;
+      }
+      return realUpdate(jobId, status, opts);
+    }) as typeof realUpdate);
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: false },
+      { transcriptExtractor, extractionJobRepository, descriptionParser }
+    );
+
+    // Act + Assert — the ORIGINAL cause must reach the caller intact,
+    // wrapped in an AppError (since originalError is not already an
+    // AppError). The secondary audit error is NOT what's thrown.
+    let captured: unknown = null;
+    try {
+      await extractor.extractPlaylist(playlistId);
+    } catch (err) {
+      captured = err;
+    }
+    expect(captured).not.toBeNull();
+    expect(captured).toBeInstanceOf(AppError);
+    const captAppError = captured as AppError;
+    expect(captAppError.code).toBe('PLAYLIST_EXTRACTION_FAILED');
+    // The `cause` chain preserves the original throw, not the audit error.
+    expect(captAppError.cause).toBe(originalError);
+    // Defence-in-depth: the audit secondary error message is NOT what
+    // the caller sees (this is the exact regression A24 closes).
+    expect(captAppError.message).not.toContain(secondaryAuditError.message);
+
+    // And the secondary audit failure was logged as its own breadcrumb,
+    // with the ORIGINAL error message preserved alongside the audit
+    // error.
+    const matchingErrorCalls = errorSpy.mock.calls.filter(
+      ([payload, msg]) =>
+        typeof msg === 'string' &&
+        msg === 'Audit write failed on failure path (original cause preserved and rethrown)' &&
+        typeof payload === 'object' &&
+        payload !== null &&
+        'playlistId' in payload &&
+        'originalErr' in payload &&
+        'err' in payload &&
+        (payload as { playlistId: unknown }).playlistId === playlistId &&
+        (payload as { originalErr: unknown }).originalErr === originalError.message &&
+        (payload as { err: unknown }).err === secondaryAuditError.message
+    );
+    expect(matchingErrorCalls).toHaveLength(1);
+  });
+});

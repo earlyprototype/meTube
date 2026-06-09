@@ -40,6 +40,7 @@ import {
   searchPlaylistsByTitle,
   type CachedPlaylist,
 } from './cache.js';
+import logger from './logger.js';
 
 import type { DatabaseManager } from '../database/connection.js';
 import { PlaylistRepository } from '../database/PlaylistRepository.js';
@@ -204,9 +205,16 @@ async function getPlaylistTitle(
     const repo = new PlaylistRepository(db);
     const playlist = repo.findById(playlistId);
     return playlist?.title;
-  } catch {
-    // The repo throws DatabaseError on shape/connectivity failures;
-    // title is non-essential, so swallow and return undefined.
+  } catch (err) {
+    // The repo throws DatabaseError on shape/connectivity failures
+    // (locked file, corrupted row, schema drift). Title is non-essential,
+    // so swallow and return undefined — but surface the break in the
+    // logs first so a genuinely broken DB is not indistinguishable from
+    // a legitimate miss. A27 (PHASE3-AMENDMENTS).
+    logger.warn(
+      { err, playlistId },
+      'PlaylistRepository.findById failed during title lookup; returning undefined'
+    );
     return undefined;
   }
 }
@@ -226,10 +234,17 @@ function searchDatabase(query: string, db: DatabaseManager): PlaylistResolution 
   try {
     const repo = new PlaylistRepository(db);
     allPlaylists = repo.findAll({ enabledOnly: false });
-  } catch {
+  } catch (err) {
     // Same convention as `getPlaylistTitle`: DB failures collapse to
     // "no resolution found", not an unhandled throw at the resolver
-    // boundary. The caller can still pick this up via `null`.
+    // boundary. The caller can still pick this up via `null`. Logged
+    // at `error` rather than `warn` — a local-DB search miss masking
+    // a DB break (locked file, corrupted row, schema drift) is more
+    // severe than a missing title. A27 (PHASE3-AMENDMENTS).
+    logger.error(
+      { err, query },
+      'PlaylistRepository.findAll failed during database fallback search; returning null'
+    );
     return null;
   }
 

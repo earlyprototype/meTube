@@ -20,9 +20,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { savePlaylistCache } from '../utils/cache.js';
+import logger from '../utils/logger.js';
 import {
   MultipleMatchesError,
   resolveMultiplePlaylists,
@@ -33,7 +34,7 @@ import {
 import { DatabaseManager } from '../database/connection.js';
 import { PlaylistRepository } from '../database/PlaylistRepository.js';
 import { asPlaylistId } from '../types/branded.js';
-import { ValidationError } from '../errors/index.js';
+import { DatabaseError, ValidationError } from '../errors/index.js';
 
 // --------------------------------------------------------------------------
 // Workspace helpers
@@ -400,5 +401,136 @@ describe('MultipleMatchesError', () => {
     expect(err.message).toContain('  1. match 1 (PLmatch1)');
     expect(err.message).toContain('  5. match 5 (PLmatch5)');
     expect(err.message).toContain('... and 2 more');
+  });
+});
+
+// --------------------------------------------------------------------------
+// A27 — observability of DatabaseError catches
+// --------------------------------------------------------------------------
+//
+// Two catch blocks in playlistResolver previously collapsed every
+// DatabaseError (connectivity, locked file, corrupted row, schema drift)
+// to "no title" / "no match" with zero operator signal. A27 lands a log
+// call inside each catch so a genuinely broken DB is distinguishable from
+// a legitimate miss. The graceful fallback (undefined / null) is
+// preserved — only observability changes.
+//
+// Pattern matches A26: spy on `logger.warn` and `logger.error`, induce
+// a DatabaseError throw from PlaylistRepository via vi.spyOn on the
+// prototype method, assert the structured payload (err + identifier).
+// --------------------------------------------------------------------------
+
+describe('A27 — DatabaseError catches are observable', () => {
+  let ws: Workspace;
+  let dbm: DatabaseManager;
+
+  beforeEach(() => {
+    ws = makeWorkspace();
+    dbm = new DatabaseManager(':memory:');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    dbm.close();
+    cleanupWorkspace(ws);
+  });
+
+  it('logs a warn when PlaylistRepository.findById throws during title lookup', async () => {
+    // Arrange — spy on logger and force findById to throw a DatabaseError.
+    // The resolver goes through getPlaylistTitle on the direct-ID path
+    // (step 4); the cache is empty, so the title lookup falls through to
+    // the DB, which throws.
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const errorSpy = vi.spyOn(logger, 'error');
+
+    const thrown = new DatabaseError('forced findById failure', {
+      operation: 'findById',
+      table: 'playlists',
+    });
+    vi.spyOn(PlaylistRepository.prototype, 'findById').mockImplementation(() => {
+      throw thrown;
+    });
+
+    // Act — well-formed PL-prefixed ID drives the direct-ID branch.
+    const result = await resolvePlaylistIdentifier('PLa27title01', { db: dbm });
+
+    // Assert — graceful fallback preserved: resolution still succeeds
+    // with the branded ID and no title. The throw was swallowed.
+    expect(result?.source).toBe('direct');
+    expect(result?.id).toBe('PLa27title01');
+    expect(result?.title).toBeUndefined();
+
+    // Assert — the catch surfaced a warn-level log with structured
+    // payload including the DatabaseError instance and the playlistId.
+    const matchingWarnCalls = warnSpy.mock.calls.filter(
+      ([payload, msg]) =>
+        typeof msg === 'string' &&
+        msg.includes('PlaylistRepository.findById failed during title lookup') &&
+        typeof payload === 'object' &&
+        payload !== null &&
+        'err' in payload &&
+        'playlistId' in payload &&
+        (payload as { err: unknown }).err === thrown &&
+        (payload as { playlistId: unknown }).playlistId === 'PLa27title01'
+    );
+    expect(matchingWarnCalls).toHaveLength(1);
+
+    // Assert — error-level log did NOT fire for this catch. Title lookup
+    // is best-effort; the severity is warn, not error.
+    const matchingErrorCalls = errorSpy.mock.calls.filter(
+      ([, msg]) =>
+        typeof msg === 'string' &&
+        msg.includes('PlaylistRepository.findById failed during title lookup')
+    );
+    expect(matchingErrorCalls).toHaveLength(0);
+  });
+
+  it('logs an error when PlaylistRepository.findAll throws during database fallback search', async () => {
+    // Arrange — spy on logger and force findAll to throw a DatabaseError.
+    // The resolver reaches searchDatabase (step 5) when the input is not
+    // numeric, not a URL, not ID-shaped, and the cache title-search
+    // produced no matches.
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const errorSpy = vi.spyOn(logger, 'error');
+
+    const thrown = new DatabaseError('forced findAll failure', {
+      operation: 'findAll',
+      table: 'playlists',
+    });
+    vi.spyOn(PlaylistRepository.prototype, 'findAll').mockImplementation(() => {
+      throw thrown;
+    });
+
+    // Act
+    const result = await resolvePlaylistIdentifier('a27-fallback-query', { db: dbm });
+
+    // Assert — graceful fallback preserved: null resolution at the
+    // resolver boundary, no rethrow.
+    expect(result).toBeNull();
+
+    // Assert — error-level log fired with the DatabaseError instance and
+    // the original query string in the payload.
+    const matchingErrorCalls = errorSpy.mock.calls.filter(
+      ([payload, msg]) =>
+        typeof msg === 'string' &&
+        msg.includes('PlaylistRepository.findAll failed during database fallback search') &&
+        typeof payload === 'object' &&
+        payload !== null &&
+        'err' in payload &&
+        'query' in payload &&
+        (payload as { err: unknown }).err === thrown &&
+        (payload as { query: unknown }).query === 'a27-fallback-query'
+    );
+    expect(matchingErrorCalls).toHaveLength(1);
+
+    // Assert — warn-level log did NOT fire for this catch. A DB search
+    // miss masking a DB break is more severe than a missing title; pin
+    // the regression so a silent demotion is caught.
+    const matchingWarnCalls = warnSpy.mock.calls.filter(
+      ([, msg]) =>
+        typeof msg === 'string' &&
+        msg.includes('PlaylistRepository.findAll failed during database fallback search')
+    );
+    expect(matchingWarnCalls).toHaveLength(0);
   });
 });

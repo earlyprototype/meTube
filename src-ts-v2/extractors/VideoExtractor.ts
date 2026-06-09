@@ -598,11 +598,35 @@ export class VideoExtractor {
       // Step 6: mark job completed. Counters land in the audit row so
       // future "what happened in this run?" queries can answer without
       // re-running.
-      this.extractionJobRepository.updateStatus(jobId, 'completed', {
-        videos_found: total,
-        videos_processed: processed,
-        new_videos: processed,
-      });
+      //
+      // A24: the audit write is best-effort. `updateStatus` ends with a
+      // `ExtractionJobRowSchema.parse` (ExtractionJobRepository.ts:251)
+      // that can throw on a malformed read-back, and the underlying
+      // `withTransaction` can throw `SqliteError`. Without this guard
+      // an audit-row hiccup would turn a successful run into a thrown
+      // `PLAYLIST_EXTRACTION_FAILED` and discard the computed result —
+      // the run succeeded; the audit-row write being unreliable must
+      // not destroy the answer. Log loudly and return the result.
+      try {
+        this.extractionJobRepository.updateStatus(jobId, 'completed', {
+          videos_found: total,
+          videos_processed: processed,
+          new_videos: processed,
+        });
+      } catch (auditError) {
+        logger.error(
+          {
+            playlistId,
+            jobId,
+            processed,
+            skipped,
+            failed,
+            total,
+            err: auditError instanceof Error ? auditError.message : String(auditError),
+          },
+          'Audit write failed on completion (returning computed result anyway)'
+        );
+      }
 
       const result: ExtractResult = {
         playlistId,
@@ -630,13 +654,32 @@ export class VideoExtractor {
     } catch (error) {
       // Whole-loop failure (not a per-video issue). Mark the job failed
       // and rethrow so callers see the real cause.
+      //
+      // A24: nest the `'failed'` audit write in its own try/catch so a
+      // secondary failure (e.g. SqliteError on the audit row, ZodError
+      // from the read-back parse) cannot SHADOW the original cause. The
+      // original error must reach the caller intact — that's what
+      // operators debug from. The audit failure is a separate
+      // breadcrumb, not the thing being thrown.
       const message = error instanceof Error ? error.message : String(error);
-      this.extractionJobRepository.updateStatus(jobId, 'failed', {
-        videos_found: total,
-        videos_processed: processed,
-        new_videos: processed,
-        error_message: message,
-      });
+      try {
+        this.extractionJobRepository.updateStatus(jobId, 'failed', {
+          videos_found: total,
+          videos_processed: processed,
+          new_videos: processed,
+          error_message: message,
+        });
+      } catch (auditError) {
+        logger.error(
+          {
+            playlistId,
+            jobId,
+            originalErr: message,
+            err: auditError instanceof Error ? auditError.message : String(auditError),
+          },
+          'Audit write failed on failure path (original cause preserved and rethrown)'
+        );
+      }
       logger.error({ playlistId, err: message }, 'Playlist extraction failed (uncaught)');
       throw error instanceof AppError
         ? error
