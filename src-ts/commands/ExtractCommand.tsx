@@ -286,8 +286,13 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         let totalProcessed = 0;
         let totalFailed = 0;
         let totalSkipped = 0;
-        let totalVerifiedVideoRows = 0;
-        let totalVerifiedTranscriptRows = 0;
+        // Batch verified-row totals propagate "unavailable" honestly: once
+        // ANY playlist's DB verification fails (result field `undefined`),
+        // the batch total goes `undefined` too — never NaN, and never a
+        // misleadingly-low number. `addVerified` below short-circuits to
+        // undefined the moment either operand is undefined.
+        let totalVerifiedVideoRows: number | undefined = 0;
+        let totalVerifiedTranscriptRows: number | undefined = 0;
         let playlistsFailed = 0;
 
         setStatus('extracting');
@@ -305,8 +310,11 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
             totalProcessed += result.processed;
             totalFailed += result.failed;
             totalSkipped += result.skipped;
-            totalVerifiedVideoRows += result.verifiedVideoRows;
-            totalVerifiedTranscriptRows += result.verifiedTranscriptRows;
+            totalVerifiedVideoRows = addVerified(totalVerifiedVideoRows, result.verifiedVideoRows);
+            totalVerifiedTranscriptRows = addVerified(
+              totalVerifiedTranscriptRows,
+              result.verifiedTranscriptRows
+            );
 
             setProgress({
               current: i + 1,
@@ -365,7 +373,9 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
   }, [type, id, flags, onComplete]);
 
   if (status === 'error') {
-    return <ErrorDisplay message={error || 'Extraction failed'} details={errorDetails ?? undefined} />;
+    return (
+      <ErrorDisplay message={error || 'Extraction failed'} details={errorDetails ?? undefined} />
+    );
   }
 
   if (status === 'menu') {
@@ -396,7 +406,9 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           // can choose a different playlist. Direct mode: exit cleanly —
           // there's no host to navigate within.
           if (onNavigate) {
-            onNavigate(<PlaylistDiscover key={Date.now()} onComplete={onComplete} onNavigate={onNavigate} />);
+            onNavigate(
+              <PlaylistDiscover key={Date.now()} onComplete={onComplete} onNavigate={onNavigate} />
+            );
           } else {
             exit();
           }
@@ -533,6 +545,21 @@ export function formatAppErrorDetails(err: AppError): string | null {
 }
 
 /**
+ * Sum two best-effort verified-row counts for the --all batch totals.
+ * Verification is best-effort per playlist: a `undefined` operand means
+ * that playlist's DB verification was unavailable (it threw and was
+ * logged in VideoExtractor). Once any playlist is unavailable the batch
+ * total is no longer trustworthy, so this returns `undefined` — never
+ * `NaN` (which `number + undefined` would produce) and never a
+ * silently-low partial sum. `undefined` flows to PostExtractionMenu,
+ * which then suppresses the "Saved to DB" line rather than lying.
+ */
+function addVerified(running: number | undefined, next: number | undefined): number | undefined {
+  if (running === undefined || next === undefined) return undefined;
+  return running + next;
+}
+
+/**
  * Compact a single context value for inline display. Objects/arrays are
  * JSON-stringified; primitives are rendered directly. Keeps the details
  * line legible rather than dumping a multi-line blob.
@@ -578,7 +605,9 @@ export function makeYouTubeClientAdapter(
       // Forward the tolerant-page-fetch skip callback so degenerate
       // (private/deleted) or shape-mismatched items surface to the caller
       // instead of vanishing silently at the page boundary.
-      const items = await client.getPlaylistItems(playlistId, { onSkipped: adapterOpts?.onSkipped });
+      const items = await client.getPlaylistItems(playlistId, {
+        onSkipped: adapterOpts?.onSkipped,
+      });
       const capped = opts.maxResults !== undefined ? items.slice(0, opts.maxResults) : items;
       return capped.map((it) => ({
         videoId: it.videoId,

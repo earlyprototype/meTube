@@ -137,8 +137,8 @@ export function PostExtractionMenu({
         {verifiedVideoRows !== undefined && verifiedVideoRows < successCount && (
           <Box>
             <Text color="red">
-              Warning: claimed {successCount} extracted but only {verifiedVideoRows} video rows found
-              in DB
+              Warning: claimed {successCount} extracted but only {verifiedVideoRows} video rows
+              found in DB
             </Text>
           </Box>
         )}

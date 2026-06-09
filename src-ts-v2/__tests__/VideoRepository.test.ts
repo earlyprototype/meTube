@@ -312,9 +312,11 @@ describe('VideoRepository.findByPlaylistWithTranscriptFlag', () => {
          VALUES (?, ?, ?, ?)`
       ).run('PLflaglist123', 'bbbbbbbbbbb', 2, '2024-01-02T00:00:00Z');
       // transcript for the first video only
-      db.prepare(
-        `INSERT INTO transcripts (video_id, language, full_text) VALUES (?, ?, ?)`
-      ).run('aaaaaaaaaaa', 'en', 'a transcript body');
+      db.prepare(`INSERT INTO transcripts (video_id, language, full_text) VALUES (?, ?, ?)`).run(
+        'aaaaaaaaaaa',
+        'en',
+        'a transcript body'
+      );
     });
 
     // Act

@@ -30,7 +30,13 @@ interface PlaylistCommandsProps {
   onNavigate?: (next: React.ReactElement | null) => void;
 }
 
-export function PlaylistCommands({ subcommand, args, flags, onComplete, onNavigate }: PlaylistCommandsProps) {
+export function PlaylistCommands({
+  subcommand,
+  args,
+  flags,
+  onComplete,
+  onNavigate,
+}: PlaylistCommandsProps) {
   if (!subcommand) {
     return (
       <ErrorDisplay

@@ -210,7 +210,9 @@ describe('PostExtractionMenu — truthful end-of-run summary', () => {
       />
     );
 
-    expect(lastFrame() ?? '').toContain('Warning: claimed 5 extracted but only 2 video rows found in DB');
+    expect(lastFrame() ?? '').toContain(
+      'Warning: claimed 5 extracted but only 2 video rows found in DB'
+    );
   });
 
   it('does not warn when verifiedVideoRows matches the extracted count', () => {

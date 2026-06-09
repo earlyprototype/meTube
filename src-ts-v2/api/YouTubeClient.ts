@@ -689,11 +689,10 @@ export class YouTubeClient {
             pageCount,
           });
 
-          const { parsed, skipped } = this.parsePageItems(
-            YouTubePlaylistSchema,
-            envelope.items,
-            { method: 'getMyPlaylists', pageCount }
-          );
+          const { parsed, skipped } = this.parsePageItems(YouTubePlaylistSchema, envelope.items, {
+            method: 'getMyPlaylists',
+            pageCount,
+          });
 
           return {
             items: parsed.map((it) => this.toPlaylist(it)),

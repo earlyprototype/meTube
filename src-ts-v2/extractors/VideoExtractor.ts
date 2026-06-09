@@ -344,16 +344,26 @@ export interface ExtractResult {
    * In a healthy run this equals `processed`; a divergence means a write
    * silently failed (the 2026-05-29 counter-lie shape) and is logged at
    * error level.
+   *
+   * `undefined` means the verification step itself FAILED (an `exists`
+   * check threw) and was logged — NOT that zero rows landed. Verification
+   * is best-effort: a flaky existence check must not retroactively fail an
+   * otherwise-successful extraction. Downstream UI distinguishes the two:
+   * `undefined` suppresses both the "Saved to DB" line and the mismatch
+   * warning, whereas `0` would (correctly) trigger the warning.
    */
-  readonly verifiedVideoRows: number;
+  readonly verifiedVideoRows?: number;
   /**
    * Post-run DB truth: how many of the processed videos actually have a
    * transcript row, counted via `TranscriptRepository.exists` after the
    * loop. A value lower than `processed` is NORMAL (captionless videos
    * legitimately have no transcript) and is NOT an error — it's the honest
    * count of how many transcripts really landed.
+   *
+   * `undefined` means the verification step itself FAILED (logged), not a
+   * zero count — see `verifiedVideoRows`.
    */
-  readonly verifiedTranscriptRows: number;
+  readonly verifiedTranscriptRows?: number;
 }
 
 // --------------------------------------------------------------------------
@@ -657,15 +667,40 @@ export class VideoExtractor {
       // counts how many have a `transcripts` row. This is the anti
       // counter-lie cross-check — the 2026-05-29 symptom was a `processed`
       // that climbed while the DB stayed empty.
-      let verifiedVideoRows = 0;
-      let verifiedTranscriptRows = 0;
-      for (const id of processedVideoIds) {
-        if (this.videoRepository.exists(id)) {
-          verifiedVideoRows += 1;
+      //
+      // Best-effort: the verification is a cross-check, not the run itself.
+      // If an `exists` call throws, the extraction already succeeded — the
+      // verification step failing must NOT bubble to the outer catch and
+      // retroactively fail a good run. On failure both counts are left
+      // `undefined` ("verification unavailable" — distinct from "verified
+      // zero"). We deliberately do NOT fall back to 0 (that would trigger
+      // the UI's false "claimed N but only 0 found" warning) nor to the
+      // optimistic counters (that would silently defeat the anti-lie cross
+      // check). `undefined` flows through to the UI, which suppresses both
+      // the "Saved to DB" line and the mismatch warning.
+      let verifiedVideoRows: number | undefined = 0;
+      let verifiedTranscriptRows: number | undefined = 0;
+      try {
+        for (const id of processedVideoIds) {
+          if (this.videoRepository.exists(id)) {
+            verifiedVideoRows += 1;
+          }
+          if (this.transcriptRepository.exists(id)) {
+            verifiedTranscriptRows += 1;
+          }
         }
-        if (this.transcriptRepository.exists(id)) {
-          verifiedTranscriptRows += 1;
-        }
+      } catch (verifyError) {
+        verifiedVideoRows = undefined;
+        verifiedTranscriptRows = undefined;
+        logger.error(
+          {
+            playlistId,
+            jobId,
+            processed,
+            err: verifyError instanceof Error ? verifyError.message : String(verifyError),
+          },
+          'DB verification failed; verified row counts unavailable (extraction itself succeeded)'
+        );
       }
 
       const result: ExtractResult = {
@@ -696,7 +731,12 @@ export class VideoExtractor {
       // but never landed (the 2026-05-29 shape). Log loudly. A transcript
       // count below `processed` is NORMAL (captionless videos) — NOT an
       // error, so no check for that.
-      if (verifiedVideoRows !== processed) {
+      //
+      // Only fires when verification actually RAN (count defined). When
+      // verification was unavailable (`undefined`, logged above) there is
+      // no DB truth to compare against — staying silent here avoids a
+      // spurious mismatch on a value we never computed.
+      if (verifiedVideoRows !== undefined && verifiedVideoRows !== processed) {
         logger.error(
           { processed, verifiedVideoRows, verifiedTranscriptRows, total, playlistId },
           'Verified-row mismatch: processed !== verifiedVideoRows (a claimed video write did not persist)'
