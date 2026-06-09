@@ -332,7 +332,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           // can choose a different playlist. Direct mode: exit cleanly —
           // there's no host to navigate within.
           if (onNavigate) {
-            onNavigate(<PlaylistDiscover onComplete={onComplete} onNavigate={onNavigate} />);
+            onNavigate(<PlaylistDiscover key={Date.now()} onComplete={onComplete} onNavigate={onNavigate} />);
           } else {
             exit();
           }
