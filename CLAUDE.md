@@ -245,3 +245,32 @@ entry resolves to under `legacy/python/`).
 - Don't add a kill-criterion or exit ramp anywhere.
 - Don't push to origin without re-asking (18 unpushed commits are deliberate).
 - If you find drift between this file and the actual codebase, update this file — that's what it's for.
+
+<!-- kanbanger:start -->
+## Kanbanger: task board for this project
+
+This project tracks work on a Kanban board managed by the **Kanbanger MCP
+server**. The board lives at `_kanban.md` in the project root and is
+**project-scoped** -- configured here via `.mcp.json` + `.venv`, not globally.
+Don't install or move Kanbanger to user/global scope; the board belongs to
+this project.
+
+**For AI agents:**
+- **Always use the Kanbanger MCP tools** (`list_tasks`, `add_task`, `move_task`,
+  `delete_task`, `sync_to_github`, `get_sync_status`) to read or change the
+  board. **Never hand-edit `_kanban.md`** -- direct edits bypass validation,
+  locking, and atomic writes and will eventually corrupt the board or its
+  GitHub sync.
+- On first contact, read the `kanban://current-board` resource before acting.
+- **REVIEW gates DONE.** AI-completed work goes to REVIEW via `propose_done`,
+  never straight to DONE; a human approves REVIEW -> DONE via `approve_done`.
+  Never move your own work directly to DONE.
+
+**If the Kanbanger tools aren't available** in this session, the per-project
+`.venv` is probably not provisioned on this machine (it's gitignored, so a
+fresh clone won't have it). Re-provision and restart the session:
+
+```
+python "C:/Users/Fab2/Desktop/AI/_tools/kanbanger-partymix/scripts/setup-venv.py" "C:/Users/Fab2/Desktop/AI/_tools/_metube"
+```
+<!-- kanbanger:end -->
