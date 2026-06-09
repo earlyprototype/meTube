@@ -13,6 +13,16 @@ interface PostExtractionMenuProps {
   playlistTitle?: string;
   /** Videos that ran through the extraction loop and produced a new video row. */
   successCount: number;
+  /**
+   * DISTINCT videos the extraction claimed to process (the backend Set size),
+   * as opposed to `successCount` which is the per-occurrence count. They
+   * diverge when a playlist lists the same video twice and both occurrences
+   * run. When provided, this is the truthful number the DB mismatch warning
+   * compares `verifiedVideoRows` against — so a healthy duplicate run
+   * (claimed 1 distinct, found 1 row) does not falsely alarm. Falls back to
+   * `successCount` when absent (older callers / direct-CLI paths).
+   */
+  distinctProcessed?: number;
   /** Videos where the extraction loop threw. */
   failureCount: number;
   /** Total videos in the playlist as returned by YouTube. */
@@ -53,6 +63,7 @@ export function PostExtractionMenu({
   playlistId,
   playlistTitle,
   successCount,
+  distinctProcessed,
   failureCount,
   totalVideos,
   skippedCount = 0,
@@ -134,14 +145,15 @@ export function PostExtractionMenu({
             </Text>
           </Box>
         )}
-        {verifiedVideoRows !== undefined && verifiedVideoRows < successCount && (
-          <Box>
-            <Text color="red">
-              Warning: claimed {successCount} extracted but only {verifiedVideoRows} video rows
-              found in DB
-            </Text>
-          </Box>
-        )}
+        {verifiedVideoRows !== undefined &&
+          verifiedVideoRows < (distinctProcessed ?? successCount) && (
+            <Box>
+              <Text color="red">
+                Warning: claimed {distinctProcessed ?? successCount} extracted but only{' '}
+                {verifiedVideoRows} video rows found in DB
+              </Text>
+            </Box>
+          )}
       </Box>
 
       {/* Menu */}

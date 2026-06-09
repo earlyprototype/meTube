@@ -1062,6 +1062,72 @@ describe('VideoExtractor.extractPlaylist — DB-verified counters', () => {
     expect(transcriptRepo.count()).toBe(2);
   });
 
+  it('duplicate entry — same videoId at two positions with skipExisting:false counts processed=2 but distinctProcessed=1, verifiedVideoRows=1, and logs NO mismatch', async () => {
+    // Arrange — a playlist that lists the SAME video at positions 0 and 1.
+    // With `skipExisting: false` the idempotency pre-check is bypassed, so
+    // BOTH occurrences run the pipeline: `processed` climbs to 2. But the
+    // second `createOrUpdate` overwrites the first — only ONE `videos` row
+    // exists. The Set-based reconciliation must collapse the duplicate:
+    // distinctProcessed=1, verifiedVideoRows=1, verifiedTranscriptRows=1.
+    // Crucially, the verified-row mismatch invariant must STAY SILENT —
+    // comparing verifiedVideoRows against distinctProcessed (1 === 1), NOT
+    // against processed (which would falsely read 1 !== 2 and alarm).
+    const errorSpy = vi.spyOn(logger, 'error');
+
+    const playlistId = makePlaylistId('dupentry1');
+    const dupItem = makeItem('dupvidaaa01', 0, 'Dup A');
+    // Same videoId, different position — a real-world playlist can list a
+    // video twice. `makeItem` derives the id from the stub, so reusing the
+    // stub yields an identical branded VideoId at position 1.
+    const dupItemAgain = makeItem('dupvidaaa01', 1, 'Dup A again');
+    const items = [dupItem, dupItemAgain];
+    expect(dupItem.videoId).toBe(dupItemAgain.videoId); // guard the fixture intent
+
+    const detailsMap = new Map<VideoId, VideoDetails | null>();
+    const transcriptMap = new Map<VideoId, TranscriptResult | null>();
+    detailsMap.set(dupItem.videoId, makeDetails(dupItem.videoId, dupItem.title));
+    transcriptMap.set(dupItem.videoId, makeCaptionsTranscript());
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'Dup', description: '', videoCount: 2 },
+      playlistVideos: items,
+      videoDetails: detailsMap,
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(transcriptMap);
+    const descriptionParser = makeMockDescriptionParser();
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: false, skipExisting: false },
+      { transcriptExtractor, descriptionParser }
+    );
+
+    // Act
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — both occurrences ran (processed=2), but only one distinct
+    // video and one persisted row behind them.
+    expect(result.processed).toBe(2);
+    expect(result.distinctProcessed).toBe(1);
+    expect(result.verifiedVideoRows).toBe(1);
+    expect(result.verifiedTranscriptRows).toBe(1);
+
+    // Cross-check against the DB directly — exactly one row each, no
+    // double-write masquerading as two. VideoRepository has no count(), so
+    // use findAll().length (the upsert keyed on video_id guarantees one row).
+    expect(new VideoRepository(dbm).findAll().length).toBe(1);
+    expect(new TranscriptRepository(dbm).count()).toBe(1);
+
+    // The verified-row mismatch invariant must NOT fire: 1 distinct === 1
+    // verified. A regression that compared against `processed` (2) would
+    // log a spurious mismatch here.
+    const mismatchCalls = errorSpy.mock.calls.filter(
+      ([, msg]) => typeof msg === 'string' && msg.includes('Verified-row mismatch')
+    );
+    expect(mismatchCalls).toHaveLength(0);
+  });
+
   it('anti-lie — a repo whose exists() under-reports yields verifiedVideoRows=0 and logs a mismatch at error', async () => {
     // Arrange — the pipeline genuinely runs (createOrUpdate is REAL, so the
     // FK-bound downstream writes succeed and `processed` climbs to 2), but
@@ -1148,10 +1214,7 @@ describe('VideoExtractor.extractPlaylist — DB-verified counters', () => {
     const errorSpy = vi.spyOn(logger, 'error');
 
     const playlistId = makePlaylistId('verithrow');
-    const items = [
-      makeItem('throwvidaa1', 0, 'Throw A'),
-      makeItem('throwvidbb2', 1, 'Throw B'),
-    ];
+    const items = [makeItem('throwvidaa1', 0, 'Throw A'), makeItem('throwvidbb2', 1, 'Throw B')];
     const detailsMap = new Map<VideoId, VideoDetails | null>();
     const transcriptMap = new Map<VideoId, TranscriptResult | null>();
     for (const item of items) {
@@ -1203,7 +1266,8 @@ describe('VideoExtractor.extractPlaylist — DB-verified counters', () => {
     const verifyFailCalls = errorSpy.mock.calls.filter(
       ([payload, msg]) =>
         typeof msg === 'string' &&
-        msg === 'DB verification failed; verified row counts unavailable (extraction itself succeeded)' &&
+        msg ===
+          'DB verification failed; verified row counts unavailable (extraction itself succeeded)' &&
         typeof payload === 'object' &&
         payload !== null &&
         'playlistId' in payload &&

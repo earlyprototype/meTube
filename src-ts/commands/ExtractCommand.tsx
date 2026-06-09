@@ -101,6 +101,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
   const [runSummary, setRunSummary] = useState<{
     unavailableCount: number;
     shapeMismatchCount: number;
+    distinctProcessed?: number;
     verifiedVideoRows?: number;
     verifiedTranscriptRows?: number;
   }>({ unavailableCount: 0, shapeMismatchCount: 0 });
@@ -231,6 +232,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         setRunSummary({
           unavailableCount,
           shapeMismatchCount,
+          distinctProcessed: result.distinctProcessed,
           verifiedVideoRows: result.verifiedVideoRows,
           verifiedTranscriptRows: result.verifiedTranscriptRows,
         });
@@ -284,6 +286,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         );
 
         let totalProcessed = 0;
+        let totalDistinctProcessed = 0;
         let totalFailed = 0;
         let totalSkipped = 0;
         // Batch verified-row totals propagate "unavailable" honestly: once
@@ -308,6 +311,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
             const result = await extractor.extractPlaylist(playlist.playlistId);
 
             totalProcessed += result.processed;
+            totalDistinctProcessed += result.distinctProcessed;
             totalFailed += result.failed;
             totalSkipped += result.skipped;
             totalVerifiedVideoRows = addVerified(totalVerifiedVideoRows, result.verifiedVideoRows);
@@ -350,6 +354,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         setRunSummary({
           unavailableCount,
           shapeMismatchCount,
+          distinctProcessed: totalDistinctProcessed,
           verifiedVideoRows: totalVerifiedVideoRows,
           verifiedTranscriptRows: totalVerifiedTranscriptRows,
         });
@@ -384,6 +389,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         playlistId={extractedPlaylistId}
         playlistTitle={playlistTitle}
         successCount={progress.successCount}
+        distinctProcessed={runSummary.distinctProcessed}
         failureCount={progress.failureCount}
         skippedCount={progress.skippedCount}
         totalVideos={progress.total}

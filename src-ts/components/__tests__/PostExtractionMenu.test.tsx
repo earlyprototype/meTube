@@ -229,4 +229,46 @@ describe('PostExtractionMenu — truthful end-of-run summary', () => {
 
     expect(lastFrame() ?? '').not.toContain('Warning: claimed');
   });
+
+  it('does not warn on a duplicate run where distinctProcessed (1) matches verifiedVideoRows (1) despite successCount=2', () => {
+    // The duplicate-playlist-entry case: the loop ran the same video twice
+    // (successCount=2), but only one distinct video / one DB row exists.
+    // The warning must compare verifiedVideoRows against distinctProcessed
+    // (1 === 1), NOT against successCount (which would read 1 < 2 and
+    // falsely alarm).
+    const { lastFrame } = render(
+      <PostExtractionMenu
+        playlistId="PLtest"
+        successCount={2}
+        distinctProcessed={1}
+        failureCount={0}
+        totalVideos={1}
+        verifiedVideoRows={1}
+        verifiedTranscriptRows={1}
+      />
+    );
+
+    expect(lastFrame() ?? '').not.toContain('Warning: claimed');
+  });
+
+  it('warns using distinctProcessed when verifiedVideoRows is below it, and the text quotes the compared numbers', () => {
+    // When distinctProcessed is provided and DB truth falls short of it, the
+    // warning fires and must quote distinctProcessed (the claimed count it
+    // compared), not successCount.
+    const { lastFrame } = render(
+      <PostExtractionMenu
+        playlistId="PLtest"
+        successCount={5}
+        distinctProcessed={4}
+        failureCount={0}
+        totalVideos={5}
+        verifiedVideoRows={2}
+        verifiedTranscriptRows={2}
+      />
+    );
+
+    expect(lastFrame() ?? '').toContain(
+      'Warning: claimed 4 extracted but only 2 video rows found in DB'
+    );
+  });
 });
