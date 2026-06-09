@@ -503,16 +503,28 @@ export class YouTubeClient {
    *
    * Maps to `legacy/python/src/api/youtube_client.py:get_playlist_videos`.
    *
+   * When `opts.maxResults` is set, pagination stops as soon as enough
+   * AVAILABLE items have been collected: no FURTHER pages are fetched, and
+   * the page that crosses the threshold is trimmed so EXACTLY `maxResults`
+   * items are returned. Quota is therefore charged only for the pages
+   * actually needed — the caller's `--max-videos` cap no longer burns the
+   * whole playlist's quota or risks the MAX_PAGES ceiling on long
+   * playlists. Skip records from the pages that WERE fetched still flush to
+   * `onSkipped`; un-fetched pages are simply never seen.
+   *
    * @param playlistId - Branded YouTube playlist ID
    * @param opts - Optional `onSkipped` callback invoked once per dropped
-   *               item (private/deleted or shape-mismatched). Additive —
-   *               existing callers omit it and are unaffected.
-   * @returns Every AVAILABLE item in the playlist, in API page order
+   *               item (private/deleted or shape-mismatched), and optional
+   *               `maxResults` cap on the number of available items
+   *               returned. Both additive — existing callers omit them and
+   *               are unaffected.
+   * @returns Every AVAILABLE item in the playlist (or the first
+   *          `maxResults` of them), in API page order
    * @throws {AppError} On envelope-level parse failure or API failure
    */
   async getPlaylistItems(
     playlistId: PlaylistId,
-    opts?: { onSkipped?: (s: SkippedPageItem) => void }
+    opts?: { onSkipped?: (s: SkippedPageItem) => void; maxResults?: number }
   ): Promise<YouTubePlaylistItem[]> {
     const allItems: YouTubePlaylistItem[] = [];
     let pageToken: string | undefined;
@@ -609,11 +621,22 @@ export class YouTubeClient {
       allItems.push(...page.items);
       // Flush skip records only AFTER the page attempt succeeded —
       // retry-safety: a retried attempt's partial skips must not
-      // double-fire to the caller.
+      // double-fire to the caller. Pages we never fetch (because the cap
+      // below stopped us) contribute no skips, by construction.
       for (const record of page.skipped) {
         totalSkipped += 1;
         opts?.onSkipped?.(record);
       }
+
+      // Honour the optional maxResults cap: once we have enough available
+      // items, trim this page's overflow and stop — do NOT fetch the next
+      // page. This is the real cap; a post-pagination slice still paid the
+      // full quota and could trip the MAX_PAGES ceiling on long playlists.
+      if (opts?.maxResults !== undefined && allItems.length >= opts.maxResults) {
+        allItems.length = opts.maxResults;
+        break;
+      }
+
       pageToken = page.nextPageToken;
     } while (pageToken);
 

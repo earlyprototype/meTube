@@ -29,6 +29,10 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
 
   useEffect(() => {
     async function generate() {
+      // Declared before the try so the finally can close it on EVERY path
+      // (success, early return, or throw). The catch previously left the
+      // handle open, leaking a SQLite connection on failure.
+      let db: DatabaseManager | undefined;
       try {
         // Handle --all flag: Generate reports for ALL videos in database
         if (flags.all) {
@@ -51,7 +55,7 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         setReportType(type);
 
         // Initialize services up-front so the resolver can use the DB.
-        const db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager('data/metube.db');
 
         // v2 generator takes only templatesDir in config; output goes
         // through the second method argument. autoOpen is not part of
@@ -69,7 +73,6 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
           // returns a branded PlaylistId already.
           const resolved = await resolvePlaylistIdentifier(id, { db });
           if (!resolved) {
-            db.close();
             setError(
               `Playlist not found: ${id}. Try 'metube playlist list' to see tracked playlists.`
             );
@@ -81,7 +84,6 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
 
         setFilepath(path);
         setStatus('done');
-        db.close();
 
         if (onComplete) onComplete();
       } catch (err) {
@@ -101,22 +103,29 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
           setError(`Report generation failed: ${String(err)}`);
         }
         setStatus('error');
+      } finally {
+        // Close exactly once on every path. Idempotent: undefined when we
+        // bailed before opening the handle, or delegated to
+        // generateAllReports (which owns its own handle).
+        db?.close();
       }
     }
 
     async function generateAllReports() {
+      // Declared before the try so the finally closes it on EVERY path;
+      // see generate() for the handle-leak rationale.
+      let db: DatabaseManager | undefined;
       try {
         setReportType('all');
 
         // Get all videos from database — v2 method is findAll.
-        const db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager('data/metube.db');
         const videoRepo = new VideoRepository(db);
         const allVideos = videoRepo.findAll();
 
         if (allVideos.length === 0) {
           setError('No videos found in database. Extract some videos first.');
           setStatus('error');
-          db.close();
           return;
         }
 
@@ -146,8 +155,6 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
           }
         }
 
-        db.close();
-
         setFilepath(`Generated ${successCount} reports (${failCount} failed)`);
         setStatus('done');
 
@@ -159,6 +166,10 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
           setError(`Batch report generation failed: ${String(err)}`);
         }
         setStatus('error');
+      } finally {
+        // Close exactly once on every path. Idempotent: undefined when we
+        // bailed before opening the handle.
+        db?.close();
       }
     }
 

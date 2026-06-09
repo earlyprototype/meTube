@@ -478,6 +478,69 @@ describe('YouTubeClient.getPlaylistItems', () => {
     expect(calls[2]?.[0]?.pageToken).toBe('PAGE3');
   });
 
+  it('stops after page 1 when maxResults is below the page size', async () => {
+    // Arrange — a two-page playlist. With maxResults smaller than page 1,
+    // the client must return exactly maxResults items and NEVER fetch page
+    // 2 (the real quota saving — a post-pagination slice would still pay
+    // for both pages).
+    const playlistIdRaw = 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+    const page1Items = Array.from({ length: 50 }, (_, i) =>
+      makePlaylistItemEntry(`vid${String(i).padStart(8, '0')}`, i, playlistIdRaw)
+    );
+    const page2Items = Array.from({ length: 50 }, (_, i) =>
+      makePlaylistItemEntry(`vid${String(i + 50).padStart(8, '0')}`, i + 50, playlistIdRaw)
+    );
+
+    playlistItemsListMock
+      .mockResolvedValueOnce({ data: { items: page1Items, nextPageToken: 'PAGE2' } })
+      .mockResolvedValueOnce({ data: { items: page2Items } });
+
+    const client = makeClient();
+
+    // Act
+    const items = await client.getPlaylistItems(asPlaylistId(playlistIdRaw), { maxResults: 10 });
+
+    // Assert — exactly maxResults returned, page 2 never requested.
+    expect(items).toHaveLength(10);
+    expect(items[0]?.position).toBe(0);
+    expect(items[9]?.position).toBe(9);
+    expect(playlistItemsListMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches into page 2 and trims when maxResults spans the page boundary', async () => {
+    // Arrange — two pages of 50. maxResults: 75 needs all of page 1 plus
+    // 25 of page 2, so the client fetches exactly two pages and trims the
+    // overflow to land on exactly 75 items. Page 3 (if any) is never
+    // reached because page 2 has no nextPageToken here anyway, but the cap
+    // is what guarantees the trim.
+    const playlistIdRaw = 'PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+    const page1Items = Array.from({ length: 50 }, (_, i) =>
+      makePlaylistItemEntry(`vid${String(i).padStart(8, '0')}`, i, playlistIdRaw)
+    );
+    const page2Items = Array.from({ length: 50 }, (_, i) =>
+      makePlaylistItemEntry(`vid${String(i + 50).padStart(8, '0')}`, i + 50, playlistIdRaw)
+    );
+
+    playlistItemsListMock
+      .mockResolvedValueOnce({ data: { items: page1Items, nextPageToken: 'PAGE2' } })
+      .mockResolvedValueOnce({ data: { items: page2Items, nextPageToken: 'PAGE3' } });
+
+    const client = makeClient();
+
+    // Act
+    const items = await client.getPlaylistItems(asPlaylistId(playlistIdRaw), { maxResults: 75 });
+
+    // Assert — exactly 75, spanning into page 2; page 2 fetched, page 3 not.
+    expect(items).toHaveLength(75);
+    expect(items[0]?.position).toBe(0);
+    expect(items[49]?.position).toBe(49);
+    expect(items[74]?.position).toBe(74);
+    expect(playlistItemsListMock).toHaveBeenCalledTimes(2);
+    // Page 3 was never requested (the cap stopped pagination at page 2).
+    const calls = playlistItemsListMock.mock.calls;
+    expect(calls[1]?.[0]?.pageToken).toBe('PAGE2');
+  });
+
   it('returns empty array when the playlist has no items', async () => {
     // Arrange
     const client = makeClient();

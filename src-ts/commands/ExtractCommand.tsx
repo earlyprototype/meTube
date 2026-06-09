@@ -123,6 +123,10 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
     startedRef.current = true;
 
     async function extract() {
+      // Declared before the try so the finally can close it on EVERY path
+      // (success, early return, or throw). REPL mode re-runs extraction on
+      // repeated commands; a leaked SQLite handle there can lock the DB.
+      let db: DatabaseManager | undefined;
       try {
         // Handle --all flag for batch extraction
         if (flags.all || type === 'all') {
@@ -144,13 +148,12 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
 
         // Initialize services up-front; v2 resolver needs a DB handle for
         // the database-fallback step.
-        const db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager('data/metube.db');
 
         // Resolve playlist identifier (number, title, URL, or ID) — v2
         // resolver returns branded PlaylistId.
         const resolved = await resolvePlaylistIdentifier(id, { db });
         if (!resolved) {
-          db.close();
           setError(
             `Playlist not found: ${id}. Try 'metube playlist list' to see tracked playlists.`
           );
@@ -170,7 +173,6 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         const playlist = repo.findById(actualPlaylistId);
 
         if (!playlist) {
-          db.close();
           setError(`Playlist not found: ${resolved.title || actualPlaylistId}`);
           setStatus('error');
           return;
@@ -237,7 +239,6 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           verifiedTranscriptRows: result.verifiedTranscriptRows,
         });
 
-        db.close();
         setStatus('menu');
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -245,14 +246,21 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           setErrorDetails(formatAppErrorDetails(err));
         }
         setStatus('error');
+      } finally {
+        // Close exactly once on every path. Idempotent: undefined when
+        // we bailed before opening the handle.
+        db?.close();
       }
     }
 
     async function extractAllPlaylists() {
+      // Declared before the try so the finally closes it on EVERY path;
+      // see extract() for the REPL handle-leak rationale.
+      let db: DatabaseManager | undefined;
       try {
         // Get all enabled playlists — v2 findAll default is enabledOnly:
         // true, which is what we want here.
-        const db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager('data/metube.db');
         const playlistRepo = new PlaylistRepository(db);
         const enabledPlaylists = playlistRepo.findAll({ enabledOnly: true });
 
@@ -261,7 +269,6 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
             'No enabled playlists found. Use "metube playlist list" to see tracked playlists.'
           );
           setStatus('error');
-          db.close();
           return;
         }
 
@@ -359,7 +366,6 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           verifiedTranscriptRows: totalVerifiedTranscriptRows,
         });
 
-        db.close();
         setStatus('done');
 
         if (onComplete) {
@@ -371,6 +377,10 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           setErrorDetails(formatAppErrorDetails(err));
         }
         setStatus('error');
+      } finally {
+        // Close exactly once on every path. Idempotent: undefined when
+        // we bailed before opening the handle.
+        db?.close();
       }
     }
 
@@ -610,10 +620,15 @@ export function makeYouTubeClientAdapter(
     ): Promise<readonly PlaylistVideoItem[]> {
       // Forward the tolerant-page-fetch skip callback so degenerate
       // (private/deleted) or shape-mismatched items surface to the caller
-      // instead of vanishing silently at the page boundary.
+      // instead of vanishing silently at the page boundary. Forward
+      // maxResults too so the client stops paginating once the cap is hit
+      // (real quota saving) rather than fetching the whole playlist first.
       const items = await client.getPlaylistItems(playlistId, {
         onSkipped: adapterOpts?.onSkipped,
+        maxResults: opts.maxResults,
       });
+      // Belt-and-braces: the client already returns at most maxResults; this
+      // slice is a harmless defensive guard at the adapter boundary.
       const capped = opts.maxResults !== undefined ? items.slice(0, opts.maxResults) : items;
       return capped.map((it) => ({
         videoId: it.videoId,

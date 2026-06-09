@@ -96,6 +96,10 @@ function VideoAdd({
 
   useEffect(() => {
     async function extractVideo() {
+      // Declared before the try so the finally can close it on EVERY path
+      // (success, early return, or throw). The catch previously left the
+      // handle open, leaking a SQLite connection on failure.
+      let db: DatabaseManager | undefined;
       try {
         // Validate input
         if (!videoInput) {
@@ -117,7 +121,7 @@ function VideoAdd({
         const auth = new YouTubeAuth();
         const oauthClient = await auth.authenticate();
         const client = new YouTubeClient(oauthClient);
-        const db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager('data/metube.db');
 
         setStatus('extracting');
         setProgressStatus('downloading');
@@ -129,7 +133,6 @@ function VideoAdd({
         if (!details) {
           setError(`Video not found: ${videoInput}. Check the URL or ID is correct.`);
           setStatus('error');
-          db.close();
           return;
         }
         setVideoTitle(details.title || extractedId);
@@ -201,7 +204,6 @@ function VideoAdd({
         }
 
         setProgressStatus('completed');
-        db.close();
 
         // Generate report if requested
         if (flags.report) {
@@ -226,6 +228,10 @@ function VideoAdd({
           setError(`Extraction failed: ${String(err)}`);
         }
         setStatus('error');
+      } finally {
+        // Close exactly once on every path. Idempotent: undefined when
+        // we bailed before opening the handle.
+        db?.close();
       }
     }
 

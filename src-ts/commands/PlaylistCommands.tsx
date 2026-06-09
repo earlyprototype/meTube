@@ -1279,7 +1279,13 @@ export function PlaylistVideos({
           num: index + 1,
           video_id: video.video_id,
           title: video.title,
-          duration: video.duration_seconds ? formatDuration(video.duration_seconds) : undefined,
+          // Explicit presence check, not truthiness: a valid 0-second
+          // duration must render "0:00", not be dropped to undefined (which
+          // the table renders as "N/A").
+          duration:
+            typeof video.duration_seconds === 'number'
+              ? formatDuration(video.duration_seconds)
+              : undefined,
           has_transcript: video.has_transcript,
         }));
 

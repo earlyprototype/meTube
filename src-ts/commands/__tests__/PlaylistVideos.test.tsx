@@ -91,7 +91,7 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-function videoRow(videoId: string, title: string, hasTranscript: boolean) {
+function videoRow(videoId: string, title: string, hasTranscript: boolean, durationSeconds = 180) {
   return {
     video_id: videoId,
     title,
@@ -99,7 +99,7 @@ function videoRow(videoId: string, title: string, hasTranscript: boolean) {
     channel_title: 'Chan',
     published_at: '2024-01-01T00:00:00Z',
     duration: 'PT3M',
-    duration_seconds: 180,
+    duration_seconds: durationSeconds,
     is_short: 0,
     has_transcript: hasTranscript,
   };
@@ -156,5 +156,30 @@ describe('PlaylistVideos — A9 transcript column reflects DB truth', () => {
     expect(cachedVideos).toHaveLength(2);
     expect(cachedVideos[0].has_transcript).toBe(true);
     expect(cachedVideos[1].has_transcript).toBe(false);
+  });
+});
+
+describe('PlaylistVideos — zero-second duration renders 0:00, not N/A', () => {
+  it('renders a 0-second video as 0:00 in the Duration column', async () => {
+    // A live 0-second video (duration_seconds: 0) is a valid value, not a
+    // missing one. The mapping must not drop it via a truthiness check —
+    // the column should read "0:00", never the missing-value placeholder.
+    findByPlaylistWithTranscriptFlagSpy.mockReturnValue([
+      videoRow('vidZeroDur', 'Zero Duration Video', true, 0),
+    ]);
+
+    const { lastFrame } = render(<PlaylistVideos playlistId="PLtest" onComplete={() => {}} />);
+    await settle();
+
+    const frame = lastFrame() ?? '';
+
+    expect(frame).toContain('Zero Duration Video');
+    expect(frame).toContain('0:00');
+
+    // The row is present and its duration cell is NOT the N/A placeholder.
+    expect(saveVideoCacheSpy).toHaveBeenCalledTimes(1);
+    const cachedVideos = saveVideoCacheSpy.mock.calls[0][1] as Array<{ duration?: string }>;
+    expect(cachedVideos).toHaveLength(1);
+    expect(cachedVideos[0].duration).toBe('0:00');
   });
 });
