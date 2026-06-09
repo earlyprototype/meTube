@@ -279,19 +279,21 @@ export function PlaylistDiscover({
 }
 
 // Extract prompt after adding playlist
+interface ExtractPromptProps {
+  playlistId: string;
+  playlistTitle: string;
+  videoCount: number;
+  onComplete?: () => void;
+  onNavigate?: (next: React.ReactElement | null) => void;
+}
+
 function ExtractPrompt({
   playlistId,
   playlistTitle,
   videoCount,
   onComplete,
   onNavigate,
-}: {
-  playlistId: string;
-  playlistTitle: string;
-  videoCount: number;
-  onComplete?: () => void;
-  onNavigate?: (next: React.ReactElement | null) => void;
-}) {
+}: ExtractPromptProps) {
   const { exit } = useApp();
   const [answer, setAnswer] = useState<'waiting' | 'yes' | 'no'>('waiting');
 

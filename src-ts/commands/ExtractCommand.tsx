@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Text, useApp } from 'ink';
+import { useApp } from 'ink';
 import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
 import { YouTubeClient } from '../../src-ts-v2/api/YouTubeClient.js';
 import {

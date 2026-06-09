@@ -270,7 +270,7 @@ this project.
 `.venv` is probably not provisioned on this machine (it's gitignored, so a
 fresh clone won't have it). Re-provision and restart the session:
 
-```
+```bash
 python "C:/Users/Fab2/Desktop/AI/_tools/kanbanger-partymix/scripts/setup-venv.py" "C:/Users/Fab2/Desktop/AI/_tools/_metube"
 ```
 <!-- kanbanger:end -->
