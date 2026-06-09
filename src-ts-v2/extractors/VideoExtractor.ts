@@ -337,6 +337,23 @@ export interface ExtractResult {
   readonly failed: number;
   readonly jobId: ExtractionJobId;
   readonly success: boolean;
+  /**
+   * Post-run DB truth: how many of the videos this run claimed to process
+   * actually have a row in `videos`, counted via repository existence
+   * checks AFTER the loop — NOT the optimistic `processed` loop counter.
+   * In a healthy run this equals `processed`; a divergence means a write
+   * silently failed (the 2026-05-29 counter-lie shape) and is logged at
+   * error level.
+   */
+  readonly verifiedVideoRows: number;
+  /**
+   * Post-run DB truth: how many of the processed videos actually have a
+   * transcript row, counted via `TranscriptRepository.exists` after the
+   * loop. A value lower than `processed` is NORMAL (captionless videos
+   * legitimately have no transcript) and is NOT an error — it's the honest
+   * count of how many transcripts really landed.
+   */
+  readonly verifiedTranscriptRows: number;
 }
 
 // --------------------------------------------------------------------------
@@ -548,6 +565,10 @@ export class VideoExtractor {
     let processed = 0;
     let skipped = 0;
     let failed = 0;
+    // VideoIds of every video whose outcome was `processed`. Reconciled
+    // against the DB after the loop to compute the verified counters — the
+    // anti counter-lie cross-check (see ExtractResult.verifiedVideoRows).
+    const processedVideoIds: VideoId[] = [];
 
     // Step 5: iterate. Each video gets its own try-block — a failure
     // increments `failed`, logs the cause, and the loop continues.
@@ -570,6 +591,7 @@ export class VideoExtractor {
 
           if (outcome === 'processed') {
             processed += 1;
+            processedVideoIds.push(videoId);
             onProgress({ kind: 'video_done', videoId, index, total });
           } else {
             skipped += 1;
@@ -628,6 +650,24 @@ export class VideoExtractor {
         );
       }
 
+      // Step 6a: DB-verified reconciliation. Re-derive the truth from the
+      // repositories AFTER the loop rather than trusting the optimistic
+      // `processed` counter. `verifiedVideoRows` counts how many of the
+      // processed IDs really have a `videos` row; `verifiedTranscriptRows`
+      // counts how many have a `transcripts` row. This is the anti
+      // counter-lie cross-check — the 2026-05-29 symptom was a `processed`
+      // that climbed while the DB stayed empty.
+      let verifiedVideoRows = 0;
+      let verifiedTranscriptRows = 0;
+      for (const id of processedVideoIds) {
+        if (this.videoRepository.exists(id)) {
+          verifiedVideoRows += 1;
+        }
+        if (this.transcriptRepository.exists(id)) {
+          verifiedTranscriptRows += 1;
+        }
+      }
+
       const result: ExtractResult = {
         playlistId,
         total,
@@ -636,6 +676,8 @@ export class VideoExtractor {
         failed,
         jobId,
         success: failed === 0,
+        verifiedVideoRows,
+        verifiedTranscriptRows,
       };
 
       // Defence-in-depth invariant check. If counters drift we want to
@@ -645,6 +687,19 @@ export class VideoExtractor {
         logger.error(
           { processed, skipped, failed, total, playlistId },
           'Counter invariant violation: processed+skipped+failed !== total'
+        );
+      }
+
+      // Anti counter-lie check. `processed` is optimistic (incremented
+      // when processVideo returned); `verifiedVideoRows` is DB truth. They
+      // must match — a divergence means a video repo write claimed success
+      // but never landed (the 2026-05-29 shape). Log loudly. A transcript
+      // count below `processed` is NORMAL (captionless videos) — NOT an
+      // error, so no check for that.
+      if (verifiedVideoRows !== processed) {
+        logger.error(
+          { processed, verifiedVideoRows, verifiedTranscriptRows, total, playlistId },
+          'Verified-row mismatch: processed !== verifiedVideoRows (a claimed video write did not persist)'
         );
       }
 
