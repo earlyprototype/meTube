@@ -5,8 +5,8 @@ door; this is what sets the floor every time a Claude (or other AI)
 session opens the project.
 
 If you're a future session reading this, start here, then read
-`_kanban.md` to see what's in flight, then `docs/HANDOVER-2026-05-20-planning.md`
-for the active cycle's context.
+`_kanban.md` to see what's in flight, then `docs/HANDOVER-2026-05-28-phase2-port.md`
+for the most recent cycle handover.
 
 ---
 
@@ -31,6 +31,10 @@ optimism. The `Current status` section names what's untested.
 
 Decision locked 2026-05-20. The previous TS backend is dead. Python
 is source of truth, gets fixed, then ported to `src-ts-v2/`.
+
+**Status (2026-06-09):** Phase 1 ✅ and Phase 2 ✅ are complete —
+`src-ts-v2/` is live for every command. Phase 3 is the active phase;
+open items live on the kanban board, not in this file.
 
 - **Phase 1 — Fix Python.** Five named issues in `legacy/python/src/`
   (P1 transcript_extractor.py bare-except; P3+P4 whisper_extractor.py
@@ -211,7 +215,7 @@ that produced current dead TS impossible to reproduce in v2.
 npm run build       # tsc compile
 npm test            # Vitest run
 npm run dev         # tsx src-ts/cli.tsx (live)
-npm run lint        # ESLint over src-ts/**/*.{ts,tsx}
+npm run lint        # BROKEN at baseline: script globs src-ts-v2 but eslint.config.js has no matching files block (card on board)
 npm run format      # Prettier write over src-ts/**/*.{ts,tsx}
 ```
 
@@ -227,6 +231,8 @@ entry resolves to under `legacy/python/`).
 - `_archivedkanban.md` — pre-v2 kanban (historical reference)
 - `docs/HANDOVER-2026-05-20-planning.md` — most recent planning-session handover (3-phase decision)
 - `docs/HANDOVER-2026-05-20.md` — audit-session handover (predecessor)
+- `docs/HANDOVER-2026-05-28-phase2-port.md` — Phase 2 port handover (most recent)
+- `docs/PHASE3-AMENDMENTS.md` — post-port audit findings (A-series); live statuses are on the kanban
 - `docs/REWRITE_AUDIT.md` — operational diagnostic (14 agents, 6 phases)
 - `docs/adr/0001-rewrite-vs-patch.md` — decision record
 - `docs/PORT_PLAN.md` — executable port plan (Phase 2 spec)
@@ -243,7 +249,7 @@ entry resolves to under `legacy/python/`).
 - Don't edit production code as orchestrator — spawn an Opus agent.
 - Don't downgrade agent model to sonnet/haiku — opus only.
 - Don't add a kill-criterion or exit ramp anywhere.
-- Don't push to origin without re-asking (18 unpushed commits are deliberate).
+- Don't push to origin without re-asking.
 - If you find drift between this file and the actual codebase, update this file — that's what it's for.
 
 <!-- kanbanger:start -->
