@@ -27,9 +27,10 @@ interface PlaylistCommandsProps {
   args: string[];
   flags: Record<string, any>;
   onComplete?: () => void;
+  onNavigate?: (next: React.ReactElement | null) => void;
 }
 
-export function PlaylistCommands({ subcommand, args, flags, onComplete }: PlaylistCommandsProps) {
+export function PlaylistCommands({ subcommand, args, flags, onComplete, onNavigate }: PlaylistCommandsProps) {
   if (!subcommand) {
     return (
       <ErrorDisplay
@@ -50,7 +51,7 @@ export function PlaylistCommands({ subcommand, args, flags, onComplete }: Playli
   if (subcommand === 'list') {
     return <PlaylistList onComplete={onComplete} />;
   } else if (subcommand === 'discover') {
-    return <PlaylistDiscover onComplete={onComplete} />;
+    return <PlaylistDiscover onComplete={onComplete} onNavigate={onNavigate} />;
   } else if (subcommand === 'add') {
     return <PlaylistAdd playlistId={args[0]} onComplete={onComplete} />;
   } else if (subcommand === 'add-mine') {

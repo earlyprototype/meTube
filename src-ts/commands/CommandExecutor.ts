@@ -56,6 +56,7 @@ export function executeCommandLogic({
       args,
       flags,
       onComplete,
+      onNavigate,
     });
   }
 
