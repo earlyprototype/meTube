@@ -18,6 +18,7 @@ import {
   type CachedPlaylist,
 } from '../../src-ts-v2/utils/cache.js';
 import type { Playlist } from '../../src-ts-v2/database/PlaylistRepository.js';
+import type { YouTubePlaylist } from '../../src-ts-v2/api/types.js';
 import { asPlaylistId } from '../../src-ts-v2/types/branded.js';
 import { resolvePlaylistIdentifier } from '../../src-ts-v2/utils/playlistResolver.js';
 
@@ -678,7 +679,7 @@ function PlaylistAddMine({
     'loading'
   );
   const [error, setError] = useState<string | null>(null);
-  const [playlists, setPlaylists] = useState<any[]>([]);
+  const [playlists, setPlaylists] = useState<YouTubePlaylist[]>([]);
   const [existingIds, setExistingIds] = useState<Set<string>>(new Set());
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [addedCount, setAddedCount] = useState<number>(0);
@@ -927,8 +928,8 @@ function PlaylistSync({
     'loading'
   );
   const [error, setError] = useState<string | null>(null);
-  const [newPlaylists, setNewPlaylists] = useState<any[]>([]);
-  const [deletedPlaylists, setDeletedPlaylists] = useState<any[]>([]);
+  const [newPlaylists, setNewPlaylists] = useState<YouTubePlaylist[]>([]);
+  const [deletedPlaylists, setDeletedPlaylists] = useState<Playlist[]>([]);
   const [unchangedCount, setUnchangedCount] = useState<number>(0);
   const [addCount, setAddCount] = useState<number>(0);
   const [removeCount, setRemoveCount] = useState<number>(0);
@@ -1083,7 +1084,7 @@ function PlaylistSync({
             <Text bold color="green">
               New ({newPlaylists.length}):
             </Text>
-            {newPlaylists.slice(0, 5).map((p: any) => (
+            {newPlaylists.slice(0, 5).map((p) => (
               <Text key={p.playlistId} dimColor>
                 + {safeTitle(p.title)}
               </Text>
@@ -1099,7 +1100,7 @@ function PlaylistSync({
             <Text bold color="red">
               Deleted ({deletedPlaylists.length}):
             </Text>
-            {deletedPlaylists.slice(0, 5).map((p: any) => (
+            {deletedPlaylists.slice(0, 5).map((p) => (
               <Text key={p.playlistId} dimColor>
                 - {safeTitle(p.title)}
               </Text>
