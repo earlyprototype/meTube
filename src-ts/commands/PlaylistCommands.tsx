@@ -708,6 +708,9 @@ function PlaylistAddMine({
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [addedCount, setAddedCount] = useState<number>(0);
   const [skippedCount, setSkippedCount] = useState<number>(0);
+  // "Filtered to N {privacy}" feedback when a --privacy filter is applied —
+  // Python prints this on add-mine (cli.py:752). Null when no filter applies.
+  const [filterFeedback, setFilterFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchPlaylists() {
@@ -735,6 +738,9 @@ function PlaylistAddMine({
 
         if (privacyFilter && privacyFilter !== 'all') {
           filtered = allPlaylists.filter((p) => p.privacyStatus?.toLowerCase() === privacyFilter);
+          // Surface the filter result, matching Python's "Filtered to N {privacy}"
+          // line (cli.py:752).
+          setFilterFeedback(`Filtered to ${filtered.length} ${privacyFilter} playlists`);
         }
 
         // Filter out existing if --skip-existing
@@ -868,6 +874,11 @@ function PlaylistAddMine({
             Select Playlists to Track ({playlists.length} available)
           </Text>
         </Box>
+        {filterFeedback && (
+          <Box marginBottom={1}>
+            <Text dimColor>{filterFeedback}</Text>
+          </Box>
+        )}
         <Box marginBottom={1}>
           <Text dimColor>
             {selectedIndices.size} selected | A = select all | N = none | Enter = confirm | Esc =
