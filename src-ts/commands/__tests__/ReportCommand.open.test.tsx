@@ -24,6 +24,12 @@ vi.mock('open', () => ({
   default: (...args: unknown[]) => openSpy(...args),
 }));
 
+// Pin the config-derived paths so the suite never touches the real
+// config/config.yaml on disk (a broken file would fail this unrelated suite).
+vi.mock('../../utils/appConfig.js', () => ({
+  loadAppPaths: () => ({ dbPath: 'data/metube.db', reportsDir: 'reports' }),
+}));
+
 vi.mock('../../../src-ts-v2/database/connection.js', () => ({
   DatabaseManager: class {
     constructor(_path: string) {}

@@ -23,6 +23,16 @@ describe('getRemediation', () => {
     expect(steps?.some((s) => s.includes('client_secret.json'))).toBe(true);
   });
 
+  it('maps INVALID_TOKEN to re-authentication guidance for a corrupt tokens.json', () => {
+    const steps = getRemediation('INVALID_TOKEN');
+
+    expect(steps).toBeDefined();
+    const joined = steps?.join('\n') ?? '';
+    expect(joined).toContain('corrupted');
+    expect(joined).toContain('metube init --force');
+    expect(joined).toContain('tokens.json');
+  });
+
   it('maps CONFIG_ERROR to config.yaml guidance, folding in the cause when given', () => {
     const steps = getRemediation('CONFIG_ERROR', {
       configPath: 'config/config.yaml',

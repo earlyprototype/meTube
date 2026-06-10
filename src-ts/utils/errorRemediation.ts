@@ -58,6 +58,15 @@ const REMEDIATION_MAP: Readonly<Record<string, RemediationEntry>> = {
   // Missing OAuth client secret — the marquee Python remediation case.
   MISSING_CREDS: () => MISSING_CREDS_STEPS,
 
+  // Corrupt/unreadable tokens.json — v2's authenticate() throws INVALID_TOKEN
+  // when the saved tokens can't be hydrated (auth/YouTubeAuth.ts). Point the
+  // user at re-auth rather than leaving a bare code token.
+  INVALID_TOKEN: () => [
+    'Your saved tokens file is corrupted or unreadable',
+    'Run `metube init --force` to re-authenticate',
+    'Or delete tokens.json and run `metube init` again',
+  ],
+
   // Present-but-broken config.yaml. The loader throws ConfigError with the
   // path in context and the cause folded into the message; surface both.
   CONFIG_ERROR: (context) => {

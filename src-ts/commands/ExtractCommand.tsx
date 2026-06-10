@@ -839,6 +839,11 @@ export function mapEventToProgress(
         total: event.total,
         currentVideo: event.title,
         skippedCount: prev.skippedCount + 1,
+        // Clear the per-video accumulators so a skipped video's stale step
+        // lines / Whisper bar don't linger until the next fetch_meta resets
+        // them (symmetric with fetch_meta).
+        stepLines: [],
+        whisperProgress: undefined,
       }));
       return;
     case 'video_failed':
@@ -848,6 +853,11 @@ export function mapEventToProgress(
         total: event.total,
         currentVideo: event.title,
         failureCount: prev.failureCount + 1,
+        // Clear the per-video accumulators so a failed video's stale step
+        // lines / Whisper bar don't linger until the next fetch_meta resets
+        // them (symmetric with fetch_meta).
+        stepLines: [],
+        whisperProgress: undefined,
       }));
       return;
     case 'job_completed':

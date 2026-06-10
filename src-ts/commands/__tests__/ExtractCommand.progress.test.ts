@@ -241,6 +241,65 @@ describe('mapEventToProgress — preserved counters', () => {
     expect(state.status).toBe('completed');
   });
 
+  it('clears the per-video accumulators on video_failed (no stale lines / whisper bar)', () => {
+    const state = reduce([
+      { kind: 'fetch_meta', videoId: VID, index: 1, total: 1, title: 'Doomed Vid' },
+      {
+        kind: 'meta_result',
+        videoId: VID,
+        index: 1,
+        total: 1,
+        title: 'Doomed Vid',
+        channel: 'Fireship',
+        durationSeconds: 754,
+      },
+      {
+        kind: 'whisper_progress',
+        videoId: VID,
+        index: 1,
+        total: 1,
+        title: 'Doomed Vid',
+        percent: 60,
+        stage: 'transcribing',
+      },
+      // Mid-run failure — its accumulators must not linger to the next video.
+      { kind: 'video_failed', videoId: VID, index: 1, total: 1, title: 'Doomed Vid', error: 'boom' },
+    ]);
+
+    expect(state.failureCount).toBe(1);
+    expect(state.stepLines).toEqual([]);
+    expect(state.whisperProgress).toBeUndefined();
+  });
+
+  it('clears the per-video accumulators on video_skipped (no stale lines / whisper bar)', () => {
+    const state = reduce([
+      { kind: 'fetch_meta', videoId: VID, index: 1, total: 1, title: 'Skip Vid' },
+      {
+        kind: 'meta_result',
+        videoId: VID,
+        index: 1,
+        total: 1,
+        title: 'Skip Vid',
+        channel: 'A',
+        durationSeconds: 60,
+      },
+      {
+        kind: 'whisper_progress',
+        videoId: VID,
+        index: 1,
+        total: 1,
+        title: 'Skip Vid',
+        percent: 30,
+        stage: 'transcribing',
+      },
+      { kind: 'video_skipped', videoId: VID, index: 1, total: 1, title: 'Skip Vid', reason: 'exists' },
+    ]);
+
+    expect(state.skippedCount).toBe(1);
+    expect(state.stepLines).toEqual([]);
+    expect(state.whisperProgress).toBeUndefined();
+  });
+
   it('increments video_done / video_skipped / video_failed counters with titles', () => {
     const playlistId = asPlaylistId('PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx');
     const state = reduce([
