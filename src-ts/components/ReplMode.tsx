@@ -7,6 +7,7 @@ import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
 import { PlaylistRepository } from '../../src-ts-v2/database/PlaylistRepository.js';
 import { VideoRepository } from '../../src-ts-v2/database/VideoRepository.js';
 import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
+import { loadAppPaths } from '../utils/appConfig.js';
 
 interface ReplModeProps {
   onCommand: (
@@ -105,7 +106,7 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
         // Get counts from database — v2 repos use findAll(), not getAll().
         // v2 PlaylistRepository.findAll defaults to enabledOnly: true; the
         // Sidebar wants all tracked playlists so we opt out.
-        const db = new DatabaseManager('data/metube.db');
+        const db = new DatabaseManager(loadAppPaths().dbPath);
         const playlistRepo = new PlaylistRepository(db);
         const videoRepo = new VideoRepository(db);
 
@@ -150,7 +151,7 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
         isAuthenticated = false;
       }
 
-      const db = new DatabaseManager('data/metube.db');
+      const db = new DatabaseManager(loadAppPaths().dbPath);
       const playlistRepo = new PlaylistRepository(db);
       const videoRepo = new VideoRepository(db);
 

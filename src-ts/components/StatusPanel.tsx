@@ -4,6 +4,7 @@ import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
 import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
 import { WhisperExtractor } from '../../src-ts-v2/extractors/WhisperExtractor.js';
 import { symbols, inkColors, status } from '../utils/colors.js';
+import { loadAppPaths } from '../utils/appConfig.js';
 
 interface StatusPanelProps {
   showDetails?: boolean;
@@ -19,9 +20,10 @@ export function StatusPanel({ showDetails = true }: StatusPanelProps) {
   useEffect(() => {
     // Check database — v2 DatabaseManager opens + bootstraps the schema
     // in the constructor. Constructing without throwing means we have a
-    // working connection.
+    // working connection. DB path from config (task 8); a broken config
+    // throws ConfigError here, honestly reported as a DB error.
     try {
-      const db = new DatabaseManager('data/metube.db');
+      const db = new DatabaseManager(loadAppPaths().dbPath);
       setDbStatus('connected');
       db.close();
     } catch {

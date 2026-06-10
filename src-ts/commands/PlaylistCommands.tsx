@@ -11,6 +11,8 @@ import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { ExtractCommand } from './ExtractCommand.js';
 import { inkColors, symbols } from '../utils/colors.js';
 import { safeTitle } from '../utils/terminal.js';
+import { loadAppPaths } from '../utils/appConfig.js';
+import { buildErrorInfo, type ErrorInfo } from '../utils/errorInfo.js';
 import {
   saveVideoCache,
   savePlaylistCache,
@@ -78,28 +80,41 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
   const { exit } = useApp();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [errorInfo, setErrorInfo] = useState<ErrorInfo | null>(null);
 
   useEffect(() => {
-    const db = new DatabaseManager('data/metube.db');
-    const repo = new PlaylistRepository(db);
-    // v2 findAll defaults to enabledOnly: true; the listing UI wants all
-    // tracked playlists regardless of enabled status.
-    const all = repo.findAll({ enabledOnly: false });
-    setPlaylists(all);
-    setLoading(false);
-    db.close();
+    let db: DatabaseManager | undefined;
+    try {
+      // DB path from config (task 8); a broken config throws ConfigError,
+      // surfaced via the error state below rather than crashing the effect.
+      const { dbPath } = loadAppPaths();
+      db = new DatabaseManager(dbPath);
+      const repo = new PlaylistRepository(db);
+      // v2 findAll defaults to enabledOnly: true; the listing UI wants all
+      // tracked playlists regardless of enabled status.
+      const all = repo.findAll({ enabledOnly: false });
+      setPlaylists(all);
+      setLoading(false);
 
-    // Save to cache for numbered access — v2 domain shape uses camelCase
-    // (`playlistId`, `videoCount`); the cache schema kept snake_case so
-    // we translate at the boundary.
-    if (all.length > 0) {
-      const cached: CachedPlaylist[] = all.map((p, i) => ({
-        num: i + 1,
-        id: p.playlistId,
-        title: p.title,
-        video_count: p.videoCount,
-      }));
-      savePlaylistCache(cached);
+      // Save to cache for numbered access — v2 domain shape uses camelCase
+      // (`playlistId`, `videoCount`); the cache schema kept snake_case so
+      // we translate at the boundary.
+      if (all.length > 0) {
+        const cached: CachedPlaylist[] = all.map((p, i) => ({
+          num: i + 1,
+          id: p.playlistId,
+          title: p.title,
+          video_count: p.videoCount,
+        }));
+        savePlaylistCache(cached);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setErrorInfo(buildErrorInfo(err));
+      setLoading(false);
+    } finally {
+      db?.close();
     }
 
     // In REPL mode, call onComplete; in direct mode, exit after 2 seconds
@@ -109,6 +124,16 @@ function PlaylistList({ onComplete }: { onComplete?: () => void }) {
       setTimeout(() => exit(), 2000);
     }
   }, [exit, onComplete]);
+
+  if (error) {
+    return (
+      <ErrorDisplay
+        message={error}
+        code={errorInfo?.code}
+        remediationContext={errorInfo?.remediationContext}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -195,7 +220,7 @@ export function PlaylistDiscover({
     setStatus('adding');
 
     try {
-      const db = new DatabaseManager('data/metube.db');
+      const db = new DatabaseManager(loadAppPaths().dbPath);
       const repo = new PlaylistRepository(db);
 
       // v2 PlaylistRepository uses camelCase domain shape and branded
@@ -399,7 +424,7 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
         const brandedId = asPlaylistId(playlistId);
 
         // Initialize services
-        const db = new DatabaseManager('data/metube.db');
+        const db = new DatabaseManager(loadAppPaths().dbPath);
         const repo = new PlaylistRepository(db);
 
         // Check if already exists — v2 uses findById, returns null on miss.
@@ -522,7 +547,7 @@ function PlaylistRemove({
 
         // v2 resolver takes a context object; injecting db enables the
         // database-fallback step. Note: each command owns its DB handle.
-        const dbForResolve = new DatabaseManager('data/metube.db');
+        const dbForResolve = new DatabaseManager(loadAppPaths().dbPath);
         const resolved = await resolvePlaylistIdentifier(playlistId, {
           db: dbForResolve,
         });
@@ -586,7 +611,7 @@ function PlaylistRemove({
 
   async function performRemoval() {
     try {
-      const db = new DatabaseManager('data/metube.db');
+      const db = new DatabaseManager(loadAppPaths().dbPath);
       const playlistRepo = new PlaylistRepository(db);
 
       // Delete playlist (videos remain - user can manually delete if
@@ -720,7 +745,7 @@ function PlaylistAddMine({
         const auth = new YouTubeAuth();
         const oauthClient = await auth.authenticate();
         const client = new YouTubeClient(oauthClient);
-        const db = new DatabaseManager('data/metube.db');
+        const db = new DatabaseManager(loadAppPaths().dbPath);
         const repo = new PlaylistRepository(db);
 
         // Get existing playlists — v2 findAll + camelCase playlistId.
@@ -808,7 +833,7 @@ function PlaylistAddMine({
 
   async function performBulkAdd() {
     try {
-      const db = new DatabaseManager('data/metube.db');
+      const db = new DatabaseManager(loadAppPaths().dbPath);
       const repo = new PlaylistRepository(db);
 
       let added = 0;
@@ -976,7 +1001,7 @@ function PlaylistSync({
         const auth = new YouTubeAuth();
         const oauthClient = await auth.authenticate();
         const client = new YouTubeClient(oauthClient);
-        const db = new DatabaseManager('data/metube.db');
+        const db = new DatabaseManager(loadAppPaths().dbPath);
         const repo = new PlaylistRepository(db);
 
         // Get tracked playlists — v2 findAll + camelCase playlistId.
@@ -1029,7 +1054,7 @@ function PlaylistSync({
 
   async function performSync() {
     try {
-      const db = new DatabaseManager('data/metube.db');
+      const db = new DatabaseManager(loadAppPaths().dbPath);
       const repo = new PlaylistRepository(db);
 
       let added = 0;
@@ -1235,7 +1260,7 @@ export function PlaylistVideos({
         }
 
         // Initialize services
-        const db = new DatabaseManager('data/metube.db');
+        const db = new DatabaseManager(loadAppPaths().dbPath);
         const playlistRepo = new PlaylistRepository(db);
         const videoRepo = new VideoRepository(db);
 

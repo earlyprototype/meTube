@@ -11,6 +11,7 @@ import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { symbols, inkColors } from '../utils/colors.js';
 import { resolvePlaylistIdentifier } from '../../src-ts-v2/utils/playlistResolver.js';
 import { buildErrorInfo, type ErrorInfo } from '../utils/errorInfo.js';
+import { loadAppPaths } from '../utils/appConfig.js';
 import logger from '../../src-ts-v2/utils/logger.js';
 
 /**
@@ -90,17 +91,19 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
 
         setReportType(type);
 
+        // DB path + reports dir from config (task 8); a broken config throws
+        // ConfigError, caught below and rendered with remediation.
+        const { dbPath, reportsDir } = loadAppPaths();
+
         // Initialize services up-front so the resolver can use the DB.
-        db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager(dbPath);
 
         // v2 generator takes only templatesDir in config; output goes
-        // through the second method argument. autoOpen is not part of
-        // the v2 surface — the --no-open flag now only suppresses the
-        // "Opening in browser..." copy in the done view.
+        // through the second method argument.
         const generator = new HTMLReportGenerator(db, {});
 
         // Generate report — v2 generator takes branded IDs and outputDir.
-        const outputDir = 'reports';
+        const outputDir = reportsDir;
         let path: string;
         if (type === 'video') {
           path = await generator.generateVideoReport(asVideoId(id), outputDir);
@@ -167,8 +170,11 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
       try {
         setReportType('all');
 
+        // DB path + reports dir from config (task 8).
+        const { dbPath, reportsDir } = loadAppPaths();
+
         // Get all videos from database — v2 method is findAll.
-        db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager(dbPath);
         const videoRepo = new VideoRepository(db);
         const allVideos = videoRepo.findAll();
 
@@ -185,7 +191,7 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
 
         // Generate report for each video — v2 VideoRecord.video_id is
         // branded already. outputDir is the second positional arg.
-        const outputDir = 'reports';
+        const outputDir = reportsDir;
         let successCount = 0;
         let failCount = 0;
 

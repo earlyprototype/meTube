@@ -22,6 +22,7 @@ import { ProgressDisplay } from '../components/ProgressDisplay.js';
 import { ReportCommand } from './ReportCommand.js';
 import { symbols, inkColors } from '../utils/colors.js';
 import { buildErrorInfo, type ErrorInfo } from '../utils/errorInfo.js';
+import { loadAppPaths } from '../utils/appConfig.js';
 import {
   formatMetaLine,
   formatTranscriptLine,
@@ -132,11 +133,13 @@ function VideoAdd({
         // Brand the ID at the boundary — v2 APIs require VideoId.
         const brandedId = asVideoId(extractedId);
 
-        // Initialize services
+        // Initialize services. DB path from config (task 8); a broken config
+        // throws ConfigError, caught below and rendered with remediation.
+        const { dbPath } = loadAppPaths();
         const auth = new YouTubeAuth();
         const oauthClient = await auth.authenticate();
         const client = new YouTubeClient(oauthClient);
-        db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager(dbPath);
 
         setStatus('extracting');
         setProgressStatus('downloading');

@@ -26,6 +26,7 @@ import { ProgressDisplay } from '../components/ProgressDisplay.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { PostExtractionMenu } from '../components/PostExtractionMenu.js';
 import { buildErrorInfo, type ErrorInfo } from '../utils/errorInfo.js';
+import { loadAppPaths } from '../utils/appConfig.js';
 import {
   formatMetaLine,
   formatTranscriptLine,
@@ -139,8 +140,10 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         }
 
         // Initialize services up-front; v2 resolver needs a DB handle for
-        // the database-fallback step.
-        db = new DatabaseManager('data/metube.db');
+        // the database-fallback step. DB path comes from config (task 8); a
+        // broken config throws ConfigError, caught below.
+        const { dbPath } = loadAppPaths();
+        db = new DatabaseManager(dbPath);
 
         // Resolve playlist identifier (number, title, URL, or ID) — v2
         // resolver returns branded PlaylistId.
@@ -253,8 +256,9 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
       let db: DatabaseManager | undefined;
       try {
         // Get all enabled playlists — v2 findAll default is enabledOnly:
-        // true, which is what we want here.
-        db = new DatabaseManager('data/metube.db');
+        // true, which is what we want here. DB path from config (task 8).
+        const { dbPath } = loadAppPaths();
+        db = new DatabaseManager(dbPath);
         const playlistRepo = new PlaylistRepository(db);
         const enabledPlaylists = playlistRepo.findAll({ enabledOnly: true });
 
