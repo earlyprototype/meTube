@@ -469,7 +469,11 @@ describe('VideoExtractor.extractPlaylist — Whisper fallback', () => {
     expect(result.processed).toBe(1);
     expect(result.failed).toBe(0);
     expect(transcriptExtractor.extract).toHaveBeenCalledWith(videoId);
-    expect(whisperExtractor.extract).toHaveBeenCalledWith(videoId);
+    // Superseded expectation: the Whisper extractor is now called WITH the
+    // additive per-call onProgress seam (parity-close Task 1c) so the live
+    // percentage surfaces as whisper_progress events. The first arg is still
+    // the videoId; the second is the progress callback VideoExtractor supplies.
+    expect(whisperExtractor.extract).toHaveBeenCalledWith(videoId, expect.any(Function));
     // Whisper-supplied transcript text reached Gemini
     expect(geminiParser.parseTranscript).toHaveBeenCalledWith({
       transcript: 'Whisper-transcribed text.',
@@ -1492,6 +1496,213 @@ describe('VideoExtractor.extractPlaylist — onProgress events', () => {
 });
 
 // --------------------------------------------------------------------------
+// FULL Python-style per-step result events (parity-close cycle)
+//
+// Pins the ADDITIVE enrichment: per-video events carry `title`, and new
+// per-step RESULT events (meta_result, transcript_result, entities_result)
+// plus the whisper_progress percentage event are emitted so the UI can
+// reproduce the lines Python printed per video.
+// --------------------------------------------------------------------------
+
+describe('VideoExtractor.extractPlaylist — enriched progress events', () => {
+  let dbm: DatabaseManager;
+
+  beforeEach(() => {
+    dbm = new DatabaseManager(':memory:');
+  });
+
+  afterEach(() => {
+    dbm.close();
+  });
+
+  function runWith(opts: {
+    title?: string;
+    transcript?: TranscriptResult | null;
+    whisper?: TranscriptResult | null;
+    enableWhisper?: boolean;
+    autoLlmParse?: boolean;
+  }): Promise<ExtractProgressEvent[]> {
+    const playlistId = makePlaylistId('evtenrich1');
+    const videoId = makeVideoId('evtvideo001');
+    const title = opts.title ?? 'Enriched Event Video';
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'Evt playlist', description: '', videoCount: 1 },
+      playlistVideos: [makeItem('evtvideo001', 0, title)],
+      videoDetails: new Map([[videoId, makeDetails(videoId, title)]]),
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(
+      new Map([[videoId, opts.transcript === undefined ? makeCaptionsTranscript() : opts.transcript]])
+    );
+    const whisperExtractor = makeMockWhisperExtractor(
+      new Map([[videoId, opts.whisper ?? null]]),
+      opts.enableWhisper ?? false
+    );
+    const geminiParser = makeMockGeminiParser();
+    const descriptionParser = makeMockDescriptionParser();
+
+    const events: ExtractProgressEvent[] = [];
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      {
+        autoLlmParse: opts.autoLlmParse ?? true,
+        enableWhisper: opts.enableWhisper ?? false,
+      },
+      { transcriptExtractor, whisperExtractor, geminiParser, descriptionParser }
+    );
+    return extractor
+      .extractPlaylist(playlistId, { onProgress: (e) => events.push(e) })
+      .then(() => events);
+  }
+
+  it('threads the video title onto per-video stage events', async () => {
+    const events = await runWith({ title: 'TITLE_SENTINEL_XYZ' });
+
+    const fetchMeta = events.find((e) => e.kind === 'fetch_meta');
+    expect(fetchMeta).toBeDefined();
+    // `title` is additive on the per-video events.
+    expect((fetchMeta as { title?: string }).title).toBe('TITLE_SENTINEL_XYZ');
+
+    const videoDone = events.find((e) => e.kind === 'video_done');
+    expect((videoDone as { title?: string }).title).toBe('TITLE_SENTINEL_XYZ');
+  });
+
+  it('emits a meta_result event with title, channel, and durationSeconds', async () => {
+    const events = await runWith({ title: 'Meta Video' });
+
+    const meta = events.find((e) => e.kind === 'meta_result');
+    expect(meta).toBeDefined();
+    expect(meta).toMatchObject({
+      kind: 'meta_result',
+      title: 'Meta Video',
+      channel: 'Sample Channel',
+      durationSeconds: 210,
+      index: 1,
+      total: 1,
+    });
+  });
+
+  it('emits a transcript_result event with source=youtube and charCount', async () => {
+    const events = await runWith({});
+
+    const tr = events.find((e) => e.kind === 'transcript_result');
+    expect(tr).toMatchObject({
+      kind: 'transcript_result',
+      source: 'youtube',
+      charCount: 'This is a sample transcript.'.length,
+    });
+  });
+
+  it('emits transcript_result source=whisper when the Whisper fallback supplies the transcript', async () => {
+    const events = await runWith({
+      transcript: null,
+      whisper: makeWhisperTranscript(),
+      enableWhisper: true,
+    });
+
+    const tr = events.find((e) => e.kind === 'transcript_result');
+    expect(tr).toMatchObject({
+      kind: 'transcript_result',
+      source: 'whisper',
+      charCount: 'Whisper-transcribed text.'.length,
+    });
+  });
+
+  it('emits transcript_result source=none with charCount 0 when no transcript is available', async () => {
+    const events = await runWith({ transcript: null, enableWhisper: false });
+
+    const tr = events.find((e) => e.kind === 'transcript_result');
+    expect(tr).toMatchObject({
+      kind: 'transcript_result',
+      source: 'none',
+      charCount: 0,
+    });
+  });
+
+  it('emits an entities_result event with githubRepos/websites/topics/people counts', async () => {
+    const events = await runWith({});
+
+    const ent = events.find((e) => e.kind === 'entities_result');
+    expect(ent).toBeDefined();
+    // Gemini mock returns 2 topics, 1 repo, 1 website, 1 person; description
+    // mock contributes 1 repo + 1 website. The event reports the combined
+    // entity counts the UI shows.
+    const counts = ent as {
+      githubRepos: number;
+      websites: number;
+      topics: number;
+      people: number;
+    };
+    expect(counts.githubRepos).toBeGreaterThanOrEqual(1);
+    expect(counts.websites).toBeGreaterThanOrEqual(1);
+    expect(counts.topics).toBeGreaterThanOrEqual(2);
+    expect(counts.people).toBeGreaterThanOrEqual(1);
+  });
+
+  it('surfaces Whisper progress as whisper_progress events carrying videoId + percent', async () => {
+    // Arrange — a Whisper extractor that drives its injected onProgress
+    // callback with real percentages, exactly as the production
+    // WhisperExtractor does via yt-dlp stdout parsing.
+    const playlistId = makePlaylistId('whprog0001');
+    const videoId = makeVideoId('whprogv0001');
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'WhProg', description: '', videoCount: 1 },
+      playlistVideos: [makeItem('whprogv0001', 0, 'Whisper Progress Video')],
+      videoDetails: new Map([[videoId, makeDetails(videoId, 'Whisper Progress Video')]]),
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(new Map([[videoId, null]]));
+
+    // The whisper mock fires its onProgress (2nd arg) before resolving.
+    const whisperExtractor: WhisperExtractorLike = {
+      isAvailable: vi.fn(() => true),
+      extract: vi.fn(
+        async (
+          _videoId: VideoId,
+          onProgress?: (p: { stage: string; percentage?: number }) => void
+        ) => {
+          onProgress?.({ stage: 'downloading', percentage: 25 });
+          onProgress?.({ stage: 'downloading', percentage: 80 });
+          onProgress?.({ stage: 'transcribing', percentage: 100 });
+          return makeWhisperTranscript();
+        }
+      ),
+    };
+    const descriptionParser = makeMockDescriptionParser();
+
+    const events: ExtractProgressEvent[] = [];
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoLlmParse: false, enableWhisper: true },
+      { transcriptExtractor, whisperExtractor, descriptionParser }
+    );
+
+    // Act
+    await extractor.extractPlaylist(playlistId, { onProgress: (e) => events.push(e) });
+
+    // Assert — at least the three percentages surfaced as whisper_progress
+    // events, each carrying the videoId and a numeric percent.
+    const progressEvents = events.filter((e) => e.kind === 'whisper_progress') as Array<{
+      videoId: VideoId;
+      percent: number;
+    }>;
+    expect(progressEvents.length).toBeGreaterThanOrEqual(3);
+    expect(progressEvents.map((e) => e.percent)).toEqual(
+      expect.arrayContaining([25, 80, 100])
+    );
+    for (const e of progressEvents) {
+      expect(e.videoId).toBe(videoId);
+    }
+  });
+
+  it('does not break the existing event stream (job_started first, job_completed last)', async () => {
+    const events = await runWith({});
+    expect(events[0].kind).toBe('job_started');
+    expect(events[events.length - 1].kind).toBe('job_completed');
+  });
+});
+
+// --------------------------------------------------------------------------
 // Config validation
 // --------------------------------------------------------------------------
 
@@ -1687,7 +1898,9 @@ describe('VideoExtractor.processVideo — transcript persistence (A14 / A18)', (
     expect(result.processed).toBe(1);
     expect(result.failed).toBe(0);
     expect(transcriptExtractor.extract).toHaveBeenCalledWith(videoId);
-    expect(whisperExtractor.extract).toHaveBeenCalledWith(videoId);
+    // Superseded expectation: Whisper now receives the additive onProgress
+    // callback (parity-close Task 1c) as its second arg.
+    expect(whisperExtractor.extract).toHaveBeenCalledWith(videoId, expect.any(Function));
     expect(upsertSpy).toHaveBeenCalledTimes(1);
     expect(upsertSpy).toHaveBeenCalledWith(videoId, {
       language: whisperTranscript.language,

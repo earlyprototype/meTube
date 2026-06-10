@@ -178,6 +178,71 @@ describe('WhisperExtractor', () => {
   });
 
   // ------------------------------------------------------------------------
+  // Case 1b — per-call onProgress seam (parity-close Task 1c). The whisper
+  // extraction method accepts an OPTIONAL per-call progress callback that
+  // VideoExtractor supplies to surface the live percentage. The callback
+  // must fire across the download + transcribe stages.
+  // ------------------------------------------------------------------------
+  describe('extract — per-call onProgress seam', () => {
+    it('invokes the per-call onProgress callback through the extract pipeline', async () => {
+      // Arrange — both spawns succeed; the python step returns a valid payload.
+      const payload = JSON.stringify({
+        text: 'progress test',
+        segments: [{ start: 0, end: 1, text: 'progress test' }],
+        language: 'en',
+      });
+      mockSpawn.mockImplementation(() => {
+        const proc = makeFakeProc();
+        if (mockSpawn.mock.calls.length === 1) {
+          driveClose(proc, { code: 0 });
+        } else {
+          driveClose(proc, { code: 0, stdout: wrapInMarkers(payload) });
+        }
+        return proc;
+      });
+
+      const extractor = new WhisperExtractor({ cleanup_audio: false });
+      const ticks: Array<{ stage: string; percentage?: number }> = [];
+
+      // Act — pass the per-call callback as the 2nd arg.
+      const result = await extractor.extract('dQw4w9WgXcQ', (p) => ticks.push(p));
+
+      // Assert — transcript still returned, and the callback saw at least the
+      // downloading + transcribing stage transitions.
+      expect(result).not.toBeNull();
+      expect(ticks.length).toBeGreaterThanOrEqual(2);
+      const stages = ticks.map((t) => t.stage);
+      expect(stages).toContain('downloading');
+      expect(stages).toContain('transcribing');
+    });
+
+    it('still works when no per-call callback is supplied (back-compat)', async () => {
+      const payload = JSON.stringify({
+        text: 'no callback',
+        segments: [{ start: 0, end: 1, text: 'no callback' }],
+        language: 'en',
+      });
+      mockSpawn.mockImplementation(() => {
+        const proc = makeFakeProc();
+        if (mockSpawn.mock.calls.length === 1) {
+          driveClose(proc, { code: 0 });
+        } else {
+          driveClose(proc, { code: 0, stdout: wrapInMarkers(payload) });
+        }
+        return proc;
+      });
+
+      const extractor = new WhisperExtractor({ cleanup_audio: false });
+
+      // Act — no second argument.
+      const result = await extractor.extract('dQw4w9WgXcQ');
+
+      // Assert — unchanged behaviour.
+      expect(result?.full_text).toBe('no callback');
+    });
+  });
+
+  // ------------------------------------------------------------------------
   // Case 2 — valid JSON but missing `segments`. Pre-A17 this threw a raw
   // TypeError on `payload.segments.map`; post-A17 the Zod parse rejects it
   // and the catch maps it to a typed WHISPER_PARSE_FAILED.
