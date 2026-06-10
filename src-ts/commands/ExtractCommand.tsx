@@ -659,6 +659,12 @@ export function makeYouTubeClientAdapter(
         commentCount: v.commentCount ?? 0,
         tags: v.tags ?? [],
         categoryId: v.categoryId,
+        // Map definition ('hd'/'sd') through so the DB write persists it.
+        // Wave 1 made toVideo() copy contentDetails.definition onto
+        // YouTubeVideo; without this the adapter dropped it and the column
+        // stored NULL despite the full schema/column/write plumbing existing
+        // (PARITY.md section D, task 7).
+        definition: v.definition,
         caption: v.caption,
         licensedContent: v.licensedContent,
       };
