@@ -16,6 +16,7 @@ import { executeCommandLogic } from './commands/CommandExecutor.js';
 import { ErrorDisplay } from './components/ErrorDisplay.js';
 import { ReplMode } from './components/ReplMode.js';
 import { parseReplInput } from './utils/replInput.js';
+import { normalizeMeowFlags } from './utils/normalizeMeowFlags.js';
 
 const cli = meow(
   `
@@ -105,6 +106,15 @@ const cli = meow(
 
 const [command, subcommand, ...args] = cli.input;
 
+// meow parses `--no-open` / `--no-transcript` / `--no-llm` / `--no-whisper` as
+// boolean NEGATION of phantom `open` / `transcript` / `llm` / `whisper` flags
+// (yielding e.g. `{ open: false }`), NOT as the declared `noOpen` / ... flags
+// the command layer reads. normalizeMeowFlags reconciles them back so
+// `--no-open` works in direct CLI mode. Harmless on the REPL base below, where
+// the negated keys are never present (replInput maps `--no-open` -> noOpen
+// literally). See utils/normalizeMeowFlags.ts.
+const baseFlags = normalizeMeowFlags(cli.flags);
+
 // Handle Ctrl+C gracefully
 process.on('SIGINT', () => {
   console.log('\n\n👋 Goodbye!');
@@ -123,7 +133,7 @@ if (!command) {
     <ReplMode
       onCommand={async (input, setComponent) => {
         // Parse REPL input. Flags typed inside the REPL are parsed here and
-        // merged OVER cli.flags below — cli.flags only ever holds the meow
+        // merged OVER baseFlags below — baseFlags only ever holds the meow
         // startup defaults in REPL mode (the process starts with no args), so
         // without this every typed flag (--reprocess, --max-videos, ...) was
         // silently dropped and the command ran with defaults.
@@ -137,8 +147,8 @@ if (!command) {
           cmd: cmd ?? '',
           sub,
           args: cmdArgs,
-          // Typed flags win; startup defaults remain the base.
-          flags: { ...cli.flags, ...typedFlags },
+          // Typed flags win; normalized startup defaults remain the base.
+          flags: { ...baseFlags, ...typedFlags },
           onComplete: () => {
             // Command completed in REPL - component stays visible
           },
@@ -166,7 +176,7 @@ if (!command) {
       cmd: command,
       sub: subcommand,
       args,
-      flags: cli.flags,
+      flags: baseFlags,
       // No onComplete - direct mode will use useApp().exit()
     });
     render(component);
