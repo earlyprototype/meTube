@@ -10,6 +10,8 @@ A **behavioral** parity sweep: it verifies what actually renders to the user and
 
 The deduped must-fix list, grouped by theme.
 
+> **Cycle status (2026-06-10): IMPLEMENTED** on `fix/parity-close` — backend commits `aebe191` `afd29b7` `1da06f6` `f6b47dd` `83e9da3` `65da2bf`; UI commits `046e9e1` `c666dd8` `2d4c5f6` `1642a15` `adac747` `afa60b0` `f9bb60e` `3d6e4db` `dede05c`. 686/686 tests, clean build, two Opus review passes. Exceptions: upfront flag/choice validation (separately boarded card) and the two ACCEPTED divergences in section D (`is_short`, captions). Faithful-parity notes: an *empty* `config.yaml` now throws (Python crashes on it too); the `--all` progress bar resets per playlist in exchange for full per-video display (matches Python's loop).
+
 ### A. In-run visibility
 
 - **Per-video title + stage line during extraction.** Events carry no `title` field; `ProgressDisplay.tsx:102` gates the line behind `currentVideo`, and `mapEventToProgress` never sets `currentVideo` — so it stays `''` all run and the block never renders. Even if wired, backend events carry only `videoId` + index, never the title Python prints.
