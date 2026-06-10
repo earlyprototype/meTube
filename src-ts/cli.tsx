@@ -1,5 +1,14 @@
 #!/usr/bin/env node
 
+// Load .env into process.env BEFORE anything reads it. This MUST be the first
+// import: buildGeminiAdapter (ExtractCommand.tsx) and the v2 config loader's
+// ${VAR} substitution both read process.env at module-eval / call time, so the
+// .env values have to be present before any of those run. Everything enters
+// through this file (one-shot commands AND REPL mode), so a single load here
+// covers the whole process. Ports legacy/python/src/cli.py:10,20
+// (`from dotenv import load_dotenv` + `load_dotenv()`).
+import 'dotenv/config';
+
 import React from 'react';
 import { render } from 'ink';
 import meow from 'meow';

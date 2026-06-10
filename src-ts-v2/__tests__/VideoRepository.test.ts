@@ -503,6 +503,24 @@ describe('VideoRepository.createOrUpdate — insert path', () => {
     // Assert
     expect(created.description).toBeNull();
   });
+
+  it('lets created_at default to a real timestamp when the caller omits it', () => {
+    // Bug 3 guard. created_at / updated_at are NOT in WRITABLE_VIDEO_COLUMNS,
+    // so the dynamic INSERT omits them entirely — letting the schema DEFAULT
+    // CURRENT_TIMESTAMP apply. An explicit NULL bind would override the DEFAULT
+    // (SQLite semantics) and persist NULL; this pins that the column stays
+    // omitted, not NULL-bound. Read back from disk (not just the return value)
+    // so it asserts the persisted row, not an in-memory reconstruction.
+    const created = repo.createOrUpdate(makeVideoInput('dQw4w9WgXcQ'));
+
+    expect(created.created_at).not.toBeNull();
+    expect(typeof created.created_at).toBe('string');
+    expect((created.created_at ?? '').length).toBeGreaterThan(0);
+
+    const found = repo.findById(asVideoId('dQw4w9WgXcQ'));
+    expect(found?.created_at).not.toBeNull();
+    expect(typeof found?.created_at).toBe('string');
+  });
 });
 
 describe('VideoRepository.createOrUpdate — update path', () => {

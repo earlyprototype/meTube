@@ -134,6 +134,33 @@ describe('init feedback', () => {
     expect(frames.join('\n')).toContain('Gemini API key configured');
   });
 
+  it('shows the warning when config holds an unsubstituted ${VAR} placeholder and env is unset', async () => {
+    // config/config.yaml carries `gemini_api_key: ${GEMINI_API_KEY}`; with the
+    // env var unset the loader leaves that literal in place. It is truthy but
+    // not a real key, so init must NOT claim Gemini is configured.
+    loadConfigSpy.mockReturnValue(config('${GEMINI_API_KEY}'));
+    fetchChannelTitleSpy.mockResolvedValue(null);
+
+    const { frames } = render(<InitCommand onComplete={() => {}} />);
+    await settle();
+
+    const all = frames.join('\n');
+    expect(all).toContain('Gemini API key not set');
+    expect(all).not.toContain('Gemini API key configured');
+  });
+
+  it('treats env GEMINI_API_KEY as configured even when config holds a placeholder', async () => {
+    // A real env key wins over the unsubstituted config placeholder.
+    process.env.GEMINI_API_KEY = 'env-key';
+    loadConfigSpy.mockReturnValue(config('${GEMINI_API_KEY}'));
+    fetchChannelTitleSpy.mockResolvedValue(null);
+
+    const { frames } = render(<InitCommand onComplete={() => {}} />);
+    await settle();
+
+    expect(frames.join('\n')).toContain('Gemini API key configured');
+  });
+
   it('still completes when the channel name cannot be fetched', async () => {
     loadConfigSpy.mockReturnValue(config('a-key'));
     fetchChannelTitleSpy.mockResolvedValue(null);

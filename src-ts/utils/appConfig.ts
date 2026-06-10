@@ -42,3 +42,49 @@ export function loadAppPaths(): AppPaths {
     reportsDir: config.reports.output_dir.replace(/\/+$/, ''),
   };
 }
+
+/**
+ * Matches a string that is still an unsubstituted `${VAR}` placeholder.
+ *
+ * The config loader (`loadConfig` → `substituteEnvVars`) deliberately leaves a
+ * `${VAR}` literal untouched when the env var is unset (Python parity — an
+ * unset key must not crash the parse). `config/config.yaml` carries
+ * `gemini_api_key: ${GEMINI_API_KEY}`, so with the env var unset the loaded
+ * value is the literal string `'${GEMINI_API_KEY}'` — truthy, but NOT a real
+ * key. Callers that treat any truthy value as "configured" would then lie.
+ *
+ * Anchored full-match: only a value that is exactly `${NAME}` (and nothing
+ * else) counts as a placeholder. A real key, or a string that merely contains
+ * `${...}`, is not a placeholder.
+ */
+export function isUnsubstitutedPlaceholder(value: string | null | undefined): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  return /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(value);
+}
+
+/**
+ * Whether a usable Gemini API key is actually configured.
+ *
+ * True when either the config value or `GEMINI_API_KEY` is a non-empty string
+ * that is NOT an unsubstituted `${VAR}` placeholder. This is the predicate
+ * `init` uses for its status line — it must not report "configured" when the
+ * only "value" present is the literal `${GEMINI_API_KEY}` left behind by the
+ * loader when the env var is unset.
+ *
+ * Note: this deliberately diverges from the Python original, which has the
+ * same latent flaw (a present-but-unsubstituted placeholder reads as truthy).
+ * See the PYTHON-BUG precedent in `docs/PARITY.md`.
+ *
+ * @param configValue - `config.api.gemini_api_key` as returned by the loader.
+ * @param envValue - `process.env.GEMINI_API_KEY` (defaults to the live env).
+ */
+export function isGeminiConfigured(
+  configValue: string | null | undefined,
+  envValue: string | undefined = process.env.GEMINI_API_KEY
+): boolean {
+  const fromConfig = Boolean(configValue) && !isUnsubstitutedPlaceholder(configValue);
+  const fromEnv = Boolean(envValue) && !isUnsubstitutedPlaceholder(envValue);
+  return fromConfig || fromEnv;
+}

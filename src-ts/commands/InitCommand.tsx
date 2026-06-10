@@ -7,6 +7,7 @@ import { loadConfig } from '../../src-ts-v2/config/loadConfig.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { StatusPanel } from '../components/StatusPanel.js';
 import { fetchChannelTitle } from '../utils/channelInfo.js';
+import { isGeminiConfigured } from '../utils/appConfig.js';
 import { buildErrorInfo, type ErrorInfo } from '../utils/errorInfo.js';
 import { safeTitle } from '../utils/terminal.js';
 import { symbols } from '../utils/colors.js';
@@ -43,9 +44,13 @@ export function InitCommand({ force = false, onComplete }: InitCommandProps) {
 
         // Whether a Gemini API key is configured — Python checks
         // config['api']['gemini_api_key'] (cli.py:263), which resolves from the
-        // env via ${VAR} substitution. Fall back to the env directly so an
-        // un-templated config still reflects a set key.
-        setGeminiConfigured(Boolean(config.api.gemini_api_key || process.env.GEMINI_API_KEY));
+        // env via ${VAR} substitution, falling back to the env directly so an
+        // un-templated config still reflects a set key. isGeminiConfigured adds
+        // the placeholder guard: when GEMINI_API_KEY is unset, the loader leaves
+        // the literal '${GEMINI_API_KEY}' in config.api.gemini_api_key (truthy
+        // but not a real key), so a naive Boolean() would wrongly report
+        // "configured". We deliberately diverge from the Python bug here.
+        setGeminiConfigured(isGeminiConfigured(config.api.gemini_api_key));
 
         // Step 1: Check database — v2 DatabaseManager opens lazily in the
         // constructor and schema-bootstraps; close() is idempotent.
