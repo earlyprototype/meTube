@@ -85,9 +85,7 @@ vi.mock('../../../src-ts-v2/api/YouTubeClient.js', () => ({
 }));
 
 vi.mock('../../../src-ts-v2/utils/playlistResolver.js', () => ({
-  resolvePlaylistIdentifier: vi
-    .fn()
-    .mockResolvedValue({ id: 'PLtest123', title: 'Test Playlist' }),
+  resolvePlaylistIdentifier: vi.fn().mockResolvedValue({ id: 'PLtest123', title: 'Test Playlist' }),
 }));
 
 // VideoExtractor.extractPlaylist must resolve without doing real work.
@@ -98,6 +96,7 @@ vi.mock('../../../src-ts-v2/extractors/VideoExtractor.js', () => ({
     async extractPlaylist() {
       return {
         processed: 1,
+        distinctProcessed: 1,
         failed: 0,
         skipped: 0,
         total: 1,

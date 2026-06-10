@@ -333,10 +333,48 @@ export interface ExtractResult {
   readonly playlistId: PlaylistId;
   readonly total: number;
   readonly processed: number;
+  /**
+   * DISTINCT videos processed — the number of unique `videoId`s the loop
+   * ran, NOT the occurrence count. A playlist can list the same video at two
+   * positions; with `skipExisting: false` both occurrences run, so
+   * `processed` counts 2 while `distinctProcessed` counts 1 (and only one
+   * `videos` row exists). This is the truthful denominator the verified-row
+   * reconciliation is measured against. Always computable (the Set size); 0
+   * for an empty run.
+   */
+  readonly distinctProcessed: number;
   readonly skipped: number;
   readonly failed: number;
   readonly jobId: ExtractionJobId;
   readonly success: boolean;
+  /**
+   * Post-run DB truth: how many DISTINCT persisted rows exist in `videos`
+   * for the videos this run claimed to process, counted via repository
+   * existence checks AFTER the loop — NOT the optimistic `processed` loop
+   * counter. In a healthy run this equals `distinctProcessed`; a divergence
+   * means a write silently failed (the 2026-05-29 counter-lie shape) and is
+   * logged at error level.
+   *
+   * `undefined` means the verification step itself FAILED (an `exists`
+   * check threw) and was logged — NOT that zero rows landed. Verification
+   * is best-effort: a flaky existence check must not retroactively fail an
+   * otherwise-successful extraction. Downstream UI distinguishes the two:
+   * `undefined` suppresses both the "Saved to DB" line and the mismatch
+   * warning, whereas `0` would (correctly) trigger the warning.
+   */
+  readonly verifiedVideoRows?: number;
+  /**
+   * Post-run DB truth: how many DISTINCT persisted rows exist in
+   * `transcripts` for the processed videos, counted via
+   * `TranscriptRepository.exists` after the loop. A value lower than
+   * `distinctProcessed` is NORMAL (captionless videos legitimately have no
+   * transcript) and is NOT an error — it's the honest count of how many
+   * transcripts really landed.
+   *
+   * `undefined` means the verification step itself FAILED (logged), not a
+   * zero count — see `verifiedVideoRows`.
+   */
+  readonly verifiedTranscriptRows?: number;
 }
 
 // --------------------------------------------------------------------------
@@ -548,6 +586,15 @@ export class VideoExtractor {
     let processed = 0;
     let skipped = 0;
     let failed = 0;
+    // DISTINCT VideoIds whose outcome was `processed`. A `Set` because a
+    // playlist can list the same video at two positions; with
+    // `skipExisting: false` both occurrences run, `processed` counts each
+    // occurrence, but only ONE `videos` row exists. Reconciling against a
+    // list would count that single row once per occurrence and over-report
+    // `verifiedVideoRows`. The Set collapses duplicates so reconciliation
+    // counts DISTINCT persisted rows — the anti counter-lie cross-check
+    // (see ExtractResult.verifiedVideoRows).
+    const processedVideoIds = new Set<VideoId>();
 
     // Step 5: iterate. Each video gets its own try-block — a failure
     // increments `failed`, logs the cause, and the loop continues.
@@ -570,6 +617,7 @@ export class VideoExtractor {
 
           if (outcome === 'processed') {
             processed += 1;
+            processedVideoIds.add(videoId);
             onProgress({ kind: 'video_done', videoId, index, total });
           } else {
             skipped += 1;
@@ -628,14 +676,69 @@ export class VideoExtractor {
         );
       }
 
+      // `processed` counts every occurrence the loop ran; `distinctProcessed`
+      // is the number of UNIQUE videos behind those occurrences (the Set
+      // size). They diverge only when a playlist lists the same video twice
+      // and `skipExisting: false` lets both occurrences run. It's the honest
+      // count of distinct rows the run should have produced, and is what the
+      // verified-row reconciliation below is measured against.
+      const distinctProcessed = processedVideoIds.size;
+
+      // Step 6a: DB-verified reconciliation. Re-derive the truth from the
+      // repositories AFTER the loop rather than trusting the optimistic
+      // `processed` counter. Iterating the Set means each distinct video is
+      // checked once, so `verifiedVideoRows` counts DISTINCT `videos` rows and
+      // `verifiedTranscriptRows` counts DISTINCT `transcripts` rows — a
+      // duplicate playlist entry can't inflate either past its real row count.
+      // This is the anti counter-lie cross-check — the 2026-05-29 symptom was
+      // a `processed` that climbed while the DB stayed empty.
+      //
+      // Best-effort: the verification is a cross-check, not the run itself.
+      // If an `exists` call throws, the extraction already succeeded — the
+      // verification step failing must NOT bubble to the outer catch and
+      // retroactively fail a good run. On failure both counts are left
+      // `undefined` ("verification unavailable" — distinct from "verified
+      // zero"). We deliberately do NOT fall back to 0 (that would trigger
+      // the UI's false "claimed N but only 0 found" warning) nor to the
+      // optimistic counters (that would silently defeat the anti-lie cross
+      // check). `undefined` flows through to the UI, which suppresses both
+      // the "Saved to DB" line and the mismatch warning.
+      let verifiedVideoRows: number | undefined = 0;
+      let verifiedTranscriptRows: number | undefined = 0;
+      try {
+        for (const id of processedVideoIds) {
+          if (this.videoRepository.exists(id)) {
+            verifiedVideoRows += 1;
+          }
+          if (this.transcriptRepository.exists(id)) {
+            verifiedTranscriptRows += 1;
+          }
+        }
+      } catch (verifyError) {
+        verifiedVideoRows = undefined;
+        verifiedTranscriptRows = undefined;
+        logger.error(
+          {
+            playlistId,
+            jobId,
+            processed,
+            err: verifyError instanceof Error ? verifyError.message : String(verifyError),
+          },
+          'DB verification failed; verified row counts unavailable (extraction itself succeeded)'
+        );
+      }
+
       const result: ExtractResult = {
         playlistId,
         total,
         processed,
+        distinctProcessed,
         skipped,
         failed,
         jobId,
         success: failed === 0,
+        verifiedVideoRows,
+        verifiedTranscriptRows,
       };
 
       // Defence-in-depth invariant check. If counters drift we want to
@@ -645,6 +748,35 @@ export class VideoExtractor {
         logger.error(
           { processed, skipped, failed, total, playlistId },
           'Counter invariant violation: processed+skipped+failed !== total'
+        );
+      }
+
+      // Anti counter-lie check. `distinctProcessed` is the number of UNIQUE
+      // videos the loop claimed to process; `verifiedVideoRows` is DB truth
+      // (distinct rows). They must match — a divergence means a video repo
+      // write claimed success but never landed (the 2026-05-29 shape). We
+      // compare against `distinctProcessed`, NOT `processed`: a playlist that
+      // lists the same video twice (with `skipExisting: false`) drives
+      // `processed` to 2 while only one row exists, so comparing against
+      // `processed` would FALSELY alarm on a healthy duplicate run. Log
+      // loudly. A transcript count below `distinctProcessed` is NORMAL
+      // (captionless videos) — NOT an error, so no check for that.
+      //
+      // Only fires when verification actually RAN (count defined). When
+      // verification was unavailable (`undefined`, logged above) there is
+      // no DB truth to compare against — staying silent here avoids a
+      // spurious mismatch on a value we never computed.
+      if (verifiedVideoRows !== undefined && verifiedVideoRows !== distinctProcessed) {
+        logger.error(
+          {
+            processed,
+            distinctProcessed,
+            verifiedVideoRows,
+            verifiedTranscriptRows,
+            total,
+            playlistId,
+          },
+          'Verified-row mismatch: distinctProcessed !== verifiedVideoRows (a claimed video write did not persist)'
         );
       }
 

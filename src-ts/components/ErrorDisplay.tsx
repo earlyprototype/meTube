@@ -34,9 +34,9 @@ export function ErrorDisplay({ message, details, suggestions }: ErrorDisplayProp
           </Box>
         )}
 
-        {details && process.env.DEBUG && (
+        {details && (
           <Box flexDirection="column" marginTop={1}>
-            <Text dimColor>Debug info:</Text>
+            <Text dimColor>Details:</Text>
             <Text dimColor>{details}</Text>
           </Box>
         )}

@@ -980,6 +980,314 @@ describe('VideoExtractor.extractPlaylist — counter discipline', () => {
 });
 
 // --------------------------------------------------------------------------
+// DB-verified counters — the anti counter-lie reconciliation.
+//
+// `processed` is an optimistic loop counter: it increments when
+// `processVideo` RETURNS, trusting that the repository writes inside it
+// landed. The 2026-05-29 symptom proved that trust can be misplaced — a
+// repo that swallows a write but returns normally produces `processed=N`
+// with zero rows on disk. `verifiedVideoRows` / `verifiedTranscriptRows`
+// re-derive the truth post-run via repository existence checks, so the
+// result object can carry DB-confirmed counts alongside the optimistic one.
+//
+// Contract:
+//   1. Happy path: verifiedVideoRows === processed (every claimed video
+//      row really exists), and verifiedTranscriptRows equals the number of
+//      processed videos that actually got a transcript.
+//   2. Anti-lie: a repository that claims success on create/update but
+//      whose `exists` reports false yields the optimistic `processed` but
+//      `verifiedVideoRows === 0`, and the mismatch is logged at error.
+// --------------------------------------------------------------------------
+
+describe('VideoExtractor.extractPlaylist — DB-verified counters', () => {
+  let dbm: DatabaseManager;
+
+  beforeEach(() => {
+    dbm = new DatabaseManager(':memory:');
+  });
+
+  afterEach(() => {
+    dbm.close();
+    vi.restoreAllMocks();
+  });
+
+  it('happy path — verifiedVideoRows equals processed and verifiedTranscriptRows matches injected transcripts', async () => {
+    // Arrange — 3 videos; only 2 have captions (the third returns null so
+    // no transcript row lands). verifiedVideoRows must be 3; verified
+    // TranscriptRows must be 2.
+    const playlistId = makePlaylistId('verify01');
+    const items = [
+      makeItem('vervidaaa01', 0, 'Has caps A'),
+      makeItem('vervidbbb02', 1, 'Has caps B'),
+      makeItem('vervidccc03', 2, 'No caps C'),
+    ];
+    const detailsMap = new Map<VideoId, VideoDetails | null>();
+    const transcriptMap = new Map<VideoId, TranscriptResult | null>();
+    detailsMap.set(items[0].videoId, makeDetails(items[0].videoId, items[0].title));
+    detailsMap.set(items[1].videoId, makeDetails(items[1].videoId, items[1].title));
+    detailsMap.set(items[2].videoId, makeDetails(items[2].videoId, items[2].title));
+    transcriptMap.set(items[0].videoId, makeCaptionsTranscript());
+    transcriptMap.set(items[1].videoId, makeCaptionsTranscript());
+    transcriptMap.set(items[2].videoId, null); // no captions → no transcript row
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'Verify', description: '', videoCount: 3 },
+      playlistVideos: items,
+      videoDetails: detailsMap,
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(transcriptMap);
+    const whisperExtractor = makeMockWhisperExtractor(new Map(), false);
+    const descriptionParser = makeMockDescriptionParser();
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: false },
+      { transcriptExtractor, whisperExtractor, descriptionParser }
+    );
+
+    // Act
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — optimistic and verified counts agree on videos; transcripts
+    // verified independently (2 of 3 processed videos got a transcript).
+    expect(result.processed).toBe(3);
+    expect(result.verifiedVideoRows).toBe(3);
+    expect(result.verifiedVideoRows).toBe(result.processed);
+    expect(result.verifiedTranscriptRows).toBe(2);
+
+    // Cross-check against the DB directly — verifiedTranscriptRows must
+    // mirror reality, not the loop's optimism.
+    const transcriptRepo = new TranscriptRepository(dbm);
+    expect(transcriptRepo.count()).toBe(2);
+  });
+
+  it('duplicate entry — same videoId at two positions with skipExisting:false counts processed=2 but distinctProcessed=1, verifiedVideoRows=1, and logs NO mismatch', async () => {
+    // Arrange — a playlist that lists the SAME video at positions 0 and 1.
+    // With `skipExisting: false` the idempotency pre-check is bypassed, so
+    // BOTH occurrences run the pipeline: `processed` climbs to 2. But the
+    // second `createOrUpdate` overwrites the first — only ONE `videos` row
+    // exists. The Set-based reconciliation must collapse the duplicate:
+    // distinctProcessed=1, verifiedVideoRows=1, verifiedTranscriptRows=1.
+    // Crucially, the verified-row mismatch invariant must STAY SILENT —
+    // comparing verifiedVideoRows against distinctProcessed (1 === 1), NOT
+    // against processed (which would falsely read 1 !== 2 and alarm).
+    const errorSpy = vi.spyOn(logger, 'error');
+
+    const playlistId = makePlaylistId('dupentry1');
+    const dupItem = makeItem('dupvidaaa01', 0, 'Dup A');
+    // Same videoId, different position — a real-world playlist can list a
+    // video twice. `makeItem` derives the id from the stub, so reusing the
+    // stub yields an identical branded VideoId at position 1.
+    const dupItemAgain = makeItem('dupvidaaa01', 1, 'Dup A again');
+    const items = [dupItem, dupItemAgain];
+    expect(dupItem.videoId).toBe(dupItemAgain.videoId); // guard the fixture intent
+
+    const detailsMap = new Map<VideoId, VideoDetails | null>();
+    const transcriptMap = new Map<VideoId, TranscriptResult | null>();
+    detailsMap.set(dupItem.videoId, makeDetails(dupItem.videoId, dupItem.title));
+    transcriptMap.set(dupItem.videoId, makeCaptionsTranscript());
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'Dup', description: '', videoCount: 2 },
+      playlistVideos: items,
+      videoDetails: detailsMap,
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(transcriptMap);
+    const descriptionParser = makeMockDescriptionParser();
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: false, skipExisting: false },
+      { transcriptExtractor, descriptionParser }
+    );
+
+    // Act
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — both occurrences ran (processed=2), but only one distinct
+    // video and one persisted row behind them.
+    expect(result.processed).toBe(2);
+    expect(result.distinctProcessed).toBe(1);
+    expect(result.verifiedVideoRows).toBe(1);
+    expect(result.verifiedTranscriptRows).toBe(1);
+
+    // Cross-check against the DB directly — exactly one row each, no
+    // double-write masquerading as two. VideoRepository has no count(), so
+    // use findAll().length (the upsert keyed on video_id guarantees one row).
+    expect(new VideoRepository(dbm).findAll().length).toBe(1);
+    expect(new TranscriptRepository(dbm).count()).toBe(1);
+
+    // The verified-row mismatch invariant must NOT fire: 1 distinct === 1
+    // verified. A regression that compared against `processed` (2) would
+    // log a spurious mismatch here.
+    const mismatchCalls = errorSpy.mock.calls.filter(
+      ([, msg]) => typeof msg === 'string' && msg.includes('Verified-row mismatch')
+    );
+    expect(mismatchCalls).toHaveLength(0);
+  });
+
+  it('anti-lie — a repo whose exists() under-reports yields verifiedVideoRows=0 and logs a mismatch at error', async () => {
+    // Arrange — the pipeline genuinely runs (createOrUpdate is REAL, so the
+    // FK-bound downstream writes succeed and `processed` climbs to 2), but
+    // the repo's `exists` is sabotaged to always report false — modelling a
+    // post-write read that disagrees with the optimistic counter (the
+    // 2026-05-29 shape: the run looks successful while verification says the
+    // rows aren't there). The verified cross-check must catch the divergence
+    // (verifiedVideoRows=0 != processed=2) and log it loudly at error.
+    //
+    // `skipExisting: false` so the idempotency pre-check (which also calls
+    // `exists`) is bypassed — we isolate the POST-loop reconciliation as the
+    // site under test.
+    const errorSpy = vi.spyOn(logger, 'error');
+
+    const playlistId = makePlaylistId('antilie1');
+    const items = [makeItem('lievidaaa01', 0, 'Lie A'), makeItem('lievidbbb02', 1, 'Lie B')];
+    const detailsMap = new Map<VideoId, VideoDetails | null>();
+    const transcriptMap = new Map<VideoId, TranscriptResult | null>();
+    for (const item of items) {
+      detailsMap.set(item.videoId, makeDetails(item.videoId, item.title));
+      transcriptMap.set(item.videoId, null);
+    }
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'Anti-lie', description: '', videoCount: 2 },
+      playlistVideos: items,
+      videoDetails: detailsMap,
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(transcriptMap);
+    const descriptionParser = makeMockDescriptionParser();
+
+    // Sabotaged repo: createOrUpdate is REAL (rows actually land, so the
+    // pipeline succeeds), but `exists` always reports false — the verified
+    // counter relies on `exists`, so it must surface 0 despite processed=2.
+    const sabotaged = new VideoRepository(dbm);
+    vi.spyOn(sabotaged, 'exists').mockReturnValue(false);
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: false, skipExisting: false },
+      { transcriptExtractor, descriptionParser, videoRepository: sabotaged }
+    );
+
+    // Act
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — optimistic counter still 2 (processVideo returned), but the
+    // verified count exposes the lie: exists() reports zero.
+    expect(result.processed).toBe(2);
+    expect(result.verifiedVideoRows).toBe(0);
+    expect(result.verifiedTranscriptRows).toBe(0);
+
+    // The reconciliation mismatch was logged loudly at error level.
+    const mismatchCalls = errorSpy.mock.calls.filter(
+      ([payload, msg]) =>
+        typeof msg === 'string' &&
+        msg.includes('verified') &&
+        typeof payload === 'object' &&
+        payload !== null &&
+        'processed' in payload &&
+        'verifiedVideoRows' in payload &&
+        (payload as { processed: unknown }).processed === 2 &&
+        (payload as { verifiedVideoRows: unknown }).verifiedVideoRows === 0
+    );
+    expect(mismatchCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('best-effort — when exists() THROWS during reconciliation, the run still succeeds and verified counts are undefined (not zero), with a verification-failure error logged', async () => {
+    // Arrange — the pipeline genuinely runs and persists (createOrUpdate is
+    // REAL so the FK-bound downstream writes land and `processed` climbs to
+    // 2), but the repo's `exists` THROWS during the post-loop
+    // reconciliation. Distinct from the anti-lie case (exists → false,
+    // which is a real "verified zero"): here the verification step itself
+    // is UNAVAILABLE. The contract: a flaky existence check must NOT bubble
+    // to the outer catch and retroactively fail an otherwise-successful
+    // extraction. The result must resolve successfully with both verified
+    // counts `undefined` (not 0 — that would trigger the UI's false
+    // "claimed N but only 0 found" warning), and the failure must be logged.
+    //
+    // `skipExisting: false` bypasses the idempotency pre-check (which also
+    // calls `exists`) so the POST-loop reconciliation is the isolated site
+    // under test — the throw must originate there, not in the pre-check.
+    const errorSpy = vi.spyOn(logger, 'error');
+
+    const playlistId = makePlaylistId('verithrow');
+    const items = [makeItem('throwvidaa1', 0, 'Throw A'), makeItem('throwvidbb2', 1, 'Throw B')];
+    const detailsMap = new Map<VideoId, VideoDetails | null>();
+    const transcriptMap = new Map<VideoId, TranscriptResult | null>();
+    for (const item of items) {
+      detailsMap.set(item.videoId, makeDetails(item.videoId, item.title));
+      transcriptMap.set(item.videoId, null);
+    }
+
+    const youtubeClient = makeMockYouTubeClient({
+      playlistInfo: { playlistId, title: 'Verify-throw', description: '', videoCount: 2 },
+      playlistVideos: items,
+      videoDetails: detailsMap,
+    });
+    const transcriptExtractor = makeMockTranscriptExtractor(transcriptMap);
+    const descriptionParser = makeMockDescriptionParser();
+
+    // Sabotaged repo: createOrUpdate is REAL (rows actually land, so the
+    // pipeline succeeds), but `exists` THROWS — modelling a verification
+    // step that is unavailable (e.g. a transient read error) rather than
+    // one that reports a confirmed absence.
+    const sabotaged = new VideoRepository(dbm);
+    const verifyError = new Error('exists() read exploded during reconciliation');
+    vi.spyOn(sabotaged, 'exists').mockImplementation(() => {
+      throw verifyError;
+    });
+
+    const extractor = new VideoExtractor(
+      dbm,
+      youtubeClient,
+      { autoTranscript: true, autoLlmParse: false, enableWhisper: false, skipExisting: false },
+      { transcriptExtractor, descriptionParser, videoRepository: sabotaged }
+    );
+
+    // Act — must NOT throw despite the reconciliation failure.
+    const result = await extractor.extractPlaylist(playlistId);
+
+    // Assert — the extraction itself succeeded; the verification failing
+    // does not destroy the answer.
+    expect(result.processed).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(result.success).toBe(true);
+
+    // Verified counts are UNAVAILABLE (undefined), NOT a confirmed zero.
+    // This is the semantic the anti-lie test deliberately does not cover.
+    expect(result.verifiedVideoRows).toBeUndefined();
+    expect(result.verifiedTranscriptRows).toBeUndefined();
+
+    // The verification-failure was logged loudly at error level with the
+    // throw's message and the run context.
+    const verifyFailCalls = errorSpy.mock.calls.filter(
+      ([payload, msg]) =>
+        typeof msg === 'string' &&
+        msg ===
+          'DB verification failed; verified row counts unavailable (extraction itself succeeded)' &&
+        typeof payload === 'object' &&
+        payload !== null &&
+        'playlistId' in payload &&
+        'err' in payload &&
+        (payload as { playlistId: unknown }).playlistId === playlistId &&
+        (payload as { err: unknown }).err === verifyError.message
+    );
+    expect(verifyFailCalls).toHaveLength(1);
+
+    // And the "Verified-row mismatch" invariant must STAY SILENT — there is
+    // no DB truth to compare against, so it must not fire a spurious
+    // mismatch on a count that was never computed.
+    const mismatchCalls = errorSpy.mock.calls.filter(
+      ([, msg]) => typeof msg === 'string' && msg.includes('Verified-row mismatch')
+    );
+    expect(mismatchCalls).toHaveLength(0);
+  });
+});
+
+// --------------------------------------------------------------------------
 // Job tracking
 // --------------------------------------------------------------------------
 

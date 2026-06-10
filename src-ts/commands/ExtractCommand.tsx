@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from 'ink';
 import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
 import { YouTubeClient } from '../../src-ts-v2/api/YouTubeClient.js';
+import type { SkippedPageItem } from '../../src-ts-v2/api/types.js';
+import { AppError } from '../../src-ts-v2/errors/AppError.js';
 import {
   VideoExtractor,
   type ExtractProgressEvent,
@@ -88,6 +90,21 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
   });
   const [startTime] = useState(new Date());
   const [error, setError] = useState<string | null>(null);
+  // Compact, legible rendering of an AppError's code + context, surfaced
+  // to the user via ErrorDisplay's details block. Null for non-AppError
+  // failures (which carry their message only).
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  // Truthful end-of-run summary counters. `unavailable` and
+  // `shapeMismatch` are tallied from the tolerant-page-fetch skip
+  // callback; the verified* fields are DB truth read back from the
+  // ExtractResult after the run.
+  const [runSummary, setRunSummary] = useState<{
+    unavailableCount: number;
+    shapeMismatchCount: number;
+    distinctProcessed?: number;
+    verifiedVideoRows?: number;
+    verifiedTranscriptRows?: number;
+  }>({ unavailableCount: 0, shapeMismatchCount: 0 });
   const [playlistTitle, setPlaylistTitle] = useState<string>('');
   // Stored as a string brand — the PostExtractionMenu accepts a raw
   // string. We brand at the boundary when calling v2 repository methods.
@@ -106,6 +123,10 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
     startedRef.current = true;
 
     async function extract() {
+      // Declared before the try so the finally can close it on EVERY path
+      // (success, early return, or throw). REPL mode re-runs extraction on
+      // repeated commands; a leaked SQLite handle there can lock the DB.
+      let db: DatabaseManager | undefined;
       try {
         // Handle --all flag for batch extraction
         if (flags.all || type === 'all') {
@@ -127,13 +148,12 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
 
         // Initialize services up-front; v2 resolver needs a DB handle for
         // the database-fallback step.
-        const db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager('data/metube.db');
 
         // Resolve playlist identifier (number, title, URL, or ID) — v2
         // resolver returns branded PlaylistId.
         const resolved = await resolvePlaylistIdentifier(id, { db });
         if (!resolved) {
-          db.close();
           setError(
             `Playlist not found: ${id}. Try 'metube playlist list' to see tracked playlists.`
           );
@@ -153,7 +173,6 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         const playlist = repo.findById(actualPlaylistId);
 
         if (!playlist) {
-          db.close();
           setError(`Playlist not found: ${resolved.title || actualPlaylistId}`);
           setStatus('error');
           return;
@@ -163,11 +182,19 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         setExtractedPlaylistId(actualPlaylistId);
         setStatus('extracting');
 
+        // Collect items the API listed but the tolerant page-fetch dropped
+        // (private/deleted, or shape-mismatched). Surfaced in the
+        // end-of-run summary so the counts add up for the user.
+        const skipped: SkippedPageItem[] = [];
+
         // v2 VideoExtractor expects a YouTubeClientLike shape with methods
         // (getPlaylistInfo, getPlaylistVideos, getVideoDetails) that differ
         // from the actual YouTubeClient (getPlaylistById, getPlaylistItems,
-        // getVideoById). Adapter bridges the names + result shapes.
-        const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient);
+        // getVideoById). Adapter bridges the names + result shapes, and
+        // forwards the skip callback.
+        const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient, {
+          onSkipped: (s) => skipped.push(s),
+        });
 
         // Wire the full dual-transcript + LLM pipeline. Without the
         // TranscriptExtractor / WhisperExtractor / GeminiParser injected
@@ -200,19 +227,40 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           whisperProgress: undefined,
         });
 
-        db.close();
+        // Derive the truthful summary: partition the collected skips by
+        // reason, and read back the post-run DB truth from the result.
+        const unavailableCount = skipped.filter((s) => s.reason === 'unavailable').length;
+        const shapeMismatchCount = skipped.filter((s) => s.reason === 'shape_mismatch').length;
+        setRunSummary({
+          unavailableCount,
+          shapeMismatchCount,
+          distinctProcessed: result.distinctProcessed,
+          verifiedVideoRows: result.verifiedVideoRows,
+          verifiedTranscriptRows: result.verifiedTranscriptRows,
+        });
+
         setStatus('menu');
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+        if (err instanceof AppError) {
+          setErrorDetails(formatAppErrorDetails(err));
+        }
         setStatus('error');
+      } finally {
+        // Close exactly once on every path. Idempotent: undefined when
+        // we bailed before opening the handle.
+        db?.close();
       }
     }
 
     async function extractAllPlaylists() {
+      // Declared before the try so the finally closes it on EVERY path;
+      // see extract() for the REPL handle-leak rationale.
+      let db: DatabaseManager | undefined;
       try {
         // Get all enabled playlists — v2 findAll default is enabledOnly:
         // true, which is what we want here.
-        const db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager('data/metube.db');
         const playlistRepo = new PlaylistRepository(db);
         const enabledPlaylists = playlistRepo.findAll({ enabledOnly: true });
 
@@ -221,7 +269,6 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
             'No enabled playlists found. Use "metube playlist list" to see tracked playlists.'
           );
           setStatus('error');
-          db.close();
           return;
         }
 
@@ -232,7 +279,12 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         const auth = new YouTubeAuth();
         const oauthClient = await auth.authenticate();
         const youTubeClient = new YouTubeClient(oauthClient);
-        const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient);
+        // Aggregate skips across every playlist in the batch — same
+        // tolerant-page-fetch callback as the single-playlist path.
+        const skipped: SkippedPageItem[] = [];
+        const ytAdapter: YouTubeClientLike = makeYouTubeClientAdapter(youTubeClient, {
+          onSkipped: (s) => skipped.push(s),
+        });
         const extractor = new VideoExtractor(
           db,
           ytAdapter,
@@ -241,8 +293,16 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         );
 
         let totalProcessed = 0;
+        let totalDistinctProcessed = 0;
         let totalFailed = 0;
         let totalSkipped = 0;
+        // Batch verified-row totals propagate "unavailable" honestly: once
+        // ANY playlist's DB verification fails (result field `undefined`),
+        // the batch total goes `undefined` too — never NaN, and never a
+        // misleadingly-low number. `addVerified` below short-circuits to
+        // undefined the moment either operand is undefined.
+        let totalVerifiedVideoRows: number | undefined = 0;
+        let totalVerifiedTranscriptRows: number | undefined = 0;
         let playlistsFailed = 0;
 
         setStatus('extracting');
@@ -258,8 +318,14 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
             const result = await extractor.extractPlaylist(playlist.playlistId);
 
             totalProcessed += result.processed;
+            totalDistinctProcessed += result.distinctProcessed;
             totalFailed += result.failed;
             totalSkipped += result.skipped;
+            totalVerifiedVideoRows = addVerified(totalVerifiedVideoRows, result.verifiedVideoRows);
+            totalVerifiedTranscriptRows = addVerified(
+              totalVerifiedTranscriptRows,
+              result.verifiedTranscriptRows
+            );
 
             setProgress({
               current: i + 1,
@@ -289,7 +355,17 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           whisperProgress: undefined,
         });
 
-        db.close();
+        // Truthful end-of-run summary aggregated across the whole batch.
+        const unavailableCount = skipped.filter((s) => s.reason === 'unavailable').length;
+        const shapeMismatchCount = skipped.filter((s) => s.reason === 'shape_mismatch').length;
+        setRunSummary({
+          unavailableCount,
+          shapeMismatchCount,
+          distinctProcessed: totalDistinctProcessed,
+          verifiedVideoRows: totalVerifiedVideoRows,
+          verifiedTranscriptRows: totalVerifiedTranscriptRows,
+        });
+
         setStatus('done');
 
         if (onComplete) {
@@ -297,7 +373,14 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+        if (err instanceof AppError) {
+          setErrorDetails(formatAppErrorDetails(err));
+        }
         setStatus('error');
+      } finally {
+        // Close exactly once on every path. Idempotent: undefined when
+        // we bailed before opening the handle.
+        db?.close();
       }
     }
 
@@ -305,7 +388,9 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
   }, [type, id, flags, onComplete]);
 
   if (status === 'error') {
-    return <ErrorDisplay message={error || 'Extraction failed'} />;
+    return (
+      <ErrorDisplay message={error || 'Extraction failed'} details={errorDetails ?? undefined} />
+    );
   }
 
   if (status === 'menu') {
@@ -314,9 +399,14 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         playlistId={extractedPlaylistId}
         playlistTitle={playlistTitle}
         successCount={progress.successCount}
+        distinctProcessed={runSummary.distinctProcessed}
         failureCount={progress.failureCount}
         skippedCount={progress.skippedCount}
         totalVideos={progress.total}
+        unavailableCount={runSummary.unavailableCount}
+        shapeMismatchCount={runSummary.shapeMismatchCount}
+        verifiedVideoRows={runSummary.verifiedVideoRows}
+        verifiedTranscriptRows={runSummary.verifiedTranscriptRows}
         onViewPlaylistInfo={() => {
           // REPL mode: swap this ExtractCommand for the just-extracted
           // playlist's PlaylistVideos view. Direct mode: nothing left to
@@ -332,7 +422,9 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           // can choose a different playlist. Direct mode: exit cleanly —
           // there's no host to navigate within.
           if (onNavigate) {
-            onNavigate(<PlaylistDiscover key={Date.now()} onComplete={onComplete} onNavigate={onNavigate} />);
+            onNavigate(
+              <PlaylistDiscover key={Date.now()} onComplete={onComplete} onNavigate={onNavigate} />
+            );
           } else {
             exit();
           }
@@ -447,13 +539,70 @@ export function buildGeminiAdapter(
 }
 
 /**
+ * Render an AppError's `code` + `context` into a compact one-line detail
+ * string for ErrorDisplay's details block. The Wave 1 parseResponse
+ * enrichment already folds field paths into `error.message`; this is
+ * belt-and-braces so the user also sees the machine-readable code and any
+ * structured context the error carried. Returns null when there is nothing
+ * useful to add (no context and a generic code).
+ */
+export function formatAppErrorDetails(err: AppError): string | null {
+  const parts: string[] = [];
+  if (err.code && err.code !== 'APP_ERROR') {
+    parts.push(err.code);
+  }
+  if (err.context && Object.keys(err.context).length > 0) {
+    const ctx = Object.entries(err.context)
+      .map(([key, value]) => `${key}: ${formatContextValue(value)}`)
+      .join(', ');
+    parts.push(ctx);
+  }
+  return parts.length > 0 ? parts.join(' — ') : null;
+}
+
+/**
+ * Sum two best-effort verified-row counts for the --all batch totals.
+ * Verification is best-effort per playlist: a `undefined` operand means
+ * that playlist's DB verification was unavailable (it threw and was
+ * logged in VideoExtractor). Once any playlist is unavailable the batch
+ * total is no longer trustworthy, so this returns `undefined` — never
+ * `NaN` (which `number + undefined` would produce) and never a
+ * silently-low partial sum. `undefined` flows to PostExtractionMenu,
+ * which then suppresses the "Saved to DB" line rather than lying.
+ */
+function addVerified(running: number | undefined, next: number | undefined): number | undefined {
+  if (running === undefined || next === undefined) return undefined;
+  return running + next;
+}
+
+/**
+ * Compact a single context value for inline display. Objects/arrays are
+ * JSON-stringified; primitives are rendered directly. Keeps the details
+ * line legible rather than dumping a multi-line blob.
+ */
+function formatContextValue(value: unknown): string {
+  if (value === null || value === undefined) return String(value);
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '[unserializable]';
+    }
+  }
+  return String(value);
+}
+
+/**
  * Adapter: bridges v2 YouTubeClient (getPlaylistById / getPlaylistItems /
  * getVideoById) into the shape v2 VideoExtractor expects
  * (getPlaylistInfo / getPlaylistVideos / getVideoDetails). This is a
  * Wave 3 sibling-drift papered over at the Ink boundary; the proper fix
  * is to reconcile names inside src-ts-v2/ in a follow-up.
  */
-function makeYouTubeClientAdapter(client: YouTubeClient): YouTubeClientLike {
+export function makeYouTubeClientAdapter(
+  client: YouTubeClient,
+  adapterOpts?: { onSkipped?: (s: SkippedPageItem) => void }
+): YouTubeClientLike {
   return {
     async getPlaylistInfo(playlistId: PlaylistId): Promise<PlaylistInfo | null> {
       const pl = await client.getPlaylistById(playlistId);
@@ -469,7 +618,17 @@ function makeYouTubeClientAdapter(client: YouTubeClient): YouTubeClientLike {
       playlistId: PlaylistId,
       opts: PlaylistVideoOptions = {}
     ): Promise<readonly PlaylistVideoItem[]> {
-      const items = await client.getPlaylistItems(playlistId);
+      // Forward the tolerant-page-fetch skip callback so degenerate
+      // (private/deleted) or shape-mismatched items surface to the caller
+      // instead of vanishing silently at the page boundary. Forward
+      // maxResults too so the client stops paginating once the cap is hit
+      // (real quota saving) rather than fetching the whole playlist first.
+      const items = await client.getPlaylistItems(playlistId, {
+        onSkipped: adapterOpts?.onSkipped,
+        maxResults: opts.maxResults,
+      });
+      // Belt-and-braces: the client already returns at most maxResults; this
+      // slice is a harmless defensive guard at the adapter boundary.
       const capped = opts.maxResults !== undefined ? items.slice(0, opts.maxResults) : items;
       return capped.map((it) => ({
         videoId: it.videoId,

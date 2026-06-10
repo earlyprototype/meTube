@@ -41,8 +41,7 @@ export interface YouTubePlaylist {
 
 /**
  * Internal v2 representation of a YouTube video. Constructed by
- * `YouTubeClient.getVideoById` and `getMultipleVideoDetails` after Zod
- * parse.
+ * `YouTubeClient.getVideoById` after Zod parse.
  */
 export interface YouTubeVideo {
   videoId: VideoId;
@@ -78,6 +77,43 @@ export interface YouTubePlaylistItem {
   channelTitle?: string;
   addedAt?: string;
   thumbnailUrl?: string;
+}
+
+/**
+ * Why a single item was dropped from a paged YouTube response.
+ *
+ *   - `unavailable`   — the item parsed fine but is a degenerate
+ *                       private/deleted video (empty `thumbnails`, no
+ *                       `videoPublishedAt`). Not an error: the playlist
+ *                       legitimately still lists it.
+ *   - `shape_mismatch` — the item failed Zod parse. Either a genuinely
+ *                       malformed payload or a YouTube response-shape
+ *                       change we don't yet model. Worth surfacing.
+ */
+export type SkippedPageItemReason = 'unavailable' | 'shape_mismatch';
+
+/**
+ * Record of one item skipped while fetching a paged YouTube response.
+ * Emitted via the optional `onSkipped` callback on the tolerant page-fetch
+ * methods (`getPlaylistItems`, `getMyPlaylists`, `searchPlaylists`) so
+ * callers can surface "N videos skipped (private/deleted)" without the
+ * page-parse boundary throwing.
+ *
+ * `videoId` is the raw wire string, deliberately NOT branded — a
+ * shape-mismatched item may carry a malformed ID, and branding it would
+ * re-introduce the throw this whole mechanism exists to avoid.
+ */
+export interface SkippedPageItem {
+  readonly reason: SkippedPageItemReason;
+  readonly method: string;
+  /** Raw wire video ID, if one could be harvested. NOT branded (unvalidated). */
+  readonly videoId?: string;
+  /** Playlist position, if present on the item's snippet. */
+  readonly position?: number;
+  /** Item title, if present on the item's snippet. */
+  readonly title?: string;
+  /** Flattened Zod issue paths. Populated for `shape_mismatch` only. */
+  readonly issues?: readonly string[];
 }
 
 /**

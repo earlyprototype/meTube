@@ -272,6 +272,84 @@ describe('VideoRepository.findByPlaylist', () => {
 });
 
 // --------------------------------------------------------------------
+// findByPlaylistWithTranscriptFlag (A9 backend — transcript visibility)
+// --------------------------------------------------------------------
+
+describe('VideoRepository.findByPlaylistWithTranscriptFlag', () => {
+  let dbm: DatabaseManager;
+  let repo: VideoRepository;
+
+  beforeEach(() => {
+    dbm = new DatabaseManager(':memory:');
+    repo = new VideoRepository(dbm);
+  });
+
+  afterEach(() => {
+    dbm.close();
+  });
+
+  it('flags each playlist video with whether a transcript exists, in position order', () => {
+    // Arrange — two videos in a playlist; only the position-1 video has a
+    // transcript. A third video lives OUTSIDE the playlist and must be
+    // excluded entirely.
+    repo.createOrUpdate(makeVideoInput('aaaaaaaaaaa', { title: 'has-transcript' }));
+    repo.createOrUpdate(makeVideoInput('bbbbbbbbbbb', { title: 'no-transcript' }));
+    repo.createOrUpdate(makeVideoInput('ccccccccccc', { title: 'not-in-playlist' }));
+
+    dbm.withTransaction((db) => {
+      db.prepare(`INSERT INTO playlists (playlist_id, title) VALUES (?, ?)`).run(
+        'PLflaglist123',
+        'Flag playlist'
+      );
+      // position 1 → the video WITH a transcript
+      db.prepare(
+        `INSERT INTO playlist_items (playlist_id, video_id, position, added_at)
+         VALUES (?, ?, ?, ?)`
+      ).run('PLflaglist123', 'aaaaaaaaaaa', 1, '2024-01-01T00:00:00Z');
+      // position 2 → the video WITHOUT a transcript
+      db.prepare(
+        `INSERT INTO playlist_items (playlist_id, video_id, position, added_at)
+         VALUES (?, ?, ?, ?)`
+      ).run('PLflaglist123', 'bbbbbbbbbbb', 2, '2024-01-02T00:00:00Z');
+      // transcript for the first video only
+      db.prepare(`INSERT INTO transcripts (video_id, language, full_text) VALUES (?, ?, ?)`).run(
+        'aaaaaaaaaaa',
+        'en',
+        'a transcript body'
+      );
+    });
+
+    // Act
+    const rows = repo.findByPlaylistWithTranscriptFlag(asPlaylistId('PLflaglist123'));
+
+    // Assert — both playlist videos returned in position order, flagged
+    // correctly; the out-of-playlist video is absent.
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.title)).toEqual(['has-transcript', 'no-transcript']);
+    expect(rows[0]?.has_transcript).toBe(true);
+    expect(rows[1]?.has_transcript).toBe(false);
+    // The branded video_id round-trips like every other read path.
+    expect(rows[0]?.video_id).toBe(asVideoId('aaaaaaaaaaa'));
+  });
+
+  it('returns an empty array when the playlist has no items', () => {
+    // Arrange — empty playlist.
+    dbm.withTransaction((db) => {
+      db.prepare(`INSERT INTO playlists (playlist_id, title) VALUES (?, ?)`).run(
+        'PLemptyflag00',
+        'Empty flag'
+      );
+    });
+
+    // Act
+    const rows = repo.findByPlaylistWithTranscriptFlag(asPlaylistId('PLemptyflag00'));
+
+    // Assert
+    expect(rows).toEqual([]);
+  });
+});
+
+// --------------------------------------------------------------------
 // search
 // --------------------------------------------------------------------
 

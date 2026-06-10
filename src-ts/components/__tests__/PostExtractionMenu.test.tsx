@@ -128,3 +128,147 @@ describe('PostExtractionMenu — navigation contract', () => {
     expect(() => stdin.write(ENTER)).not.toThrow();
   });
 });
+
+describe('PostExtractionMenu — truthful end-of-run summary', () => {
+  it('omits all new summary lines when the new props are absent (baseline shape unchanged)', () => {
+    const { lastFrame } = renderMenu();
+    const frame = lastFrame() ?? '';
+
+    expect(frame).not.toContain('Unavailable in playlist');
+    expect(frame).not.toContain('Skipped (malformed API data)');
+    expect(frame).not.toContain('Saved to DB');
+    expect(frame).not.toContain('Warning: claimed');
+  });
+
+  it('shows the unavailable line when unavailableCount > 0', () => {
+    const { lastFrame } = render(
+      <PostExtractionMenu
+        playlistId="PLtest"
+        successCount={2}
+        failureCount={0}
+        totalVideos={5}
+        unavailableCount={3}
+      />
+    );
+    const frame = lastFrame() ?? '';
+
+    expect(frame).toContain('Unavailable in playlist (private/deleted): 3');
+  });
+
+  it('hides the unavailable line when unavailableCount is 0', () => {
+    const { lastFrame } = render(
+      <PostExtractionMenu
+        playlistId="PLtest"
+        successCount={2}
+        failureCount={0}
+        totalVideos={5}
+        unavailableCount={0}
+      />
+    );
+
+    expect(lastFrame() ?? '').not.toContain('Unavailable in playlist');
+  });
+
+  it('shows the malformed-skipped line when shapeMismatchCount > 0', () => {
+    const { lastFrame } = render(
+      <PostExtractionMenu
+        playlistId="PLtest"
+        successCount={1}
+        failureCount={0}
+        totalVideos={5}
+        shapeMismatchCount={2}
+      />
+    );
+
+    expect(lastFrame() ?? '').toContain('Skipped (malformed API data): 2');
+  });
+
+  it('shows the saved-to-DB line when verified counts are provided', () => {
+    const { lastFrame } = render(
+      <PostExtractionMenu
+        playlistId="PLtest"
+        successCount={4}
+        failureCount={0}
+        totalVideos={4}
+        verifiedVideoRows={4}
+        verifiedTranscriptRows={3}
+      />
+    );
+
+    expect(lastFrame() ?? '').toContain('Saved to DB: 4 videos, 3 transcripts');
+  });
+
+  it('renders a red mismatch warning when verifiedVideoRows is below the extracted count', () => {
+    const { lastFrame } = render(
+      <PostExtractionMenu
+        playlistId="PLtest"
+        successCount={5}
+        failureCount={0}
+        totalVideos={5}
+        verifiedVideoRows={2}
+        verifiedTranscriptRows={2}
+      />
+    );
+
+    expect(lastFrame() ?? '').toContain(
+      'Warning: claimed 5 extracted but only 2 video rows found in DB'
+    );
+  });
+
+  it('does not warn when verifiedVideoRows matches the extracted count', () => {
+    const { lastFrame } = render(
+      <PostExtractionMenu
+        playlistId="PLtest"
+        successCount={5}
+        failureCount={0}
+        totalVideos={5}
+        verifiedVideoRows={5}
+        verifiedTranscriptRows={5}
+      />
+    );
+
+    expect(lastFrame() ?? '').not.toContain('Warning: claimed');
+  });
+
+  it('does not warn on a duplicate run where distinctProcessed (1) matches verifiedVideoRows (1) despite successCount=2', () => {
+    // The duplicate-playlist-entry case: the loop ran the same video twice
+    // (successCount=2), but only one distinct video / one DB row exists.
+    // The warning must compare verifiedVideoRows against distinctProcessed
+    // (1 === 1), NOT against successCount (which would read 1 < 2 and
+    // falsely alarm).
+    const { lastFrame } = render(
+      <PostExtractionMenu
+        playlistId="PLtest"
+        successCount={2}
+        distinctProcessed={1}
+        failureCount={0}
+        totalVideos={1}
+        verifiedVideoRows={1}
+        verifiedTranscriptRows={1}
+      />
+    );
+
+    expect(lastFrame() ?? '').not.toContain('Warning: claimed');
+  });
+
+  it('warns using distinctProcessed when verifiedVideoRows is below it, and the text quotes the compared numbers', () => {
+    // When distinctProcessed is provided and DB truth falls short of it, the
+    // warning fires and must quote distinctProcessed (the claimed count it
+    // compared), not successCount.
+    const { lastFrame } = render(
+      <PostExtractionMenu
+        playlistId="PLtest"
+        successCount={5}
+        distinctProcessed={4}
+        failureCount={0}
+        totalVideos={5}
+        verifiedVideoRows={2}
+        verifiedTranscriptRows={2}
+      />
+    );
+
+    expect(lastFrame() ?? '').toContain(
+      'Warning: claimed 4 extracted but only 2 video rows found in DB'
+    );
+  });
+});
