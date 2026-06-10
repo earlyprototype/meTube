@@ -268,8 +268,53 @@ describe('YouTubeClient.getVideoById', () => {
     expect(result?.commentCount).toBe(5000);
     expect(result?.caption).toBe(false);
     expect(result?.licensedContent).toBe(true);
+    expect(result?.definition).toBe('hd');
     expect(result?.tags).toEqual(['music', 'pop']);
     expect(result?.topicCategories).toEqual(['https://en.wikipedia.org/wiki/Pop_music']);
+  });
+
+  it('copies contentDetails.definition (hd/sd) into the mapped video', async () => {
+    // Arrange — Python youtube_client.py:158 copies definition; v1 toVideo
+    // dropped it, leaving the DB column always NULL. This pins the through-copy.
+    const client = makeClient();
+    videosListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          makeVideoItem({
+            id: 'sdvideoaaa1',
+            contentDetails: { duration: 'PT5M', definition: 'sd' },
+          }),
+        ],
+      },
+    });
+
+    // Act
+    const result = await client.getVideoById(asVideoId('sdvideoaaa1'));
+
+    // Assert
+    expect(result?.definition).toBe('sd');
+  });
+
+  it('leaves definition undefined when the API omits it', async () => {
+    // Arrange — definition is optional on the schema; absent → undefined,
+    // never null (the repository write coalesces undefined → null at the DB).
+    const client = makeClient();
+    videosListMock.mockResolvedValueOnce({
+      data: {
+        items: [
+          makeVideoItem({
+            id: 'nodefvideo1',
+            contentDetails: { duration: 'PT2M' },
+          }),
+        ],
+      },
+    });
+
+    // Act
+    const result = await client.getVideoById(asVideoId('nodefvideo1'));
+
+    // Assert
+    expect(result?.definition).toBeUndefined();
   });
 
   it('returns null when the API returns no items', async () => {
