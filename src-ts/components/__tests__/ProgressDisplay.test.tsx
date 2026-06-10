@@ -27,9 +27,7 @@ const BASE_PROPS = {
 
 describe('ProgressDisplay — per-video step lines', () => {
   it('renders the current video title when set', () => {
-    const { lastFrame } = render(
-      <ProgressDisplay {...BASE_PROPS} currentVideo="My Great Video" />
-    );
+    const { lastFrame } = render(<ProgressDisplay {...BASE_PROPS} currentVideo="My Great Video" />);
 
     expect(lastFrame()).toContain('My Great Video');
   });
@@ -81,5 +79,15 @@ describe('ProgressDisplay — per-video step lines', () => {
 
     const frame = lastFrame() ?? '';
     expect(frame).toContain('2 / 5');
+  });
+
+  it('renders 0% (never NaN%) when total is zero', () => {
+    // Extraction start, or a run where every video is skipped, leaves total
+    // at 0. current / total is NaN — the percentage and bar must guard it.
+    const { lastFrame } = render(<ProgressDisplay {...BASE_PROPS} current={0} total={0} />);
+
+    const frame = lastFrame() ?? '';
+    expect(frame).not.toContain('NaN');
+    expect(frame).toContain('0 / 0 videos (0%)');
   });
 });

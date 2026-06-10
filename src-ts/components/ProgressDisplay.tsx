@@ -64,9 +64,11 @@ export function ProgressDisplay({
   const elapsedMinutes = Math.floor(elapsedSeconds / 60);
   const remainingSeconds = elapsedSeconds % 60;
 
-  const percentage = Math.floor((current / total) * 100);
+  // Guard the zero-total case: extraction start (or an all-skipped run) leaves
+  // total === 0, and current / total is NaN — rendering "0 / 0 videos (NaN%)".
+  const percentage = total > 0 ? Math.floor((current / total) * 100) : 0;
   const progressBarLength = 20;
-  const filledLength = Math.floor((progressBarLength * current) / total);
+  const filledLength = total > 0 ? Math.floor((progressBarLength * current) / total) : 0;
   const progressBar = '#'.repeat(filledLength) + '-'.repeat(progressBarLength - filledLength);
 
   const statusText = {
