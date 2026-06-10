@@ -709,6 +709,21 @@ function githubResponse(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
+/**
+ * Build the rejection a signal-respecting `fetch` raises when its
+ * `AbortSignal` fires — a `DOMException` named `AbortError`, exactly what the
+ * platform `fetch` throws on abort. Falls back to a plain `Error` on runtimes
+ * without `DOMException` (the enrichment catch only reads `.message`).
+ */
+function makeAbortError(): Error {
+  if (typeof DOMException === 'function') {
+    return new DOMException('The operation was aborted.', 'AbortError');
+  }
+  const err = new Error('The operation was aborted.');
+  err.name = 'AbortError';
+  return err;
+}
+
 describe('HTMLReportGenerator — GitHub repo description enrichment', () => {
   let h: TestHarness;
 
@@ -879,5 +894,72 @@ describe('HTMLReportGenerator — GitHub repo description enrichment', () => {
     // Assert — no description slot rendered.
     expect(html).toContain('empty/desc');
     expect(html).not.toContain('agg-repo-desc');
+  });
+
+  it('aborts a hung GitHub fetch at the 5s timeout and still completes the report', async () => {
+    // A fetch that NEVER resolves on its own but RESPECTS the AbortSignal:
+    // it rejects with an AbortError the moment the signal fires. This is the
+    // exact contract the production timeout relies on (a signal-ignoring mock
+    // would hang forever — see the githubFetch caveat in HTMLReportGenerator).
+    // Vitest fake timers drive the wall clock so the 5s timer fires
+    // deterministically without a real 5-second wait.
+    vi.useFakeTimers();
+
+    let abortObserved = false;
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) {
+          // The production call always passes a signal; guard the contract.
+          reject(new Error('test fetch invoked without an AbortSignal'));
+          return;
+        }
+        // Already aborted (defensive) — reject immediately.
+        if (signal.aborted) {
+          abortObserved = true;
+          reject(makeAbortError());
+          return;
+        }
+        // Otherwise wait for the controller's abort, which the 5s timer trips.
+        signal.addEventListener(
+          'abort',
+          () => {
+            abortObserved = true;
+            reject(makeAbortError());
+          },
+          { once: true }
+        );
+        // Note: no resolve path — this fetch only ever settles via abort.
+      });
+    }) as unknown as typeof fetch;
+
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'hung/repo', url: 'https://github.com/hung/repo' },
+    ]);
+
+    try {
+      // Kick off report generation; it will await the (hung) fetch.
+      const reportPromise = h.generator.generatePlaylistReport(playlistId, h.outputDir);
+
+      // Advance the fake clock past the 5s GITHUB_FETCH_TIMEOUT_MS so the
+      // AbortController fires. `...Async` flushes the microtasks the abort
+      // rejection schedules, letting the catch-and-degrade path run.
+      await vi.advanceTimersByTimeAsync(5000);
+
+      const filepath = await reportPromise;
+      const html = fs.readFileSync(filepath, 'utf-8');
+
+      // The fetch saw the abort (timeout actually fired)...
+      expect(abortObserved).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // ...the repo degraded to no description...
+      expect(html).toContain('hung/repo');
+      expect(html).not.toContain('agg-repo-desc');
+      // ...and report generation completed despite the hang.
+      expect(fs.existsSync(filepath)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

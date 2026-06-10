@@ -9,7 +9,15 @@
  *     `MeTubeConfigSchema`.
  *   - Unset `${VAR}` is left literal (Python only replaces on a truthy
  *     env value).
- *   - Missing / unreadable file → schema defaults (parse `{}`).
+ *   - MISSING file → schema defaults (parse `{}`). This is Python's SOLE
+ *     tolerated case (the `if config_path.exists()` guard, cli.py:172).
+ *   - PRESENT-but-broken file (unreadable / malformed YAML / non-mapping
+ *     root) → THROWS `ConfigError`. Python crashes on all of these: an
+ *     unreadable file raises from `open()`, malformed YAML raises
+ *     `yaml.YAMLError`, and a non-mapping root (incl. empty/null) crashes the
+ *     merge loop at cli.py:176-178 with a `TypeError`. A silent degrade to
+ *     hardcoded defaults would be the operational footgun the parity fix
+ *     closes.
  *
  * Strategy: write a throwaway YAML file under `os.tmpdir()` per test and
  * point the loader at it via the `configPath` override. No real network,
@@ -23,6 +31,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { loadConfig, substituteEnvVars } from '../config/loadConfig.js';
+import { ConfigError } from '../errors/index.js';
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -182,7 +191,7 @@ database:
     expect(config.logging.level).toBe('INFO');
   });
 
-  it('returns full schema defaults when the file does not exist', () => {
+  it('returns full schema defaults when the file does not exist (Python parity: the only tolerated miss)', () => {
     const missing = path.join(tmpDir, 'does-not-exist.yaml');
 
     const config = loadConfig({ configPath: missing });
@@ -192,14 +201,83 @@ database:
     expect(config.reports.output_dir).toBe('reports/');
   });
 
-  it('returns schema defaults when the file is unreadable / malformed YAML', () => {
-    // A YAML document that parses to a scalar (not a mapping) — the loader
-    // must tolerate it the way Python tolerates a missing file, not crash.
-    const file = writeYaml(`!!str just-a-scalar-not-a-map`);
+  // ------------------------------------------------------------------------
+  // PRESENT-but-broken file → THROW (Python parity).
+  //
+  // Python's load_config only guards the MISSING file. A present file that is
+  // unreadable, malformed, or a non-mapping root is a hard error there:
+  //   - unreadable  → raises from open() (EACCES etc.)
+  //   - malformed   → raises yaml.YAMLError
+  //   - non-mapping → crashes the merge loop (cli.py:176-178) with TypeError
+  // We replicate each by throwing ConfigError, so a typo'd or
+  // permission-broken config can never silently run on hardcoded defaults.
+  // ------------------------------------------------------------------------
 
-    const config = loadConfig({ configPath: file });
+  it('THROWS ConfigError when the file is present but unreadable (EACCES / fs error)', () => {
+    // Simulate an unreadable file by pointing the loader at a path that EXISTS
+    // (existsSync true) but readFileSync fails on: a directory. fs.readFileSync
+    // on a directory throws EISDIR — a present-but-unreadable file, which
+    // Python would hit as a raise from open().
+    const dirAsConfig = path.join(tmpDir, 'config-is-a-dir.yaml');
+    fs.mkdirSync(dirAsConfig);
 
-    expect(config.database.path).toBe('data/metube.db');
+    expect(() => loadConfig({ configPath: dirAsConfig })).toThrow(ConfigError);
+    // The error names the offending path so the operator can fix it.
+    expect(() => loadConfig({ configPath: dirAsConfig })).toThrow(dirAsConfig);
+  });
+
+  it('THROWS ConfigError when the file is present but malformed YAML', () => {
+    // Unbalanced bracket — js-yaml raises a YAMLException, mirroring Python's
+    // yaml.YAMLError on the same input.
+    const file = writeYaml(`api: [unclosed`);
+
+    expect(() => loadConfig({ configPath: file })).toThrow(ConfigError);
+    expect(() => loadConfig({ configPath: file })).toThrow(file);
+  });
+
+  it('THROWS ConfigError for a scalar-root document (Python crashes: TypeError on item assignment)', () => {
+    const file = writeYaml(`just-a-scalar-not-a-map`);
+
+    expect(() => loadConfig({ configPath: file })).toThrow(ConfigError);
+    expect(() => loadConfig({ configPath: file })).toThrow(/did not parse to a mapping/);
+  });
+
+  it('THROWS ConfigError for a list-root document (Python crashes: list indices must be integers)', () => {
+    const file = writeYaml(`- one\n- two\n`);
+
+    expect(() => loadConfig({ configPath: file })).toThrow(ConfigError);
+    expect(() => loadConfig({ configPath: file })).toThrow(/did not parse to a mapping/);
+  });
+
+  it('THROWS ConfigError for an empty file (Python crashes: None is not iterable)', () => {
+    // yaml.load('') === undefined; yaml.safe_load('') is None in Python. Both
+    // are non-mappings; Python's merge loop crashes on None, so we throw.
+    const file = writeYaml(``);
+
+    expect(() => loadConfig({ configPath: file })).toThrow(ConfigError);
+    expect(() => loadConfig({ configPath: file })).toThrow(/did not parse to a mapping/);
+  });
+
+  it('THROWS ConfigError for an explicit null document (Python crashes: None is not iterable)', () => {
+    // yaml.load('null') === null; yaml.safe_load('null') is None in Python.
+    const file = writeYaml(`null\n`);
+
+    expect(() => loadConfig({ configPath: file })).toThrow(ConfigError);
+    expect(() => loadConfig({ configPath: file })).toThrow(/did not parse to a mapping/);
+  });
+
+  it('still THROWS (ZodError, not ConfigError) when a present mapping violates the schema', () => {
+    // A well-formed mapping that breaks a typed field — rate_limit_delay must
+    // be a number. This is the one present-file case that was already a throw
+    // and must STAY a throw (it is a real config error, not a missing file).
+    const file = writeYaml(`
+api:
+  rate_limit_delay: not-a-number
+`);
+
+    expect(() => loadConfig({ configPath: file })).toThrow();
+    // It is NOT a ConfigError — Zod owns schema-violation reporting.
+    expect(() => loadConfig({ configPath: file })).not.toThrow(ConfigError);
   });
 
   it('keeps a literal ${VAR} for an unset env var (does not crash the parse)', () => {

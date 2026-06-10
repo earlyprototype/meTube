@@ -94,6 +94,12 @@ export interface HTMLReportGeneratorConfig {
    * global `fetch` is used. Whatever the call does (resolve, reject, time
    * out) the enrichment degrades to "no description"; it never fails or
    * hangs report generation.
+   *
+   * Caveat: the injected implementation MUST honor the `AbortSignal` passed in
+   * `RequestInit.signal`. The {@link GITHUB_FETCH_TIMEOUT_MS} timeout — and
+   * thus the "report generation never hangs" guarantee — only holds for a
+   * signal-respecting fetch; a mock that ignores the signal and never settles
+   * will stall enrichment indefinitely.
    */
   readonly githubFetch?: typeof fetch;
 
@@ -924,6 +930,11 @@ export class HTMLReportGenerator {
    *
    * NEVER throws: every failure mode (unparseable URL, network error, abort,
    * non-200, malformed body) returns `null`.
+   *
+   * Abort caveat: the timeout below only fires if `this.githubFetch` honors
+   * the `AbortSignal` it is handed (`signal: controller.signal`). The global
+   * `fetch` does; an injected mock must too, or a never-settling call will
+   * hang here despite the timer.
    *
    * @param repoUrl - The repo's GitHub URL.
    * @returns The non-empty description, or `null` if unavailable.

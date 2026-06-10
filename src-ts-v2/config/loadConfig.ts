@@ -24,15 +24,24 @@
  *      therefore handled by the schema, not a hand-rolled deep-merge.
  *   4. **Validate.** The substituted object is parsed through
  *      `MeTubeConfigSchema`. A schema violation throws (a malformed config is
- *      a real error the operator must fix) — but a *missing* or
- *      *unreadable / non-mapping* file is tolerated the way Python tolerates
- *      a missing file: fall back to defaults.
+ *      a real error the operator must fix).
+ *
+ * Present-but-broken parity (the load-bearing distinction): Python only
+ * tolerates a MISSING file — the `if config_path.exists()` guard at
+ * `cli.py:172`. A present file that is unreadable raises from Python's
+ * `open()`; malformed YAML raises `yaml.YAMLError`; and a non-mapping root
+ * crashes the merge-over-defaults loop at `cli.py:176-178` with a `TypeError`
+ * (verified for every non-mapping root — see {@link readConfigObject}). So a
+ * typo'd or permission-broken `config/config.yaml` must FAIL LOUDLY here, not
+ * silently run on hardcoded defaults. Only a missing file falls back to
+ * defaults.
  *
  * Sync by design: matches Python's synchronous loader and keeps Wave 2
  * command call-sites simple (no `await` needed to resolve the DB path).
  *
- * Logging: pino only (no console). A missing or malformed file logs at
- * `debug` / `warn` and continues with defaults.
+ * Logging: pino only (no console). A missing file logs at `debug` and
+ * continues with defaults; a present-but-broken file throws a
+ * {@link ConfigError} (no silent degrade).
  */
 
 import fs from 'node:fs';
@@ -40,6 +49,7 @@ import path from 'node:path';
 
 import yaml from 'js-yaml';
 
+import { ConfigError } from '../errors/index.js';
 import { MeTubeConfigSchema, type MeTubeConfig } from '../schemas/config.js';
 import logger from '../utils/logger.js';
 
@@ -121,11 +131,14 @@ export function substituteEnvVars(value: unknown): unknown {
  * @returns A fully-populated, validated `MeTubeConfig`. Every section is
  *          present (schema defaults fill gaps), so callers can read
  *          `config.database.path` etc. without null checks.
+ * @throws {ConfigError} If the file is PRESENT but unreadable, is not valid
+ *                       YAML, or does not parse to a mapping (Python crashes
+ *                       on all of these — see {@link readConfigObject}).
  * @throws {ZodError} If a PRESENT, well-formed YAML mapping fails schema
- *                    validation (a real config error). A missing or
- *                    unreadable / non-mapping file does NOT throw — it falls
- *                    back to schema defaults, matching Python's missing-file
- *                    behaviour.
+ *                    validation (a real config error the operator must fix).
+ *
+ * A MISSING file does NOT throw — it falls back to schema defaults, matching
+ * Python's sole tolerated case (the `if config_path.exists()` guard).
  */
 export function loadConfig(options: LoadConfigOptions = {}): MeTubeConfig {
   const configPath = path.resolve(process.cwd(), options.configPath ?? DEFAULT_CONFIG_PATH);
@@ -144,67 +157,85 @@ export function loadConfig(options: LoadConfigOptions = {}): MeTubeConfig {
 
 /**
  * Where the config object came from — `'file'` when a usable YAML mapping was
- * read, `'defaults'` when it fell back to schema defaults.
+ * read, `'defaults'` when the file was absent and schema defaults were used.
+ * A PRESENT-but-broken file never reaches a source; it throws.
  */
 type ConfigSource = 'file' | 'defaults';
 
 /**
- * Read and YAML-parse the config file into a plain object, tolerating
- * absence and malformation.
+ * Read and YAML-parse the config file into a plain object.
  *
- * Falls back to an empty object (→ schema defaults) when:
- *   - the file does not exist (Python's primary fallback),
- *   - the file cannot be read,
- *   - the YAML parses to anything other than a mapping (scalar / array /
- *     null) — a non-mapping config is unusable, so we degrade to defaults
- *     rather than letting a stray document crash startup.
+ * Falls back to an empty object (→ schema defaults) ONLY when the file does
+ * not exist — Python's sole tolerated case (`cli.py:172`, the
+ * `if config_path.exists()` guard).
+ *
+ * A PRESENT file that is broken THROWS a {@link ConfigError}, naming the path
+ * and cause. This mirrors Python exactly — every one of these is a hard error
+ * there, not a silent fall-back:
+ *
+ *   - **Unreadable** (EACCES / any fs error): Python raises from `open()`.
+ *   - **Malformed YAML**: Python raises `yaml.YAMLError`.
+ *   - **Non-mapping root** (empty file / `null` / scalar / sequence): Python's
+ *     merge-over-defaults loop (`cli.py:176-178`) crashes with a `TypeError`.
+ *     Verified per root via `yaml.safe_load` + that loop:
+ *       - empty file → `None` → `key not in None` (cli.py:177) → TypeError
+ *       - `null`     → `None` → same as empty                    → TypeError
+ *       - scalar str → `'...'` → `config[key] = ...` (cli.py:178) → TypeError
+ *       - scalar int → `42`   → `key not in 42` (cli.py:177)     → TypeError
+ *       - sequence   → `[...]` → `config[key] = ...` (cli.py:178) → TypeError
+ *     So a mapping is the ONLY shape Python accepts; we replicate that by
+ *     throwing on every non-mapping root, including an empty/null document.
  *
  * @param configPath - Absolute path to the YAML file.
- * @returns `{ object, source }` — the parsed mapping (or `{}` on any
- *          tolerated miss) plus where it came from, for logging.
+ * @returns `{ object, source }` — the parsed mapping plus where it came from,
+ *          for logging. (Only ever `'defaults'` for a missing file.)
+ * @throws {ConfigError} For a present-but-unreadable, malformed, or
+ *                       non-mapping file.
  */
 function readConfigObject(configPath: string): {
   object: Record<string, unknown>;
   source: ConfigSource;
 } {
-  const defaults = { object: {} as Record<string, unknown>, source: 'defaults' as const };
-
   if (!fs.existsSync(configPath)) {
     logger.debug({ configPath }, 'Config file not found; using defaults');
-    return defaults;
+    return { object: {}, source: 'defaults' };
   }
 
   let contents: string;
   try {
     contents = fs.readFileSync(configPath, 'utf-8');
   } catch (error) {
-    logger.warn(
-      { configPath, err: error instanceof Error ? error.message : String(error) },
-      'Config file unreadable; using defaults'
+    throw new ConfigError(
+      `Config file at '${configPath}' could not be read: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { configPath, cause: error }
     );
-    return defaults;
   }
 
   let parsed: unknown;
   try {
     parsed = yaml.load(contents);
   } catch (error) {
-    logger.warn(
-      { configPath, err: error instanceof Error ? error.message : String(error) },
-      'Config file is not valid YAML; using defaults'
+    throw new ConfigError(
+      `Config file at '${configPath}' is not valid YAML: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { configPath, cause: error }
     );
-    return defaults;
   }
 
-  // A mapping is the only usable shape. yaml.load returns `undefined` for an
-  // empty file, a scalar for `!!str ...`, an array for a sequence — none of
-  // which are a config object.
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    logger.warn(
-      { configPath, parsedType: Array.isArray(parsed) ? 'array' : typeof parsed },
-      'Config file did not parse to a mapping; using defaults'
+  // A mapping is the only usable shape, and the only shape Python accepts.
+  // yaml.load returns `undefined` for an empty file, `null` for `null`, a
+  // scalar for `!!str ...`, an array for a sequence — Python crashes on every
+  // one of these (see the JSDoc trace), so we throw rather than degrade.
+  if (parsed === null || parsed === undefined || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const parsedType = Array.isArray(parsed) ? 'array' : parsed === undefined ? 'empty' : typeof parsed;
+    throw new ConfigError(
+      `Config file at '${configPath}' did not parse to a mapping (got ${parsedType}). ` +
+        `A config file must be a YAML mapping of sections (api, database, ...).`,
+      { configPath, context: { parsedType } }
     );
-    return defaults;
   }
 
   return { object: parsed as Record<string, unknown>, source: 'file' };
