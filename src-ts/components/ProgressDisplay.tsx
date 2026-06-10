@@ -18,6 +18,13 @@ interface ProgressDisplayProps {
   successCount: number;
   failureCount: number;
   startTime: Date;
+  /**
+   * Per-video step-result lines for the CURRENT video (metadata, transcript
+   * source + char count, entity counts). Mirrors the granular `[OK] …` lines
+   * Python printed per video (video_extractor.py:118-120,160-161,184,202-205).
+   * Reset by the caller when a new video starts.
+   */
+  stepLines?: readonly string[];
   whisperProgress?: {
     stage: 'downloading' | 'transcribing' | 'complete';
     percentage?: number;
@@ -37,6 +44,7 @@ export function ProgressDisplay({
   successCount,
   failureCount,
   startTime,
+  stepLines,
   whisperProgress,
 }: ProgressDisplayProps) {
   const [dudeFrame, setDudeFrame] = useState(0);
@@ -109,6 +117,18 @@ export function ProgressDisplay({
           <Box marginLeft={3}>
             <Text dimColor>{statusText}</Text>
           </Box>
+          {/* Per-video step-result lines (metadata / transcript / entities) —
+              the granular [OK] lines Python streamed per video. */}
+          {stepLines && stepLines.length > 0 && (
+            <Box flexDirection="column" marginLeft={3} marginTop={1}>
+              {stepLines.map((line, i) => (
+                <Box key={i}>
+                  <Text color="green">{symbols.check} </Text>
+                  <Text dimColor>{line}</Text>
+                </Box>
+              ))}
+            </Box>
+          )}
         </Box>
       )}
 
