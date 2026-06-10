@@ -62,7 +62,16 @@ export const GeminiResponseSchema = z.object({
   github_repos: z.array(GeminiRepoSchema).default([]),
   websites: z.array(GeminiWebsiteSchema).default([]),
   people: z.array(z.string()).default([]),
-  tags: z.array(z.string()).default([]),
+  // Tags are forced lowercase at this normalization boundary — deterministic
+  // parity with Python `_normalize_result` (llm_parser.py:137,
+  // `[tag.lower() for tag in ...]`). The prompt also asks the model for
+  // lowercase, but the prompt is advisory; this transform makes it a guarantee
+  // so ["Python","ML"] always persists as ["python","ml"] regardless of model
+  // compliance.
+  tags: z
+    .array(z.string())
+    .default([])
+    .transform((tags) => tags.map((tag) => tag.toLowerCase())),
   summary: z.string().default(''),
   content_type: z.string().default('unknown'),
   sentiment: GeminiSentimentSchema,

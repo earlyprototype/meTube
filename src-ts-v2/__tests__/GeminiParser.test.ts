@@ -141,6 +141,49 @@ describe('GeminiParser', () => {
       expect(result.topics).toEqual(['Test']);
     });
 
+    it('lowercases tags deterministically (Python _normalize_result parity)', async () => {
+      // Python forces tags lowercase in _normalize_result (llm_parser.py:137).
+      // TS previously trusted the prompt — non-deterministic. This pins the
+      // deterministic normalization: model output ["Python","ML"] → ["python","ml"].
+      mockResponse({
+        topics: [],
+        github_repos: [],
+        websites: [],
+        people: [],
+        tags: ['Python', 'ML'],
+        summary: '',
+        content_type: 'unknown',
+        sentiment: 'neutral',
+      });
+
+      const result = await parser.parseTranscript({
+        transcript: 'Test transcript',
+        videoTitle: 'Test',
+      });
+
+      expect(result.tags).toEqual(['python', 'ml']);
+    });
+
+    it('lowercases mixed-case and uppercase tags', async () => {
+      mockResponse({
+        topics: [],
+        github_repos: [],
+        websites: [],
+        people: [],
+        tags: ['TypeScript', 'AI', 'Web-Dev'],
+        summary: '',
+        content_type: 'unknown',
+        sentiment: 'neutral',
+      });
+
+      const result = await parser.parseTranscript({
+        transcript: 'Test transcript',
+        videoTitle: 'Test',
+      });
+
+      expect(result.tags).toEqual(['typescript', 'ai', 'web-dev']);
+    });
+
     it('strips bare ``` (no language tag) markdown fences', async () => {
       const payload = {
         topics: ['Bare'],
