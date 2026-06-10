@@ -128,7 +128,19 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         }
 
         if (type !== 'playlist') {
-          setError('Only playlist extraction supported currently');
+          // Point the user at the correct grammar with a copy-pasteable
+          // suggestion. Prefer a concrete identifier when we have one:
+          //   `extract FabLab`     -> type='FabLab', id=undefined -> use type
+          //   `extract video abc`  -> type='video',  id='abc'     -> use id
+          // Fall back to the `<id>` placeholder when only a bare keyword
+          // (e.g. `video`, `all`) was given with no identifier to echo.
+          const KNOWN_SUBCOMMANDS = ['video', 'all'];
+          const concreteTarget =
+            id ?? (type && !KNOWN_SUBCOMMANDS.includes(type) ? type : undefined);
+          const target = concreteTarget ?? '<id>';
+          setError(
+            `Only playlist extraction is supported. Did you mean: extract playlist ${target}`
+          );
           setStatus('error');
           return;
         }

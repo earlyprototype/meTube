@@ -15,6 +15,7 @@ import meow from 'meow';
 import { executeCommandLogic } from './commands/CommandExecutor.js';
 import { ErrorDisplay } from './components/ErrorDisplay.js';
 import { ReplMode } from './components/ReplMode.js';
+import { parseReplInput } from './utils/replInput.js';
 
 const cli = meow(
   `
@@ -121,16 +122,23 @@ if (!command) {
   render(
     <ReplMode
       onCommand={async (input, setComponent) => {
-        // Parse REPL input
-        const parts = input.trim().split(/\s+/);
-        const [cmd, sub, ...cmdArgs] = parts;
+        // Parse REPL input. Flags typed inside the REPL are parsed here and
+        // merged OVER cli.flags below — cli.flags only ever holds the meow
+        // startup defaults in REPL mode (the process starts with no args), so
+        // without this every typed flag (--reprocess, --max-videos, ...) was
+        // silently dropped and the command ran with defaults.
+        const { cmd, sub, args: cmdArgs, flags: typedFlags } = parseReplInput(input);
 
-        // Get command component (doesn't call render!)
+        // Get command component (doesn't call render!). `cmd` is only
+        // undefined for empty input, which ReplShell already filters before
+        // calling onCommand; the `?? ''` keeps the type honest and falls
+        // through to the "Unknown command" display if one ever slips by.
         const component = executeCommandLogic({
-          cmd,
+          cmd: cmd ?? '',
           sub,
           args: cmdArgs,
-          flags: cli.flags,
+          // Typed flags win; startup defaults remain the base.
+          flags: { ...cli.flags, ...typedFlags },
           onComplete: () => {
             // Command completed in REPL - component stays visible
           },
