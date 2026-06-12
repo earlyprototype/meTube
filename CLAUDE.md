@@ -105,12 +105,14 @@ commit messages.
 - **Imports:** ESM Node. TS sources use `.js` extensions on relative
   imports (e.g. `from '../utils/logger.js'`). This is correct; do
   not "fix" them to `.ts`.
-- **Tests:** Vitest. Live under `src-ts/__tests__/` or alongside as
-  `*.test.ts` / `*.test.tsx`. Run with `npm test`. New v2 tests live
-  under `src-ts-v2/__tests__/`.
-- **Logging:** Pino via `src-ts/utils/logger.ts` (current) and
-  `src-ts-v2/utils/logger.ts` (new). No `console.log` /
-  `console.error` in production code.
+- **Tests:** Vitest. Live in per-area `__tests__/` dirs (`src-ts/__tests__/`,
+  `src-ts/commands/__tests__/`, `src-ts/components/__tests__/`,
+  `src-ts/utils/__tests__/`, `src-ts-v2/__tests__/`) or alongside source as
+  `*.test.ts` / `*.test.tsx`. Run with `npm test`.
+- **Logging:** Pino via `src-ts-v2/utils/logger.ts` — the single shared
+  logger (src-ts imports it too; there is no src-ts logger). Writes to
+  `logs/metube.log` (never stdout — Ink owns the terminal). No
+  `console.log` / `console.error` in production code.
 - **Types:** No `any` in v2 code (`src-ts-v2/`). `unknown` + narrow
   via Zod or type guards. Pre-commit hook enforces.
 - **React / Ink:** Component props as named `interface`. Don't use
