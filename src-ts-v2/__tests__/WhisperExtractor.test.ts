@@ -178,6 +178,112 @@ describe('WhisperExtractor', () => {
   });
 
   // ------------------------------------------------------------------------
+  // Case 1b — per-call onProgress seam (parity-close Task 1c). The whisper
+  // extraction method accepts an OPTIONAL per-call progress callback that
+  // VideoExtractor supplies to surface the live percentage. The callback
+  // must fire across the download + transcribe stages.
+  // ------------------------------------------------------------------------
+  describe('extract — per-call onProgress seam', () => {
+    it('invokes the per-call onProgress callback through the extract pipeline', async () => {
+      // Arrange — both spawns succeed; the python step returns a valid payload.
+      const payload = JSON.stringify({
+        text: 'progress test',
+        segments: [{ start: 0, end: 1, text: 'progress test' }],
+        language: 'en',
+      });
+      mockSpawn.mockImplementation(() => {
+        const proc = makeFakeProc();
+        if (mockSpawn.mock.calls.length === 1) {
+          driveClose(proc, { code: 0 });
+        } else {
+          driveClose(proc, { code: 0, stdout: wrapInMarkers(payload) });
+        }
+        return proc;
+      });
+
+      const extractor = new WhisperExtractor({ cleanup_audio: false });
+      const ticks: Array<{ stage: string; percentage?: number }> = [];
+
+      // Act — pass the per-call callback as the 2nd arg.
+      const result = await extractor.extract('dQw4w9WgXcQ', (p) => ticks.push(p));
+
+      // Assert — transcript still returned, and the callback saw at least the
+      // downloading + transcribing stage transitions.
+      expect(result).not.toBeNull();
+      expect(ticks.length).toBeGreaterThanOrEqual(2);
+      const stages = ticks.map((t) => t.stage);
+      expect(stages).toContain('downloading');
+      expect(stages).toContain('transcribing');
+    });
+
+    it('still works when no per-call callback is supplied (back-compat)', async () => {
+      const payload = JSON.stringify({
+        text: 'no callback',
+        segments: [{ start: 0, end: 1, text: 'no callback' }],
+        language: 'en',
+      });
+      mockSpawn.mockImplementation(() => {
+        const proc = makeFakeProc();
+        if (mockSpawn.mock.calls.length === 1) {
+          driveClose(proc, { code: 0 });
+        } else {
+          driveClose(proc, { code: 0, stdout: wrapInMarkers(payload) });
+        }
+        return proc;
+      });
+
+      const extractor = new WhisperExtractor({ cleanup_audio: false });
+
+      // Act — no second argument.
+      const result = await extractor.extract('dQw4w9WgXcQ');
+
+      // Assert — unchanged behaviour.
+      expect(result?.full_text).toBe('no callback');
+    });
+
+    it('still returns the transcript when BOTH progress callbacks throw', async () => {
+      // A throwing progress observer (constructor-level AND per-call) must be
+      // isolated — a UI emitter that blows up must not abort the extraction and
+      // lose the transcript. Each callback is guarded independently.
+      const payload = JSON.stringify({
+        text: 'survives throwing observers',
+        segments: [{ start: 0, end: 1, text: 'survives throwing observers' }],
+        language: 'en',
+      });
+      mockSpawn.mockImplementation(() => {
+        const proc = makeFakeProc();
+        if (mockSpawn.mock.calls.length === 1) {
+          driveClose(proc, { code: 0 });
+        } else {
+          driveClose(proc, { code: 0, stdout: wrapInMarkers(payload) });
+        }
+        return proc;
+      });
+
+      const ctorThrows = vi.fn(() => {
+        throw new Error('constructor observer boom');
+      });
+      const perCallThrows = vi.fn(() => {
+        throw new Error('per-call observer boom');
+      });
+
+      const extractor = new WhisperExtractor({
+        cleanup_audio: false,
+        onProgress: ctorThrows,
+      });
+
+      // Act — per-call callback also throws.
+      const result = await extractor.extract('dQw4w9WgXcQ', perCallThrows);
+
+      // Assert — both observers were invoked (and threw), yet the transcript
+      // came back intact.
+      expect(result?.full_text).toBe('survives throwing observers');
+      expect(ctorThrows).toHaveBeenCalled();
+      expect(perCallThrows).toHaveBeenCalled();
+    });
+  });
+
+  // ------------------------------------------------------------------------
   // Case 2 — valid JSON but missing `segments`. Pre-A17 this threw a raw
   // TypeError on `payload.segments.map`; post-A17 the Zod parse rejects it
   // and the catch maps it to a typed WHISPER_PARSE_FAILED.

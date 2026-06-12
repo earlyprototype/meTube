@@ -87,6 +87,29 @@ export interface HTMLReportGeneratorConfig {
    * `templates/` directory).
    */
   readonly templatesDir?: string;
+
+  /**
+   * `fetch` implementation used for GitHub repo-description enrichment.
+   * Injectable so tests can mock the network — production omits it and the
+   * global `fetch` is used. Whatever the call does (resolve, reject, time
+   * out) the enrichment degrades to "no description"; it never fails or
+   * hangs report generation.
+   *
+   * Caveat: the injected implementation MUST honor the `AbortSignal` passed in
+   * `RequestInit.signal`. The {@link GITHUB_FETCH_TIMEOUT_MS} timeout — and
+   * thus the "report generation never hangs" guarantee — only holds for a
+   * signal-respecting fetch; a mock that ignores the signal and never settles
+   * will stall enrichment indefinitely.
+   */
+  readonly githubFetch?: typeof fetch;
+
+  /**
+   * Milliseconds to wait between consecutive GitHub API calls. Mirrors the
+   * Python `time.sleep(0.1)` throttle (html_generator.py:389). Defaults to
+   * {@link DEFAULT_GITHUB_THROTTLE_MS}; tests pass `0` to avoid wall-clock
+   * waits.
+   */
+  readonly githubThrottleMs?: number;
 }
 
 /**
@@ -109,6 +132,73 @@ interface HelperOptions {
 }
 
 const DEFAULT_TEMPLATES_DIR = 'templates';
+
+/**
+ * Throttle between consecutive GitHub API calls. Matches Python's
+ * `time.sleep(0.1)` (html_generator.py:389) — "be nice to the GitHub API".
+ */
+const DEFAULT_GITHUB_THROTTLE_MS = 100;
+
+/**
+ * Per-call timeout for a GitHub description fetch. Matches Python's
+ * `requests.get(..., timeout=5)` (html_generator.py:225). A slow/hung GitHub
+ * must never stall report generation, so the call is aborted at this bound.
+ */
+const GITHUB_FETCH_TIMEOUT_MS = 5000;
+
+/**
+ * Strictly parse `owner` / `repo` from a GitHub repository URL.
+ *
+ * The previous `github.com` substring/regex match misfired on lookalikes
+ * (`notgithub.com`), other GitHub surfaces (`gist.github.com`), deep paths
+ * (`github.com/o/r/tree/main`), and query params. This parses with `new URL`
+ * and accepts ONLY:
+ *   - hostname exactly `github.com` or `www.github.com`
+ *   - pathname of exactly two non-empty segments (`owner/repo`) after trimming
+ *     leading/trailing slashes; a trailing `.git` on the repo is stripped
+ *
+ * Anything else (unparseable URL, wrong host, wrong segment count) returns
+ * `null`, so the caller passes the repo through unenriched.
+ *
+ * @param repoUrl - The candidate repository URL.
+ * @returns `{ owner, repo }` for a canonical repo URL, else `null`.
+ */
+function parseGithubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(repoUrl);
+  } catch {
+    return null;
+  }
+
+  if (parsed.hostname !== 'github.com' && parsed.hostname !== 'www.github.com') {
+    return null;
+  }
+
+  const segments = parsed.pathname.split('/').filter((s) => s.length > 0);
+  if (segments.length !== 2) {
+    return null;
+  }
+
+  const owner = segments[0];
+  const repo = segments[1].replace(/\.git$/, '');
+  if (owner.length === 0 || repo.length === 0) {
+    return null;
+  }
+
+  return { owner, repo };
+}
+
+/**
+ * Sleep for `ms` milliseconds. A `0` (or negative) delay resolves on the
+ * next microtask without scheduling a timer.
+ */
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Format a duration in seconds as `HH:MM:SS` (when > 1h) or `MM:SS`.
@@ -243,6 +333,8 @@ registerHandlebarsHelpers();
 export class HTMLReportGenerator {
   private readonly db: DatabaseManager;
   private readonly templatesDir: string;
+  private readonly githubFetch: typeof fetch | undefined;
+  private readonly githubThrottleMs: number;
   private readonly videoRepository: VideoRepository;
   private readonly playlistRepository: PlaylistRepository;
   private readonly playlistItemRepository: PlaylistItemRepository;
@@ -258,6 +350,10 @@ export class HTMLReportGenerator {
   constructor(db: DatabaseManager, config: HTMLReportGeneratorConfig = {}) {
     this.db = db;
     this.templatesDir = config.templatesDir ?? DEFAULT_TEMPLATES_DIR;
+    // Injected fetch wins; otherwise fall back to the runtime global `fetch`
+    // (Node 18+ / undici). Captured once so enrichment is deterministic.
+    this.githubFetch = config.githubFetch ?? (typeof fetch === 'function' ? fetch : undefined);
+    this.githubThrottleMs = config.githubThrottleMs ?? DEFAULT_GITHUB_THROTTLE_MS;
 
     // Repository wiring. Each repository takes the DatabaseManager — the
     // discipline-bearing handle — not the raw `Database`. Writes (which
@@ -377,12 +473,22 @@ export class HTMLReportGenerator {
       });
     }
 
-    const reportData = this.buildPlaylistReportData(
+    const baseReportData = this.buildPlaylistReportData(
       playlistId,
       playlist.title,
       playlist.description,
       videos
     );
+
+    // GitHub repo description enrichment (Python html_generator.py:382-389).
+    // Network-touching but fully isolated: any failure degrades to "no
+    // description" and never fails or hangs report generation.
+    const enrichedRepos = await this.enrichGithubDescriptions(baseReportData.github_repos);
+    const reportData: CompletePlaylistReportData = {
+      ...baseReportData,
+      github_repos: enrichedRepos,
+    };
+
     const html = this.renderPlaylistTemplate(reportData);
 
     ensureDirectory(outputDir);
@@ -604,15 +710,12 @@ export class HTMLReportGenerator {
    * top-list views. Reports must be reproducible across runs given the
    * same DB state, so non-stable ordering is a bug.
    *
-   * GitHub description enrichment from the Python original (lines
-   * 384-389) is intentionally NOT carried over to the v2 port —
-   * report rendering must remain pure / network-free so it stays
-   * reproducible and testable without HTTP mocks. The `description`
-   * column on a `github_repo` entity is already populated by the
-   * extractor pipeline (`AIAnalysisRepository` indirectly via the
-   * Gemini extraction step). If a future requirement re-introduces
-   * the live-fetch behaviour, it should live in the extractor, not
-   * the report. Tracked as a Phase 3 backlog item if needed.
+   * This step is pure (no network). GitHub repo-description enrichment
+   * (Python html_generator.py:382-389) runs as a SEPARATE async step
+   * (`enrichGithubDescriptions`) after this aggregation, in
+   * `generatePlaylistReport`, so the aggregation stays testable without
+   * HTTP mocks and the network-touching part is isolated and
+   * fail-safe.
    */
   private buildPlaylistReportData(
     playlistId: PlaylistId,
@@ -795,6 +898,138 @@ export class HTMLReportGenerator {
       people,
       generated_at: new Date().toISOString(),
     };
+  }
+
+  // --------------------------------------------------------------------
+  // GitHub repo description enrichment
+  // --------------------------------------------------------------------
+
+  /**
+   * For each UNIQUE GitHub repo, fetch its description from the GitHub API
+   * and attach it. Ports Python `html_generator.py:382-389`.
+   *
+   * The `github_repos` aggregation upstream already dedupes by URL/name, so
+   * "unique" is satisfied by iterating the list — one HTTP call per entry.
+   * Non-GitHub URLs are skipped (no call). Calls are throttled by
+   * `githubThrottleMs` between requests (Python's `time.sleep(0.1)`).
+   *
+   * Fail-safe contract: ANY failure (no fetch available, network error,
+   * 403/404/non-200, timeout, malformed JSON) yields no description for that
+   * repo — the original entry is returned unchanged. Report generation never
+   * throws or hangs because of this step. Returns a NEW array of NEW objects
+   * (immutability — the input aggregation is not mutated).
+   *
+   * @param repos - Aggregated repos from `buildPlaylistReportData`.
+   * @returns The same repos, each optionally gaining a `description`.
+   */
+  private async enrichGithubDescriptions(
+    repos: readonly AggregatedEntity[]
+  ): Promise<AggregatedEntity[]> {
+    if (this.githubFetch === undefined || repos.length === 0) {
+      // No fetch implementation, or nothing to enrich — pass through
+      // unchanged (still a fresh array for immutability).
+      return repos.map((repo) => ({ ...repo }));
+    }
+
+    const enriched: AggregatedEntity[] = [];
+    let firstFetched = false;
+
+    for (const repo of repos) {
+      // Strict parse — only a canonical github.com owner/repo URL is enriched.
+      // A substring match here misfired on notgithub.com / gist.github.com /
+      // deep paths / query params.
+      const parsedRepo = repo.url !== undefined ? parseGithubRepoUrl(repo.url) : null;
+      if (parsedRepo === null) {
+        enriched.push({ ...repo });
+        continue;
+      }
+
+      // Throttle BETWEEN calls only (not before the first), matching the
+      // Python loop's `time.sleep(0.1)` placement after each request.
+      if (firstFetched) {
+        await delay(this.githubThrottleMs);
+      }
+      firstFetched = true;
+
+      const description = await this.fetchGithubDescription(repo.url as string);
+      enriched.push(description !== null ? { ...repo, description } : { ...repo });
+    }
+
+    return enriched;
+  }
+
+  /**
+   * Fetch a single repository's description from the GitHub API. Ports
+   * Python `_fetch_github_description` (html_generator.py:200-238).
+   *
+   * Strictly extracts `owner/repo` via {@link parseGithubRepoUrl} (canonical
+   * github.com host + exactly two path segments, `.git` suffix stripped), GETs
+   * `https://api.github.com/repos/{owner}/{repo}` with a
+   * {@link GITHUB_FETCH_TIMEOUT_MS} abort timeout, and returns the
+   * `description` field on a 200. An empty-string description is treated as
+   * "none" (Python's `if description:` guard).
+   *
+   * NEVER throws: every failure mode (unparseable URL, network error, abort,
+   * non-200, malformed body) returns `null`.
+   *
+   * Abort caveat: the timeout below only fires if `this.githubFetch` honors
+   * the `AbortSignal` it is handed (`signal: controller.signal`). The global
+   * `fetch` does; an injected mock must too, or a never-settling call will
+   * hang here despite the timer.
+   *
+   * @param repoUrl - The repo's GitHub URL.
+   * @returns The non-empty description, or `null` if unavailable.
+   */
+  private async fetchGithubDescription(repoUrl: string): Promise<string | null> {
+    const parsedRepo = parseGithubRepoUrl(repoUrl);
+    if (parsedRepo === null) {
+      return null;
+    }
+
+    const { owner, repo } = parsedRepo;
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), GITHUB_FETCH_TIMEOUT_MS);
+
+    try {
+      const githubFetch = this.githubFetch;
+      if (githubFetch === undefined) {
+        return null;
+      }
+      const response = await githubFetch(apiUrl, {
+        signal: controller.signal,
+        headers: { Accept: 'application/vnd.github.v3+json' },
+      });
+
+      if (!response.ok) {
+        // 403 (rate limit), 404 (gone), any other non-2xx → no description.
+        logger.debug({ apiUrl, status: response.status }, 'GitHub description fetch non-OK');
+        return null;
+      }
+
+      const body: unknown = await response.json();
+      if (
+        body !== null &&
+        typeof body === 'object' &&
+        'description' in body &&
+        typeof (body as { description: unknown }).description === 'string'
+      ) {
+        const description = (body as { description: string }).description;
+        // Python's `if description:` — empty string counts as no description.
+        return description.length > 0 ? description : null;
+      }
+      return null;
+    } catch (error) {
+      // Network error, abort/timeout, malformed JSON — degrade silently.
+      logger.debug(
+        { apiUrl, err: error instanceof Error ? error.message : String(error) },
+        'GitHub description fetch failed; rendering without description'
+      );
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // --------------------------------------------------------------------

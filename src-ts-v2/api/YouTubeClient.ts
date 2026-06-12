@@ -218,6 +218,10 @@ export class YouTubeClient {
       thumbnailUrl: parsed.snippet.thumbnails.default?.url,
       tags: parsed.snippet.tags,
       categoryId: parsed.snippet.categoryId,
+      // Python reference: youtube_client.py:158. v1 dropped this, leaving the
+      // `definition` column always NULL despite the schema/column/write all
+      // existing. Copied through so 'hd'/'sd' lands in the DB.
+      definition: parsed.contentDetails.definition,
       caption: this.parseBoolStr(parsed.contentDetails.caption),
       licensedContent: parsed.contentDetails.licensedContent,
       topicCategories: parsed.topicDetails?.topicCategories,

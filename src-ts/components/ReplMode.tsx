@@ -7,6 +7,7 @@ import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
 import { PlaylistRepository } from '../../src-ts-v2/database/PlaylistRepository.js';
 import { VideoRepository } from '../../src-ts-v2/database/VideoRepository.js';
 import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
+import { loadAppPaths } from '../utils/appConfig.js';
 
 interface ReplModeProps {
   onCommand: (
@@ -90,29 +91,30 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
   // Load stats from database and check authentication
   useEffect(() => {
     function loadStats() {
+      // Probe auth OUTSIDE the DB try: a config/DB failure must not reset a
+      // genuinely-authenticated state to false. The sidebar would otherwise
+      // lie about auth whenever the DB path is broken — tokens loaded fine.
+      // v2 YouTubeAuth has no isAuthenticated(); we probe disk via loadTokens().
+      let isAuthenticated = false;
       try {
-        // Check authentication — v2 YouTubeAuth has no isAuthenticated();
-        // we probe disk via loadTokens() and catch on failure.
         const auth = new YouTubeAuth();
-        let isAuthenticated = false;
-        try {
-          auth.loadTokens();
-          isAuthenticated = true;
-        } catch {
-          isAuthenticated = false;
-        }
+        auth.loadTokens();
+        isAuthenticated = true;
+      } catch {
+        isAuthenticated = false;
+      }
 
+      let db: DatabaseManager | undefined;
+      try {
         // Get counts from database — v2 repos use findAll(), not getAll().
         // v2 PlaylistRepository.findAll defaults to enabledOnly: true; the
         // Sidebar wants all tracked playlists so we opt out.
-        const db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager(loadAppPaths().dbPath);
         const playlistRepo = new PlaylistRepository(db);
         const videoRepo = new VideoRepository(db);
 
         const playlists = playlistRepo.findAll({ enabledOnly: false });
         const videos = videoRepo.findAll();
-
-        db.close();
 
         setStats({
           authenticated: isAuthenticated,
@@ -120,12 +122,15 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
           videoCount: videos.length,
         });
       } catch (error) {
-        // If database doesn't exist yet, keep zeros
+        // DB-side failure (missing/broken config or DB): keep the REAL auth
+        // state and zero only the playlist/video counts.
         setStats({
-          authenticated: false,
+          authenticated: isAuthenticated,
           playlistCount: 0,
           videoCount: 0,
         });
+      } finally {
+        db?.close();
       }
     }
 
@@ -150,7 +155,7 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
         isAuthenticated = false;
       }
 
-      const db = new DatabaseManager('data/metube.db');
+      const db = new DatabaseManager(loadAppPaths().dbPath);
       const playlistRepo = new PlaylistRepository(db);
       const videoRepo = new VideoRepository(db);
 

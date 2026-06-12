@@ -1,0 +1,108 @@
+/**
+ * Coverage for the FULL Python-style in-run display (PARITY.md section A,
+ * task 1). Python printed per video: a title header, step-result lines
+ * (metadata, transcript source + char count, entity counts), and a live
+ * Whisper percentage bar (legacy/python/src/extractors/video_extractor.py:108-228).
+ *
+ * The component previously gated the per-video block on `currentVideo` (never
+ * set) and the whisper panel on `whisperProgress` (never set). These tests pin
+ * the additive `stepLines` rendering plus the existing whisper panel so the
+ * granular per-video output renders once `mapEventToProgress` feeds the state.
+ */
+
+import React from 'react';
+import { render } from 'ink-testing-library';
+import { describe, it, expect } from 'vitest';
+
+import { ProgressDisplay } from '../ProgressDisplay.js';
+
+const BASE_PROPS = {
+  current: 1,
+  total: 3,
+  status: 'transcribing' as const,
+  successCount: 0,
+  failureCount: 0,
+  startTime: new Date(),
+};
+
+describe('ProgressDisplay — per-video step lines', () => {
+  it('renders the current video title when set', () => {
+    const { lastFrame } = render(<ProgressDisplay {...BASE_PROPS} currentVideo="My Great Video" />);
+
+    expect(lastFrame()).toContain('My Great Video');
+  });
+
+  it('renders accumulated step-result lines for the current video', () => {
+    const stepLines = [
+      'Channel · 12:34',
+      'Transcript: YouTube captions (12,345 chars)',
+      'Found 2 repos · 1 website · 5 topics · 3 people',
+    ];
+    const { lastFrame } = render(
+      <ProgressDisplay {...BASE_PROPS} currentVideo="My Great Video" stepLines={stepLines} />
+    );
+
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('Channel · 12:34');
+    expect(frame).toContain('YouTube captions (12,345 chars)');
+    expect(frame).toContain('Found 2 repos · 1 website · 5 topics · 3 people');
+  });
+
+  it('renders the live Whisper percentage bar while transcribing', () => {
+    const { lastFrame } = render(
+      <ProgressDisplay
+        {...BASE_PROPS}
+        currentVideo="Whisper Video"
+        whisperProgress={{ stage: 'transcribing', percentage: 42 }}
+      />
+    );
+
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('Whisper AI Transcription');
+    expect(frame).toContain('42%');
+  });
+
+  it('hides the Whisper panel once the stage is complete', () => {
+    const { lastFrame } = render(
+      <ProgressDisplay
+        {...BASE_PROPS}
+        currentVideo="Whisper Video"
+        whisperProgress={{ stage: 'complete', percentage: 100 }}
+      />
+    );
+
+    expect(lastFrame()).not.toContain('Whisper AI Transcription');
+  });
+
+  it('still renders the playlist-level progress bar (unchanged behaviour)', () => {
+    const { lastFrame } = render(<ProgressDisplay {...BASE_PROPS} current={2} total={5} />);
+
+    const frame = lastFrame() ?? '';
+    expect(frame).toContain('2 / 5');
+  });
+
+  it('clamps the bar (no RangeError, caps at 100%) when current exceeds total', () => {
+    // An off-by-one in event ordering can yield current > total. Without
+    // clamping, filledLength > progressBarLength makes the second .repeat()
+    // count negative and String.repeat throws. The render must survive, cap
+    // the percentage at 100, and fully fill the bar.
+    const render7of5 = () => render(<ProgressDisplay {...BASE_PROPS} current={7} total={5} />);
+    expect(render7of5).not.toThrow();
+
+    const frame = render7of5().lastFrame() ?? '';
+    expect(frame).not.toContain('NaN');
+    expect(frame).toContain('(100%)');
+    // Bar fully filled, no stray dashes from a negative remainder.
+    expect(frame).toContain('#'.repeat(20));
+  });
+
+  it('renders 0% (never NaN%) when total is zero', () => {
+    // Extraction start, or a run where every video is skipped, leaves total
+    // at 0. current / total is NaN — the percentage and bar must guard it.
+    const { lastFrame } = render(<ProgressDisplay {...BASE_PROPS} current={0} total={0} />);
+
+    const frame = lastFrame() ?? '';
+    expect(frame).not.toContain('NaN');
+    expect(frame).toContain('0 / 0 videos (0%)');
+  });
+});

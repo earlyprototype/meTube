@@ -17,7 +17,7 @@
  *   NON-NEGOTIABLE per `docs/PORT_PLAN.md` Wave 4.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -114,7 +114,7 @@ const PLAYLIST_TEMPLATE = `<!DOCTYPE html>
   {{#each top_topics}}<span class="agg-topic" data-count="{{ count }}">{{ name }}</span>{{/each}}
 </section>
 <section class="agg-repos">
-  {{#each github_repos}}<a class="agg-repo" href="{{ url }}">{{ name }}</a>{{/each}}
+  {{#each github_repos}}<a class="agg-repo" href="{{ url }}">{{ name }}</a>{{#if description}}<span class="agg-repo-desc">{{ description }}</span>{{/if}}{{/each}}
 </section>
 <section class="agg-people">
   {{#each people}}<span class="agg-person" data-count="{{ count }}">{{ name }}</span>{{/each}}
@@ -672,5 +672,342 @@ describe('HTMLReportGenerator.generatePlaylistReport', () => {
     expect(html).toContain('Video with analysis');
     expect(html).toContain('PLIST_ANALYSIS_SUMMARY_SENTINEL embedded in card');
     expect(fs.existsSync(filepath)).toBe(true);
+  });
+});
+
+// --------------------------------------------------------------------------
+// GitHub repo description enrichment (Python html_generator.py:382-389)
+// --------------------------------------------------------------------------
+
+/**
+ * Build a harness whose generator is wired with an injected `githubFetch`
+ * mock and a zero throttle (so tests never wait wall-clock between calls).
+ */
+function makeEnrichHarness(githubFetch: typeof fetch): TestHarness {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'metube-report-enrich-'));
+  const templatesDir = path.join(tempRoot, 'templates');
+  const outputDir = path.join(tempRoot, 'reports');
+  fs.mkdirSync(templatesDir, { recursive: true });
+  fs.writeFileSync(path.join(templatesDir, 'video_report.html'), VIDEO_TEMPLATE);
+  fs.writeFileSync(path.join(templatesDir, 'playlist_report.html'), PLAYLIST_TEMPLATE);
+
+  const dbm = new DatabaseManager(':memory:');
+  const generator = new HTMLReportGenerator(dbm, {
+    templatesDir,
+    githubFetch,
+    githubThrottleMs: 0,
+  });
+  return { dbm, templatesDir, outputDir, tempRoot, generator };
+}
+
+/** A `Response`-like stub good enough for the enrichment code path. */
+function githubResponse(status: number, body: unknown): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  } as unknown as Response;
+}
+
+/**
+ * Build the rejection a signal-respecting `fetch` raises when its
+ * `AbortSignal` fires — a `DOMException` named `AbortError`, exactly what the
+ * platform `fetch` throws on abort. Falls back to a plain `Error` on runtimes
+ * without `DOMException` (the enrichment catch only reads `.message`).
+ */
+function makeAbortError(): Error {
+  if (typeof DOMException === 'function') {
+    return new DOMException('The operation was aborted.', 'AbortError');
+  }
+  const err = new Error('The operation was aborted.');
+  err.name = 'AbortError';
+  return err;
+}
+
+describe('HTMLReportGenerator — GitHub repo description enrichment', () => {
+  let h: TestHarness;
+
+  afterEach(() => {
+    if (h) {
+      disposeHarness(h);
+    }
+    vi.restoreAllMocks();
+  });
+
+  function seedRepoPlaylist(
+    dbm: DatabaseManager,
+    repos: ReadonlyArray<{ value: string; url: string }>
+  ): PlaylistId {
+    const playlistId = seedPlaylist(dbm, asPlaylistId('PLenrich0000000000000'));
+    const videoId = seedVideo(dbm, { videoId: asVideoId('ENRICHVID01') });
+    attachVideoToPlaylist(dbm, playlistId, videoId, 0);
+    const entityRepo = new EntityRepository(dbm);
+    entityRepo.insertMany(
+      videoId,
+      repos.map((r) => ({ type: 'github_repo', value: r.value, url: r.url }))
+    );
+    return playlistId;
+  }
+
+  it('fetches and renders the GitHub description for each unique repo', async () => {
+    // Arrange
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const u = String(url);
+      if (u === 'https://api.github.com/repos/serde-rs/serde') {
+        return githubResponse(200, { description: 'SERDE_FRAMEWORK_DESCRIPTION' });
+      }
+      return githubResponse(404, {});
+    }) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'serde-rs/serde', url: 'https://github.com/serde-rs/serde' },
+    ]);
+
+    // Act
+    const filepath = await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+    const html = fs.readFileSync(filepath, 'utf-8');
+
+    // Assert — the fetched description appears in the rendered HTML.
+    expect(html).toContain('SERDE_FRAMEWORK_DESCRIPTION');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.github.com/repos/serde-rs/serde',
+      expect.anything()
+    );
+  });
+
+  it('calls the GitHub API once per UNIQUE repo (deduped)', async () => {
+    // Arrange — the same repo appears via two videos; only one API call.
+    const fetchMock = vi.fn(async () =>
+      githubResponse(200, { description: 'ONE_CALL_DESC' })
+    ) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+
+    const playlistId = seedPlaylist(h.dbm, asPlaylistId('PLdedupe00000000000000'));
+    const v1 = seedVideo(h.dbm, { videoId: asVideoId('DEDUPEVID01') });
+    const v2 = seedVideo(h.dbm, { videoId: asVideoId('DEDUPEVID02') });
+    attachVideoToPlaylist(h.dbm, playlistId, v1, 0);
+    attachVideoToPlaylist(h.dbm, playlistId, v2, 1);
+    const entityRepo = new EntityRepository(h.dbm);
+    entityRepo.insertMany(v1, [
+      { type: 'github_repo', value: 'dup/repo', url: 'https://github.com/dup/repo' },
+    ]);
+    entityRepo.insertMany(v2, [
+      { type: 'github_repo', value: 'dup/repo', url: 'https://github.com/dup/repo' },
+    ]);
+
+    // Act
+    await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+
+    // Assert — exactly one fetch for the single distinct repo.
+    expect(fetchMock as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+  });
+
+  it('degrades gracefully (no description, no throw) when fetch rejects', async () => {
+    // Arrange — network failure on every call.
+    const fetchMock = vi.fn(async () => {
+      throw new Error('ECONNRESET');
+    }) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'down/repo', url: 'https://github.com/down/repo' },
+    ]);
+
+    // Act — must NOT throw despite the network being down.
+    const filepath = await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+    const html = fs.readFileSync(filepath, 'utf-8');
+
+    // Assert — report still generated, repo still present, just no description.
+    expect(fs.existsSync(filepath)).toBe(true);
+    expect(html).toContain('down/repo');
+    expect(html).not.toContain('agg-repo-desc');
+  });
+
+  it('degrades gracefully on a 403 rate-limit response', async () => {
+    // Arrange
+    const fetchMock = vi.fn(async () =>
+      githubResponse(403, { message: 'rate limited' })
+    ) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'limited/repo', url: 'https://github.com/limited/repo' },
+    ]);
+
+    // Act + Assert — no throw, no description rendered.
+    const filepath = await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+    const html = fs.readFileSync(filepath, 'utf-8');
+    expect(html).toContain('limited/repo');
+    expect(html).not.toContain('agg-repo-desc');
+  });
+
+  it('skips enrichment for non-GitHub URLs', async () => {
+    // Arrange — a repo entity whose URL is not github.com is never fetched.
+    const fetchMock = vi.fn(async () =>
+      githubResponse(200, { description: 'SHOULD_NOT_APPEAR' })
+    ) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'gitlab/thing', url: 'https://gitlab.com/gitlab/thing' },
+    ]);
+
+    // Act
+    await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+
+    // Assert — no GitHub API call for a non-github URL.
+    expect(fetchMock as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    // Hostname lookalike — substring "github.com" appears but the host differs.
+    ['notgithub.com lookalike', 'https://notgithub.com/owner/repo'],
+    // A different GitHub surface — gist, not a repo.
+    ['gist subdomain', 'https://gist.github.com/owner/abc123'],
+    // Deep path — more than two segments is not a bare owner/repo.
+    ['deep path (tree/main)', 'https://github.com/owner/repo/tree/main'],
+    // Single segment — a user/org page, not a repo.
+    ['single segment (org page)', 'https://github.com/owner'],
+  ])('does NOT enrich a non-canonical GitHub URL: %s', async (_label, url) => {
+    // Arrange — strict URL parsing must reject these; no fetch should fire.
+    const fetchMock = vi.fn(async () =>
+      githubResponse(200, { description: 'SHOULD_NOT_APPEAR' })
+    ) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [{ value: 'owner/repo', url }]);
+
+    // Act
+    const filepath = await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+    const html = fs.readFileSync(filepath, 'utf-8');
+
+    // Assert — no API call, no description rendered, repo still passes through.
+    expect(fetchMock as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+    expect(html).not.toContain('agg-repo-desc');
+    expect(html).not.toContain('SHOULD_NOT_APPEAR');
+  });
+
+  it('enriches a canonical github.com URL that carries a query string', async () => {
+    // A query string is allowed: the path is still a bare owner/repo, so the
+    // strict parser keeps it and fetches the canonical API URL (no query).
+    const fetchMock = vi.fn(async () =>
+      githubResponse(200, { description: 'QUERY_OK_DESC' })
+    ) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'owner/repo', url: 'https://github.com/owner/repo?tab=readme' },
+    ]);
+
+    // Act
+    await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+
+    // Assert — fetched the clean API URL, query stripped.
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.github.com/repos/owner/repo',
+      expect.anything()
+    );
+  });
+
+  it('strips a .git suffix from the repo name when building the API URL', async () => {
+    // Arrange — Python removes a trailing .git before the API call.
+    const fetchMock = vi.fn(async () =>
+      githubResponse(200, { description: 'DOTGIT_DESC' })
+    ) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'owner/repo', url: 'https://github.com/owner/repo.git' },
+    ]);
+
+    // Act
+    await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+
+    // Assert — the API URL has no .git suffix.
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.github.com/repos/owner/repo',
+      expect.anything()
+    );
+  });
+
+  it('treats an empty-string description as no description', async () => {
+    // Arrange — GitHub returns 200 with an empty description (common for
+    // repos that never set one). Python's `if description:` skips it.
+    const fetchMock = vi.fn(async () =>
+      githubResponse(200, { description: '' })
+    ) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'empty/desc', url: 'https://github.com/empty/desc' },
+    ]);
+
+    // Act
+    const filepath = await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+    const html = fs.readFileSync(filepath, 'utf-8');
+
+    // Assert — no description slot rendered.
+    expect(html).toContain('empty/desc');
+    expect(html).not.toContain('agg-repo-desc');
+  });
+
+  it('aborts a hung GitHub fetch at the 5s timeout and still completes the report', async () => {
+    // A fetch that NEVER resolves on its own but RESPECTS the AbortSignal:
+    // it rejects with an AbortError the moment the signal fires. This is the
+    // exact contract the production timeout relies on (a signal-ignoring mock
+    // would hang forever — see the githubFetch caveat in HTMLReportGenerator).
+    // Vitest fake timers drive the wall clock so the 5s timer fires
+    // deterministically without a real 5-second wait.
+    vi.useFakeTimers();
+
+    let abortObserved = false;
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) {
+          // The production call always passes a signal; guard the contract.
+          reject(new Error('test fetch invoked without an AbortSignal'));
+          return;
+        }
+        // Already aborted (defensive) — reject immediately.
+        if (signal.aborted) {
+          abortObserved = true;
+          reject(makeAbortError());
+          return;
+        }
+        // Otherwise wait for the controller's abort, which the 5s timer trips.
+        signal.addEventListener(
+          'abort',
+          () => {
+            abortObserved = true;
+            reject(makeAbortError());
+          },
+          { once: true }
+        );
+        // Note: no resolve path — this fetch only ever settles via abort.
+      });
+    }) as unknown as typeof fetch;
+
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'hung/repo', url: 'https://github.com/hung/repo' },
+    ]);
+
+    try {
+      // Kick off report generation; it will await the (hung) fetch.
+      const reportPromise = h.generator.generatePlaylistReport(playlistId, h.outputDir);
+
+      // Advance the fake clock past the 5s GITHUB_FETCH_TIMEOUT_MS so the
+      // AbortController fires. `...Async` flushes the microtasks the abort
+      // rejection schedules, letting the catch-and-degrade path run.
+      await vi.advanceTimersByTimeAsync(5000);
+
+      const filepath = await reportPromise;
+      const html = fs.readFileSync(filepath, 'utf-8');
+
+      // The fetch saw the abort (timeout actually fired)...
+      expect(abortObserved).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // ...the repo degraded to no description...
+      expect(html).toContain('hung/repo');
+      expect(html).not.toContain('agg-repo-desc');
+      // ...and report generation completed despite the hang.
+      expect(fs.existsSync(filepath)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

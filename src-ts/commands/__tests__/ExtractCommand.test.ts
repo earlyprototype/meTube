@@ -339,4 +339,61 @@ describe('makeYouTubeClientAdapter', () => {
 
     await expect(adapter.getPlaylistVideos(PLAYLIST_ID)).resolves.toHaveLength(1);
   });
+
+  // Task 7: the adapter must forward `definition` ('hd'/'sd') from the v2
+  // client's YouTubeVideo onto VideoDetails so the DB write persists it.
+  // Before, the adapter dropped it and the column always stored NULL.
+  function makeVideoStubClient(video: Record<string, unknown>): YouTubeClient {
+    return {
+      async getVideoById(): Promise<unknown> {
+        return video;
+      },
+    } as unknown as YouTubeClient;
+  }
+
+  function fixtureVideo(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      videoId: asVideoId('vid00000001'),
+      title: 'Vid',
+      description: '',
+      channelId: 'UCxxxxxxxxxxxxxxxxxxxxxx',
+      channelTitle: 'Chan',
+      publishedAt: '2024-01-01T00:00:00Z',
+      duration: 'PT3M',
+      durationSeconds: 180,
+      isShort: false,
+      viewCount: 1,
+      likeCount: 1,
+      commentCount: 1,
+      tags: [],
+      categoryId: '28',
+      caption: true,
+      licensedContent: false,
+      ...overrides,
+    };
+  }
+
+  it('forwards definition (hd) from the client video onto VideoDetails', async () => {
+    const adapter = makeYouTubeClientAdapter(makeVideoStubClient(fixtureVideo({ definition: 'hd' })));
+
+    const details = await adapter.getVideoDetails(asVideoId('vid00000001'));
+
+    expect(details?.definition).toBe('hd');
+  });
+
+  it('forwards definition (sd) too', async () => {
+    const adapter = makeYouTubeClientAdapter(makeVideoStubClient(fixtureVideo({ definition: 'sd' })));
+
+    const details = await adapter.getVideoDetails(asVideoId('vid00000001'));
+
+    expect(details?.definition).toBe('sd');
+  });
+
+  it('leaves definition undefined when the client video omits it', async () => {
+    const adapter = makeYouTubeClientAdapter(makeVideoStubClient(fixtureVideo()));
+
+    const details = await adapter.getVideoDetails(asVideoId('vid00000001'));
+
+    expect(details?.definition).toBeUndefined();
+  });
 });

@@ -25,6 +25,13 @@ import { PlaylistRepository } from '../../src-ts-v2/database/PlaylistRepository.
 import { ProgressDisplay } from '../components/ProgressDisplay.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { PostExtractionMenu } from '../components/PostExtractionMenu.js';
+import { buildErrorInfo, type ErrorInfo } from '../utils/errorInfo.js';
+import { loadAppPaths } from '../utils/appConfig.js';
+import {
+  formatMetaLine,
+  formatTranscriptLine,
+  formatEntitiesLine,
+} from '../utils/progressLines.js';
 import { resolvePlaylistIdentifier } from '../../src-ts-v2/utils/playlistResolver.js';
 import { safeTitle } from '../utils/terminal.js';
 import logger from '../../src-ts-v2/utils/logger.js';
@@ -58,27 +65,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
   const [status, setStatus] = useState<'initializing' | 'extracting' | 'done' | 'menu' | 'error'>(
     'initializing'
   );
-  const [progress, setProgress] = useState<{
-    current: number;
-    total: number;
-    currentVideo: string;
-    status:
-      | 'downloading'
-      | 'downloading_audio'
-      | 'whisper_transcribing'
-      | 'transcribing'
-      | 'parsing'
-      | 'saving'
-      | 'completed';
-    successCount: number;
-    failureCount: number;
-    skippedCount: number;
-    whisperProgress?: {
-      stage: 'downloading' | 'transcribing' | 'complete';
-      percentage?: number;
-      message?: string;
-    };
-  }>({
+  const [progress, setProgress] = useState<ProgressState>({
     current: 0,
     total: 0,
     currentVideo: '',
@@ -86,6 +73,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
     successCount: 0,
     failureCount: 0,
     skippedCount: 0,
+    stepLines: [],
     whisperProgress: undefined,
   });
   const [startTime] = useState(new Date());
@@ -94,6 +82,11 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
   // to the user via ErrorDisplay's details block. Null for non-AppError
   // failures (which carry their message only).
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  // The AppError's machine code + structured context, threaded to
+  // ErrorDisplay so it can render the numbered remediation steps Python
+  // printed (e.g. CONFIG_ERROR -> "check config/config.yaml: <cause>").
+  // Null for non-AppError failures.
+  const [errorInfo, setErrorInfo] = useState<ErrorInfo | null>(null);
   // Truthful end-of-run summary counters. `unavailable` and
   // `shapeMismatch` are tallied from the tolerant-page-fetch skip
   // callback; the verified* fields are DB truth read back from the
@@ -135,7 +128,19 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         }
 
         if (type !== 'playlist') {
-          setError('Only playlist extraction supported currently');
+          // Point the user at the correct grammar with a copy-pasteable
+          // suggestion. Prefer a concrete identifier when we have one:
+          //   `extract FabLab`     -> type='FabLab', id=undefined -> use type
+          //   `extract video abc`  -> type='video',  id='abc'     -> use id
+          // Fall back to the `<id>` placeholder when only a bare keyword
+          // (e.g. `video`, `all`) was given with no identifier to echo.
+          const KNOWN_SUBCOMMANDS = ['video', 'all'];
+          const concreteTarget =
+            id ?? (type && !KNOWN_SUBCOMMANDS.includes(type) ? type : undefined);
+          const target = concreteTarget ?? '<id>';
+          setError(
+            `Only playlist extraction is supported. Did you mean: extract playlist ${target}`
+          );
           setStatus('error');
           return;
         }
@@ -147,8 +152,10 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         }
 
         // Initialize services up-front; v2 resolver needs a DB handle for
-        // the database-fallback step.
-        db = new DatabaseManager('data/metube.db');
+        // the database-fallback step. DB path comes from config (task 8); a
+        // broken config throws ConfigError, caught below.
+        const { dbPath } = loadAppPaths();
+        db = new DatabaseManager(dbPath);
 
         // Resolve playlist identifier (number, title, URL, or ID) — v2
         // resolver returns branded PlaylistId.
@@ -224,6 +231,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           successCount: result.processed,
           failureCount: result.failed,
           skippedCount: result.skipped,
+          stepLines: [],
           whisperProgress: undefined,
         });
 
@@ -245,6 +253,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         if (err instanceof AppError) {
           setErrorDetails(formatAppErrorDetails(err));
         }
+        setErrorInfo(buildErrorInfo(err));
         setStatus('error');
       } finally {
         // Close exactly once on every path. Idempotent: undefined when
@@ -259,8 +268,9 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
       let db: DatabaseManager | undefined;
       try {
         // Get all enabled playlists — v2 findAll default is enabledOnly:
-        // true, which is what we want here.
-        db = new DatabaseManager('data/metube.db');
+        // true, which is what we want here. DB path from config (task 8).
+        const { dbPath } = loadAppPaths();
+        db = new DatabaseManager(dbPath);
         const playlistRepo = new PlaylistRepository(db);
         const enabledPlaylists = playlistRepo.findAll({ enabledOnly: true });
 
@@ -315,7 +325,18 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           setExtractedPlaylistId(playlist.playlistId);
 
           try {
-            const result = await extractor.extractPlaylist(playlist.playlistId);
+            // Forward per-video progress so --all gets the SAME FULL
+            // Python-style per-video display as the single-playlist path —
+            // Python's --all loops extract_playlist, which prints the granular
+            // per-video lines for every video (cli.py:916-921 +
+            // video_extractor.py:108-228). The playlist-level context lives in
+            // the header (setPlaylistTitle `[i/N] title`); the in-run bar tracks
+            // videos within the current playlist.
+            const result = await extractor.extractPlaylist(playlist.playlistId, {
+              onProgress: (event: ExtractProgressEvent) => {
+                mapEventToProgress(event, setProgress);
+              },
+            });
 
             totalProcessed += result.processed;
             totalDistinctProcessed += result.distinctProcessed;
@@ -326,17 +347,6 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
               totalVerifiedTranscriptRows,
               result.verifiedTranscriptRows
             );
-
-            setProgress({
-              current: i + 1,
-              total: enabledPlaylists.length,
-              currentVideo: `Completed: ${safeTitle(playlist.title)}`,
-              status: 'completed',
-              successCount: totalProcessed,
-              failureCount: totalFailed,
-              skippedCount: totalSkipped,
-              whisperProgress: undefined,
-            });
           } catch (err) {
             playlistsFailed++;
             totalFailed++;
@@ -352,6 +362,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
           successCount: totalProcessed,
           failureCount: totalFailed,
           skippedCount: totalSkipped,
+          stepLines: [],
           whisperProgress: undefined,
         });
 
@@ -376,6 +387,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
         if (err instanceof AppError) {
           setErrorDetails(formatAppErrorDetails(err));
         }
+        setErrorInfo(buildErrorInfo(err));
         setStatus('error');
       } finally {
         // Close exactly once on every path. Idempotent: undefined when
@@ -389,7 +401,12 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
 
   if (status === 'error') {
     return (
-      <ErrorDisplay message={error || 'Extraction failed'} details={errorDetails ?? undefined} />
+      <ErrorDisplay
+        message={error || 'Extraction failed'}
+        details={errorDetails ?? undefined}
+        code={errorInfo?.code}
+        remediationContext={errorInfo?.remediationContext}
+      />
     );
   }
 
@@ -452,6 +469,7 @@ export function ExtractCommand({ type, id, flags, onComplete, onNavigate }: Extr
       successCount={progress.successCount}
       failureCount={progress.failureCount}
       startTime={startTime}
+      stepLines={progress.stepLines}
       whisperProgress={progress.whisperProgress}
     />
   );
@@ -657,6 +675,12 @@ export function makeYouTubeClientAdapter(
         commentCount: v.commentCount ?? 0,
         tags: v.tags ?? [],
         categoryId: v.categoryId,
+        // Map definition ('hd'/'sd') through so the DB write persists it.
+        // Wave 1 made toVideo() copy contentDetails.definition onto
+        // YouTubeVideo; without this the adapter dropped it and the column
+        // stored NULL despite the full schema/column/write plumbing existing
+        // (PARITY.md section D, task 7).
+        definition: v.definition,
         caption: v.caption,
         licensedContent: v.licensedContent,
       };
@@ -665,11 +689,13 @@ export function makeYouTubeClientAdapter(
 }
 
 /**
- * Map v2's discriminated-union ExtractProgressEvent into the existing
- * ProgressDisplay state shape. The display does not care about per-stage
- * detail — it only renders counters + current video + a status enum.
+ * Map v2's discriminated-union ExtractProgressEvent into the ProgressDisplay
+ * state shape. The parity-close cycle enriched this from a coarse status enum
+ * to the FULL Python-style in-run display: `currentVideo` is set from each
+ * event's `title`, `stepLines` accumulates the granular per-video result lines,
+ * and `whisperProgress` drives the live Whisper bar.
  */
-type ProgressState = {
+export type ProgressState = {
   current: number;
   total: number;
   currentVideo: string;
@@ -684,6 +710,11 @@ type ProgressState = {
   successCount: number;
   failureCount: number;
   skippedCount: number;
+  /**
+   * Per-video step-result lines for the CURRENT video. Reset on each new
+   * video's first event (`fetch_meta`); appended on the per-step RESULT events.
+   */
+  stepLines: readonly string[];
   whisperProgress?: {
     stage: 'downloading' | 'transcribing' | 'complete';
     percentage?: number;
@@ -691,7 +722,7 @@ type ProgressState = {
   };
 };
 
-function mapEventToProgress(
+export function mapEventToProgress(
   event: ExtractProgressEvent,
   setProgress: React.Dispatch<React.SetStateAction<ProgressState>>
 ): void {
@@ -700,12 +731,28 @@ function mapEventToProgress(
       setProgress((prev) => ({ ...prev, total: event.total, current: 0 }));
       return;
     case 'fetch_meta':
+      // First event for each video — reset the per-video accumulators so the
+      // step lines and Whisper bar belong to THIS video, not the previous one.
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        currentVideo: event.title,
+        status: 'downloading',
+        stepLines: [],
+        whisperProgress: undefined,
+      }));
+      return;
     case 'persist':
       setProgress((prev) => ({
         ...prev,
         current: event.index,
         total: event.total,
-        status: 'downloading',
+        currentVideo: event.title,
+        // 'persist' is the DB-write step — surface it as 'saving' (rendered
+        // "Saving to database"), not 'downloading'. The prior value mislabeled
+        // the persist phase as a download.
+        status: 'saving',
       }));
       return;
     case 'transcribe':
@@ -713,6 +760,7 @@ function mapEventToProgress(
         ...prev,
         current: event.index,
         total: event.total,
+        currentVideo: event.title,
         status: 'transcribing',
       }));
       return;
@@ -721,6 +769,7 @@ function mapEventToProgress(
         ...prev,
         current: event.index,
         total: event.total,
+        currentVideo: event.title,
         status: 'whisper_transcribing',
       }));
       return;
@@ -729,7 +778,64 @@ function mapEventToProgress(
         ...prev,
         current: event.index,
         total: event.total,
+        currentVideo: event.title,
         status: 'parsing',
+      }));
+      return;
+    case 'meta_result':
+      // Channel · duration line.
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        currentVideo: event.title,
+        stepLines: [...prev.stepLines, formatMetaLine(event.channel, event.durationSeconds)],
+      }));
+      return;
+    case 'transcript_result': {
+      // Transcript source + char count; a 'whisper'/'none' result also means
+      // the Whisper bar is done, so clear it.
+      const line = formatTranscriptLine(event.source, event.charCount);
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        currentVideo: event.title,
+        stepLines: [...prev.stepLines, line],
+        whisperProgress: undefined,
+      }));
+      return;
+    }
+    case 'entities_result': {
+      // Combined (description + Gemini) entity counts. Suppress the line when
+      // everything is zero — Python only printed counts when it found something.
+      const line = formatEntitiesLine(
+        event.githubRepos,
+        event.websites,
+        event.topics,
+        event.people
+      );
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        currentVideo: event.title,
+        stepLines: line ? [...prev.stepLines, line] : prev.stepLines,
+      }));
+      return;
+    }
+    case 'whisper_progress':
+      // Live Whisper percentage. Clear the bar once the stage reports complete.
+      setProgress((prev) => ({
+        ...prev,
+        current: event.index,
+        total: event.total,
+        currentVideo: event.title,
+        status: 'whisper_transcribing',
+        whisperProgress:
+          event.stage === 'complete'
+            ? undefined
+            : { stage: event.stage, percentage: event.percent },
       }));
       return;
     case 'video_done':
@@ -737,6 +843,7 @@ function mapEventToProgress(
         ...prev,
         current: event.index,
         total: event.total,
+        currentVideo: event.title,
         successCount: prev.successCount + 1,
       }));
       return;
@@ -745,7 +852,13 @@ function mapEventToProgress(
         ...prev,
         current: event.index,
         total: event.total,
+        currentVideo: event.title,
         skippedCount: prev.skippedCount + 1,
+        // Clear the per-video accumulators so a skipped video's stale step
+        // lines / Whisper bar don't linger until the next fetch_meta resets
+        // them (symmetric with fetch_meta).
+        stepLines: [],
+        whisperProgress: undefined,
       }));
       return;
     case 'video_failed':
@@ -753,7 +866,13 @@ function mapEventToProgress(
         ...prev,
         current: event.index,
         total: event.total,
+        currentVideo: event.title,
         failureCount: prev.failureCount + 1,
+        // Clear the per-video accumulators so a failed video's stale step
+        // lines / Whisper bar don't linger until the next fetch_meta resets
+        // them (symmetric with fetch_meta).
+        stepLines: [],
+        whisperProgress: undefined,
       }));
       return;
     case 'job_completed':

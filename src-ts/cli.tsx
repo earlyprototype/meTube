@@ -1,11 +1,22 @@
 #!/usr/bin/env node
 
+// Load .env into process.env BEFORE anything reads it. This MUST be the first
+// import: buildGeminiAdapter (ExtractCommand.tsx) and the v2 config loader's
+// ${VAR} substitution both read process.env at module-eval / call time, so the
+// .env values have to be present before any of those run. Everything enters
+// through this file (one-shot commands AND REPL mode), so a single load here
+// covers the whole process. Ports legacy/python/src/cli.py:10,20
+// (`from dotenv import load_dotenv` + `load_dotenv()`).
+import 'dotenv/config';
+
 import React from 'react';
 import { render } from 'ink';
 import meow from 'meow';
 import { executeCommandLogic } from './commands/CommandExecutor.js';
 import { ErrorDisplay } from './components/ErrorDisplay.js';
 import { ReplMode } from './components/ReplMode.js';
+import { parseReplInput } from './utils/replInput.js';
+import { normalizeMeowFlags } from './utils/normalizeMeowFlags.js';
 
 const cli = meow(
   `
@@ -95,6 +106,15 @@ const cli = meow(
 
 const [command, subcommand, ...args] = cli.input;
 
+// meow parses `--no-open` / `--no-transcript` / `--no-llm` / `--no-whisper` as
+// boolean NEGATION of phantom `open` / `transcript` / `llm` / `whisper` flags
+// (yielding e.g. `{ open: false }`), NOT as the declared `noOpen` / ... flags
+// the command layer reads. normalizeMeowFlags reconciles them back so
+// `--no-open` works in direct CLI mode. Harmless on the REPL base below, where
+// the negated keys are never present (replInput maps `--no-open` -> noOpen
+// literally). See utils/normalizeMeowFlags.ts.
+const baseFlags = normalizeMeowFlags(cli.flags);
+
 // Handle Ctrl+C gracefully
 process.on('SIGINT', () => {
   console.log('\n\n👋 Goodbye!');
@@ -112,16 +132,23 @@ if (!command) {
   render(
     <ReplMode
       onCommand={async (input, setComponent) => {
-        // Parse REPL input
-        const parts = input.trim().split(/\s+/);
-        const [cmd, sub, ...cmdArgs] = parts;
+        // Parse REPL input. Flags typed inside the REPL are parsed here and
+        // merged OVER baseFlags below — baseFlags only ever holds the meow
+        // startup defaults in REPL mode (the process starts with no args), so
+        // without this every typed flag (--reprocess, --max-videos, ...) was
+        // silently dropped and the command ran with defaults.
+        const { cmd, sub, args: cmdArgs, flags: typedFlags } = parseReplInput(input);
 
-        // Get command component (doesn't call render!)
+        // Get command component (doesn't call render!). `cmd` is only
+        // undefined for empty input, which ReplShell already filters before
+        // calling onCommand; the `?? ''` keeps the type honest and falls
+        // through to the "Unknown command" display if one ever slips by.
         const component = executeCommandLogic({
-          cmd,
+          cmd: cmd ?? '',
           sub,
           args: cmdArgs,
-          flags: cli.flags,
+          // Typed flags win; normalized startup defaults remain the base.
+          flags: { ...baseFlags, ...typedFlags },
           onComplete: () => {
             // Command completed in REPL - component stays visible
           },
@@ -149,7 +176,7 @@ if (!command) {
       cmd: command,
       sub: subcommand,
       args,
-      flags: cli.flags,
+      flags: baseFlags,
       // No onComplete - direct mode will use useApp().exit()
     });
     render(component);

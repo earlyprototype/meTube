@@ -4,6 +4,7 @@ import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
 import { YouTubeAuth } from '../../src-ts-v2/auth/YouTubeAuth.js';
 import { WhisperExtractor } from '../../src-ts-v2/extractors/WhisperExtractor.js';
 import { symbols, inkColors, status } from '../utils/colors.js';
+import { loadAppPaths } from '../utils/appConfig.js';
 
 interface StatusPanelProps {
   showDetails?: boolean;
@@ -11,6 +12,7 @@ interface StatusPanelProps {
 
 export function StatusPanel({ showDetails = true }: StatusPanelProps) {
   const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'error'>('checking');
+  const [dbPath, setDbPath] = useState<string | null>(null);
   const [authStatus, setAuthStatus] = useState<'checking' | 'valid' | 'invalid'>('checking');
   const [whisperStatus, setWhisperStatus] = useState<'checking' | 'available' | 'unavailable'>(
     'checking'
@@ -19,9 +21,14 @@ export function StatusPanel({ showDetails = true }: StatusPanelProps) {
   useEffect(() => {
     // Check database — v2 DatabaseManager opens + bootstraps the schema
     // in the constructor. Constructing without throwing means we have a
-    // working connection.
+    // working connection. DB path from config (task 8); a broken config
+    // throws ConfigError here, honestly reported as a DB error.
     try {
-      const db = new DatabaseManager('data/metube.db');
+      const resolvedDbPath = loadAppPaths().dbPath;
+      // Capture the real path so the panel shows the configured DB, not a
+      // hardcoded "(metube.db)" literal that lies when config points elsewhere.
+      setDbPath(resolvedDbPath);
+      const db = new DatabaseManager(resolvedDbPath);
       setDbStatus('connected');
       db.close();
     } catch {
@@ -73,7 +80,7 @@ export function StatusPanel({ showDetails = true }: StatusPanelProps) {
 
         <Box>
           <Text color={getStatusColor(dbStatus)}>{getStatusIcon(dbStatus)} Database</Text>
-          {showDetails && <Text dimColor> (metube.db)</Text>}
+          {showDetails && dbPath !== null && <Text dimColor> ({dbPath})</Text>}
         </Box>
 
         <Box>

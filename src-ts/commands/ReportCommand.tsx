@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
 import { DatabaseManager } from '../../src-ts-v2/database/connection.js';
@@ -8,6 +10,36 @@ import { asVideoId } from '../../src-ts-v2/types/branded.js';
 import { ErrorDisplay } from '../components/ErrorDisplay.js';
 import { symbols, inkColors } from '../utils/colors.js';
 import { resolvePlaylistIdentifier } from '../../src-ts-v2/utils/playlistResolver.js';
+import { buildErrorInfo, type ErrorInfo } from '../utils/errorInfo.js';
+import { loadAppPaths } from '../utils/appConfig.js';
+import logger from '../../src-ts-v2/utils/logger.js';
+
+/**
+ * Best-effort open of a generated report in the default browser. Matches
+ * Python's `webbrowser.open(f'file://{abspath}')` for the single-report modes
+ * (cli.py:982-985, 1022-1025, 1054-1058). Resolves the (possibly relative)
+ * report path to an absolute `file://` URL.
+ *
+ * Failure is non-fatal: the `open` package can throw on a headless host or when
+ * no handler is registered. We log a warning and return — the report is already
+ * written to disk, so a failed open must never crash the command.
+ *
+ * Uses the same dynamic `import('open')` as `OAuthServer.openBrowser`, so the
+ * dependency is only loaded when a report is actually opened.
+ */
+async function openReport(reportPath: string): Promise<void> {
+  try {
+    const absolute = path.resolve(reportPath);
+    const fileUrl = pathToFileURL(absolute).href;
+    const open = (await import('open')).default;
+    await open(fileUrl);
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), reportPath },
+      'Failed to open report in browser automatically'
+    );
+  }
+}
 
 interface ReportCommandProps {
   type: string;
@@ -23,9 +55,14 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
   const [status, setStatus] = useState<'generating' | 'done' | 'error'>('generating');
   const [filepath, setFilepath] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [errorInfo, setErrorInfo] = useState<ErrorInfo | null>(null);
   const [reportType, setReportType] = useState<string>('');
   const [totalReports, setTotalReports] = useState<number>(0);
   const [currentReport, setCurrentReport] = useState<number>(0);
+  // Whether a browser-open was actually attempted. Drives the honest copy:
+  // "Opening in browser..." only renders when we genuinely tried to open
+  // (single-report modes, --no-open absent), never as a cosmetic lie.
+  const [openAttempted, setOpenAttempted] = useState<boolean>(false);
 
   useEffect(() => {
     async function generate() {
@@ -54,17 +91,19 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
 
         setReportType(type);
 
+        // DB path + reports dir from config (task 8); a broken config throws
+        // ConfigError, caught below and rendered with remediation.
+        const { dbPath, reportsDir } = loadAppPaths();
+
         // Initialize services up-front so the resolver can use the DB.
-        db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager(dbPath);
 
         // v2 generator takes only templatesDir in config; output goes
-        // through the second method argument. autoOpen is not part of
-        // the v2 surface — the --no-open flag now only suppresses the
-        // "Opening in browser..." copy in the done view.
+        // through the second method argument.
         const generator = new HTMLReportGenerator(db, {});
 
         // Generate report — v2 generator takes branded IDs and outputDir.
-        const outputDir = 'reports';
+        const outputDir = reportsDir;
         let path: string;
         if (type === 'video') {
           path = await generator.generateVideoReport(asVideoId(id), outputDir);
@@ -83,6 +122,18 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         }
 
         setFilepath(path);
+
+        // Auto-open the single report in the browser unless suppressed —
+        // matches Python's webbrowser.open for single video / consolidated
+        // playlist modes (cli.py:982-985, 1022-1025, 1054-1058). --no-open
+        // suppresses both this call AND the "Opening in browser..." copy.
+        // Batch (--all) never opens — handled by generateAllReports, which
+        // does not call this path.
+        if (!flags.noOpen) {
+          setOpenAttempted(true);
+          await openReport(path);
+        }
+
         setStatus('done');
 
         if (onComplete) onComplete();
@@ -102,6 +153,7 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         } else {
           setError(`Report generation failed: ${String(err)}`);
         }
+        setErrorInfo(buildErrorInfo(err));
         setStatus('error');
       } finally {
         // Close exactly once on every path. Idempotent: undefined when we
@@ -118,8 +170,11 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
       try {
         setReportType('all');
 
+        // DB path + reports dir from config (task 8).
+        const { dbPath, reportsDir } = loadAppPaths();
+
         // Get all videos from database — v2 method is findAll.
-        db = new DatabaseManager('data/metube.db');
+        db = new DatabaseManager(dbPath);
         const videoRepo = new VideoRepository(db);
         const allVideos = videoRepo.findAll();
 
@@ -136,7 +191,7 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
 
         // Generate report for each video — v2 VideoRecord.video_id is
         // branded already. outputDir is the second positional arg.
-        const outputDir = 'reports';
+        const outputDir = reportsDir;
         let successCount = 0;
         let failCount = 0;
 
@@ -165,6 +220,10 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         } else {
           setError(`Batch report generation failed: ${String(err)}`);
         }
+        // Structured code + remediation for the error UI — same as the
+        // single-report path. Without this, `report --all` failures rendered
+        // only the bare message, losing the actionable remediation context.
+        setErrorInfo(buildErrorInfo(err));
         setStatus('error');
       } finally {
         // Close exactly once on every path. Idempotent: undefined when we
@@ -177,7 +236,13 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
   }, [type, id, flags, onComplete]);
 
   if (status === 'error') {
-    return <ErrorDisplay message={error || 'Report generation failed'} />;
+    return (
+      <ErrorDisplay
+        message={error || 'Report generation failed'}
+        code={errorInfo?.code}
+        remediationContext={errorInfo?.remediationContext}
+      />
+    );
   }
 
   if (status === 'done') {
@@ -226,7 +291,7 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
             Saved to: <Text dimColor>{filepath}</Text>
           </Text>
         </Box>
-        {!flags.noOpen && (
+        {openAttempted && (
           <Box>
             <Text color={inkColors.orange}>Opening in browser...</Text>
           </Box>

@@ -57,6 +57,28 @@ import { TagRepository } from '../database/TagRepository.js';
 import { TranscriptRepository } from '../database/TranscriptRepository.js';
 import { VideoRepository } from '../database/VideoRepository.js';
 
+/**
+ * Count Unicode code points in a string (NOT UTF-16 code units).
+ *
+ * `String.prototype.length` counts UTF-16 code units, so an astral character
+ * (emoji, many CJK extension glyphs) counts as 2. Python's `len(str)` counts
+ * code points, so a transcript char count reported via `.length` over-counts
+ * vs the Python original. The string iterator yields one entry per code point,
+ * matching Python. Implemented as an O(n) counter that does NOT materialize an
+ * intermediate array (`[...str].length` allocates the whole array first),
+ * keeping it cheap on long transcripts.
+ *
+ * @param value - The string to measure.
+ * @returns The number of Unicode code points.
+ */
+function countCodePoints(value: string): number {
+  let count = 0;
+  for (const _ of value) {
+    count++;
+  }
+  return count;
+}
+
 // --------------------------------------------------------------------------
 // Sibling Wave 3 surfaces (expected API). Defined as TS `interface`s here so
 // the VideoExtractor doesn't import the concrete classes — sibling agents
@@ -165,11 +187,34 @@ export interface TranscriptExtractorLike {
 }
 
 /**
+ * Per-call Whisper progress payload. Mirrors the production
+ * `WhisperExtractor`'s `WhisperProgressCallback` shape (the subprocess
+ * parses real yt-dlp download percentages and the transcription stage). The
+ * `percentage` is optional because some stage transitions carry no number.
+ */
+export interface WhisperProgress {
+  readonly stage: 'downloading' | 'transcribing' | 'complete';
+  readonly percentage?: number;
+  readonly message?: string;
+}
+
+/**
  * Expected `WhisperExtractor` surface — same shape as TranscriptExtractor
  * but always sets `from_whisper: true` when it returns a result.
+ *
+ * `extract` accepts an OPTIONAL per-call `onProgress` callback (ADDITIVE —
+ * existing callers and the lifted production `WhisperExtractor.extract`,
+ * which currently takes only `videoId`, still satisfy this interface). This
+ * is the seam that surfaces the live download/transcription percentage the
+ * production extractor already parses (WhisperExtractor.ts:245-282) but that
+ * nothing was wired to consume. VideoExtractor supplies the callback and
+ * converts each tick into a `whisper_progress` event.
  */
 export interface WhisperExtractorLike {
-  extract(videoId: VideoId): Promise<TranscriptResult | null>;
+  extract(
+    videoId: VideoId,
+    onProgress?: (progress: WhisperProgress) => void
+  ): Promise<TranscriptResult | null>;
   isAvailable(): boolean;
 }
 
@@ -297,17 +342,98 @@ export type VideoExtractorConfig = z.infer<typeof VideoExtractorConfigSchema>;
  * Discriminated union for progress events. Each event carries `kind` for
  * exhaustive switching plus event-specific payload. Callers (Ink layer)
  * subscribe to whichever events they care about.
+ *
+ * The parity-close cycle enriched this union ADDITIVELY (FULL Python-style
+ * in-run display, decision locked 2026-06-10):
+ *
+ *   1. Per-video STAGE events (`fetch_meta`, `transcribe`, `whisper`,
+ *      `gemini`, `persist`, `video_done`, `video_skipped`, `video_failed`)
+ *      gained a `title` field — the playlist-items listing already supplies
+ *      it before per-video processing, so the UI can render the per-video
+ *      title line Python printed (video_extractor.py:116-120, 327-328)
+ *      instead of a bare ID.
+ *   2. New per-step RESULT events (`meta_result`, `transcript_result`,
+ *      `entities_result`) mirror the granular lines Python printed per video
+ *      (`Title/Channel/Duration` at :118-120; `Transcript via X (N chars)`
+ *      at :184/:189; `Found N repos/websites/topics/people` at :160-161,
+ *      :202-205). The coarse status enum collapsed all of this into one word.
+ *   3. New `whisper_progress` event carries the live download/transcription
+ *      percentage the production WhisperExtractor already parses
+ *      (WhisperExtractor.ts:245-282) but that nothing consumed.
+ *
+ * Everything pre-existing is unchanged: the old kinds and their old fields
+ * are intact, so existing consumers keep compiling. New consumers opt into
+ * the richer events.
  */
 export type ExtractProgressEvent =
   | { kind: 'job_started'; jobId: ExtractionJobId; playlistId: PlaylistId; total: number }
-  | { kind: 'fetch_meta'; videoId: VideoId; index: number; total: number }
-  | { kind: 'transcribe'; videoId: VideoId; index: number; total: number }
-  | { kind: 'whisper'; videoId: VideoId; index: number; total: number }
-  | { kind: 'gemini'; videoId: VideoId; index: number; total: number }
-  | { kind: 'persist'; videoId: VideoId; index: number; total: number }
-  | { kind: 'video_done'; videoId: VideoId; index: number; total: number }
-  | { kind: 'video_skipped'; videoId: VideoId; index: number; total: number; reason: string }
-  | { kind: 'video_failed'; videoId: VideoId; index: number; total: number; error: string }
+  | { kind: 'fetch_meta'; videoId: VideoId; index: number; total: number; title: string }
+  | { kind: 'transcribe'; videoId: VideoId; index: number; total: number; title: string }
+  | { kind: 'whisper'; videoId: VideoId; index: number; total: number; title: string }
+  | { kind: 'gemini'; videoId: VideoId; index: number; total: number; title: string }
+  | { kind: 'persist'; videoId: VideoId; index: number; total: number; title: string }
+  | { kind: 'video_done'; videoId: VideoId; index: number; total: number; title: string }
+  | {
+      kind: 'video_skipped';
+      videoId: VideoId;
+      index: number;
+      total: number;
+      title: string;
+      reason: string;
+    }
+  | {
+      kind: 'video_failed';
+      videoId: VideoId;
+      index: number;
+      total: number;
+      title: string;
+      error: string;
+    }
+  // --- per-step RESULT events (FULL Python-style display) ---
+  | {
+      kind: 'meta_result';
+      videoId: VideoId;
+      index: number;
+      total: number;
+      title: string;
+      channel: string;
+      durationSeconds: number;
+    }
+  | {
+      kind: 'transcript_result';
+      videoId: VideoId;
+      index: number;
+      total: number;
+      title: string;
+      /** Where the transcript came from. `'none'` = no transcript obtained. */
+      source: 'youtube' | 'whisper' | 'none';
+      /** Character count of the transcript text; 0 when `source` is `'none'`. */
+      charCount: number;
+    }
+  | {
+      kind: 'entities_result';
+      videoId: VideoId;
+      index: number;
+      total: number;
+      title: string;
+      /** Combined (description regex + Gemini LLM) entity counts. */
+      githubRepos: number;
+      websites: number;
+      topics: number;
+      people: number;
+    }
+  // --- live Whisper percentage ---
+  | {
+      kind: 'whisper_progress';
+      videoId: VideoId;
+      index: number;
+      total: number;
+      title: string;
+      /** Latest percentage (0-100) reported by the Whisper extractor. */
+      percent: number;
+      /** Which Whisper stage the percentage belongs to. */
+      stage: 'downloading' | 'transcribing' | 'complete';
+    }
   | { kind: 'job_completed'; jobId: ExtractionJobId; result: ExtractResult };
 
 /**
@@ -605,6 +731,11 @@ export class VideoExtractor {
         const item = playlistVideos[i];
         const videoId = item.videoId;
         const index = i + 1;
+        // Title comes from the playlist-items listing — available BEFORE the
+        // per-video metadata fetch, so every per-video event can carry it
+        // (the line Python prints in its per-video header, video_extractor.py
+        // :327-328). Falls back to the raw ID if the listing omitted a title.
+        const title = item.title ?? videoId;
 
         try {
           const outcome = await this.processVideo({
@@ -612,13 +743,14 @@ export class VideoExtractor {
             item,
             index,
             total,
+            title,
             onProgress,
           });
 
           if (outcome === 'processed') {
             processed += 1;
             processedVideoIds.add(videoId);
-            onProgress({ kind: 'video_done', videoId, index, total });
+            onProgress({ kind: 'video_done', videoId, index, total, title });
           } else {
             skipped += 1;
             onProgress({
@@ -626,6 +758,7 @@ export class VideoExtractor {
               videoId,
               index,
               total,
+              title,
               reason: 'video already in database',
             });
           }
@@ -638,6 +771,7 @@ export class VideoExtractor {
             videoId,
             index,
             total,
+            title,
             error: message,
           });
         }
@@ -834,9 +968,10 @@ export class VideoExtractor {
     readonly item: PlaylistVideoItem;
     readonly index: number;
     readonly total: number;
+    readonly title: string;
     readonly onProgress: ExtractProgressCallback;
   }): Promise<'processed' | 'skipped'> {
-    const { playlistId, item, index, total, onProgress } = args;
+    const { playlistId, item, index, total, title, onProgress } = args;
     const videoId = item.videoId;
 
     // Idempotency check. If `skipExisting` is on and the video is
@@ -854,7 +989,7 @@ export class VideoExtractor {
     }
 
     // Step 1: fetch video details.
-    onProgress({ kind: 'fetch_meta', videoId, index, total });
+    onProgress({ kind: 'fetch_meta', videoId, index, total, title });
     const details = await this.youtubeClient.getVideoDetails(videoId);
     if (details === null) {
       throw new AppError('Video metadata not available', {
@@ -863,9 +998,24 @@ export class VideoExtractor {
       });
     }
 
+    // Per-step RESULT: title / channel / duration confirmations
+    // (video_extractor.py:118-120). The authoritative title is now the
+    // fetched one (the listing title can be truncated/stale), so subsequent
+    // events use it.
+    const resolvedTitle = details.title;
+    onProgress({
+      kind: 'meta_result',
+      videoId,
+      index,
+      total,
+      title: resolvedTitle,
+      channel: details.channelTitle,
+      durationSeconds: details.durationSeconds,
+    });
+
     // Step 2: persist video + statistics (each repo wraps its own
     // transaction — no outer wrapper here).
-    onProgress({ kind: 'persist', videoId, index, total });
+    onProgress({ kind: 'persist', videoId, index, total, title: resolvedTitle });
     this.videoRepository.createOrUpdate({
       video_id: videoId,
       title: details.title,
@@ -913,8 +1063,37 @@ export class VideoExtractor {
       videoId,
       index,
       total,
+      title: resolvedTitle,
       onProgress,
     });
+
+    // Per-step RESULT: transcript source + char count
+    // (video_extractor.py:184 / :189). `from_whisper` distinguishes the
+    // fallback path; a null transcript reports `source: 'none'` so the UI can
+    // render the "No transcript available" line.
+    if (transcript === null) {
+      onProgress({
+        kind: 'transcript_result',
+        videoId,
+        index,
+        total,
+        title: resolvedTitle,
+        source: 'none',
+        charCount: 0,
+      });
+    } else {
+      onProgress({
+        kind: 'transcript_result',
+        videoId,
+        index,
+        total,
+        title: resolvedTitle,
+        source: transcript.from_whisper ? 'whisper' : 'youtube',
+        // Code-point count (not UTF-16 .length) to match Python's len() — an
+        // emoji must count as 1, not 2.
+        charCount: countCodePoints(transcript.full_text),
+      });
+    }
 
     // Step 4a: persist transcript if one was obtained. Matches Python
     // behavior at `legacy/python/src/extractors/video_extractor.py:187`
@@ -952,7 +1131,7 @@ export class VideoExtractor {
       transcript !== null &&
       transcript.full_text.length > 0
     ) {
-      onProgress({ kind: 'gemini', videoId, index, total });
+      onProgress({ kind: 'gemini', videoId, index, total, title: resolvedTitle });
       try {
         const raw = await this.geminiParser.parseTranscript({
           transcript: transcript.full_text,
@@ -1004,6 +1183,19 @@ export class VideoExtractor {
       this.entityRepository.insertMany(videoId, entities);
     }
 
+    // Per-step RESULT: combined entity counts (description regex + Gemini
+    // LLM). Python printed two separate blocks — description repos/websites
+    // (:160-161) and LLM topics/repos/websites/people (:202-205); the UI
+    // wants the totals, so they're summed across both sources by type.
+    onProgress({
+      kind: 'entities_result',
+      videoId,
+      index,
+      total,
+      title: resolvedTitle,
+      ...this.countEntities(entities),
+    });
+
     // Step 8: persist LLM-derived tags. Matches Python behavior at
     // `legacy/python/src/extractors/video_extractor.py:216-218` where
     // `TagRepository.add_tags_to_video` is called with `llm_parser.get_tags`.
@@ -1037,15 +1229,16 @@ export class VideoExtractor {
     readonly videoId: VideoId;
     readonly index: number;
     readonly total: number;
+    readonly title: string;
     readonly onProgress: ExtractProgressCallback;
   }): Promise<TranscriptResult | null> {
-    const { videoId, index, total, onProgress } = args;
+    const { videoId, index, total, title, onProgress } = args;
 
     if (!this.config.autoTranscript || this.transcriptExtractor === null) {
       return null;
     }
 
-    onProgress({ kind: 'transcribe', videoId, index, total });
+    onProgress({ kind: 'transcribe', videoId, index, total, title });
     let transcript: TranscriptResult | null = null;
     try {
       transcript = await this.transcriptExtractor.extract(videoId);
@@ -1072,9 +1265,26 @@ export class VideoExtractor {
       this.whisperExtractor !== null &&
       this.whisperExtractor.isAvailable()
     ) {
-      onProgress({ kind: 'whisper', videoId, index, total });
+      onProgress({ kind: 'whisper', videoId, index, total, title });
       try {
-        transcript = await this.whisperExtractor.extract(videoId);
+        // Supply the per-call onProgress seam so the live download /
+        // transcription percentage the production WhisperExtractor parses
+        // (WhisperExtractor.ts:245-282) surfaces as `whisper_progress`
+        // events. Each tick carries the videoId + percent; a tick without a
+        // numeric percentage is dropped (the UI bar needs a number).
+        transcript = await this.whisperExtractor.extract(videoId, (progress) => {
+          if (typeof progress.percentage === 'number') {
+            onProgress({
+              kind: 'whisper_progress',
+              videoId,
+              index,
+              total,
+              title,
+              percent: progress.percentage,
+              stage: progress.stage,
+            });
+          }
+        });
       } catch (error) {
         // A26: promoted debug -> error. Same rationale as the YouTube
         // catch above: this is a FAILURE path that silently masks the
@@ -1148,6 +1358,48 @@ export class VideoExtractor {
     }
 
     return batch;
+  }
+
+  /**
+   * Tally a built entity batch by type for the `entities_result` progress
+   * event. Counts the combined description + LLM batch (the same rows that
+   * land in `extracted_entities`), so the UI shows what was actually
+   * persisted, matching the totals Python printed across its two blocks
+   * (video_extractor.py:160-161 + :202-205).
+   *
+   * @param entities - The combined batch from {@link buildEntityBatch}.
+   * @returns Per-type counts for github repos, websites, topics, and people.
+   */
+  private countEntities(entities: readonly EntityInput[]): {
+    githubRepos: number;
+    websites: number;
+    topics: number;
+    people: number;
+  } {
+    let githubRepos = 0;
+    let websites = 0;
+    let topics = 0;
+    let people = 0;
+    for (const entity of entities) {
+      switch (entity.type) {
+        case 'github_repo':
+          githubRepos += 1;
+          break;
+        case 'website':
+          websites += 1;
+          break;
+        case 'topic':
+          topics += 1;
+          break;
+        case 'person':
+          people += 1;
+          break;
+        default:
+          // Unknown/other entity types don't map to a Python-printed count.
+          break;
+      }
+    }
+    return { githubRepos, websites, topics, people };
   }
 
   /**

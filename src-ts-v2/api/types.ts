@@ -59,6 +59,8 @@ export interface YouTubeVideo {
   thumbnailUrl?: string;
   tags?: string[];
   categoryId?: string;
+  /** YouTube content definition — `'hd'` or `'sd'`. Absent when the API omits it. */
+  definition?: string;
   caption?: boolean;
   licensedContent?: boolean;
   topicCategories?: string[];

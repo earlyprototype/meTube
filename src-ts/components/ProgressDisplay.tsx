@@ -18,6 +18,13 @@ interface ProgressDisplayProps {
   successCount: number;
   failureCount: number;
   startTime: Date;
+  /**
+   * Per-video step-result lines for the CURRENT video (metadata, transcript
+   * source + char count, entity counts). Mirrors the granular `[OK] …` lines
+   * Python printed per video (video_extractor.py:118-120,160-161,184,202-205).
+   * Reset by the caller when a new video starts.
+   */
+  stepLines?: readonly string[];
   whisperProgress?: {
     stage: 'downloading' | 'transcribing' | 'complete';
     percentage?: number;
@@ -37,6 +44,7 @@ export function ProgressDisplay({
   successCount,
   failureCount,
   startTime,
+  stepLines,
   whisperProgress,
 }: ProgressDisplayProps) {
   const [dudeFrame, setDudeFrame] = useState(0);
@@ -56,9 +64,18 @@ export function ProgressDisplay({
   const elapsedMinutes = Math.floor(elapsedSeconds / 60);
   const remainingSeconds = elapsedSeconds % 60;
 
-  const percentage = Math.floor((current / total) * 100);
+  // Guard the zero-total case: extraction start (or an all-skipped run) leaves
+  // total === 0, and current / total is NaN — rendering "0 / 0 videos (NaN%)".
   const progressBarLength = 20;
-  const filledLength = Math.floor((progressBarLength * current) / total);
+  // Clamp before any .repeat(): a current > total (e.g. an off-by-one event
+  // ordering) would otherwise push filledLength past progressBarLength, making
+  // `progressBarLength - filledLength` negative — and String.repeat throws a
+  // RangeError on a negative count. Clamp percentage to [0,100] and
+  // filledLength to [0,progressBarLength] so the bar always renders.
+  const rawPercentage = total > 0 ? Math.floor((current / total) * 100) : 0;
+  const percentage = Math.max(0, Math.min(100, rawPercentage));
+  const rawFilledLength = total > 0 ? Math.floor((progressBarLength * current) / total) : 0;
+  const filledLength = Math.max(0, Math.min(progressBarLength, rawFilledLength));
   const progressBar = '#'.repeat(filledLength) + '-'.repeat(progressBarLength - filledLength);
 
   const statusText = {
@@ -109,6 +126,18 @@ export function ProgressDisplay({
           <Box marginLeft={3}>
             <Text dimColor>{statusText}</Text>
           </Box>
+          {/* Per-video step-result lines (metadata / transcript / entities) —
+              the granular [OK] lines Python streamed per video. */}
+          {stepLines && stepLines.length > 0 && (
+            <Box flexDirection="column" marginLeft={3} marginTop={1}>
+              {stepLines.map((line, i) => (
+                <Box key={i}>
+                  <Text color="green">{symbols.check} </Text>
+                  <Text dimColor>{line}</Text>
+                </Box>
+              ))}
+            </Box>
+          )}
         </Box>
       )}
 

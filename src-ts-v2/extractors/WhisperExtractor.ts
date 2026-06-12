@@ -148,8 +148,20 @@ export class WhisperExtractor {
    *
    * `videoId: VideoId` matches the v2 boundary invariant — the brand is
    * structurally a string so no runtime semantics change.
+   *
+   * @param videoId - Branded YouTube video ID.
+   * @param onProgress - OPTIONAL per-call progress callback (ADDITIVE). When
+   *   supplied it fires ALONGSIDE the constructor-level callback for this
+   *   call only. This is the seam VideoExtractor uses to surface the live
+   *   download / transcription percentage as `whisper_progress` events —
+   *   the per-call callback is the natural place for it because the
+   *   extractor is constructed once but each video wants its own stream.
+   *   Omitting it preserves the prior single-callback behaviour exactly.
    */
-  async extract(videoId: VideoId): Promise<TranscriptData | null> {
+  async extract(
+    videoId: VideoId,
+    onProgress?: WhisperProgressCallback
+  ): Promise<TranscriptData | null> {
     if (!this.enabled) {
       logger.debug({ videoId }, 'Whisper extraction disabled');
       return null;
@@ -160,36 +172,36 @@ export class WhisperExtractor {
       return null;
     }
 
+    // Effective callback fans out to BOTH the constructor-level callback (if
+    // any) and the per-call one (if any). Either may be undefined; the helper
+    // no-ops what isn't there. Built once per extract so the download /
+    // transcribe stages share it.
+    const emitProgress = this.makeProgressEmitter(onProgress);
+
     const audioPath = path.join(this.tempDir, `${videoId}.mp3`);
 
     try {
       logger.info({ videoId }, 'Downloading audio for Whisper transcription');
-      if (this.onProgress) {
-        this.onProgress({
-          stage: 'downloading',
-          percentage: 0,
-          message: 'Starting audio download...',
-        });
-      }
-      await this.downloadAudio(videoId, audioPath);
+      emitProgress({
+        stage: 'downloading',
+        percentage: 0,
+        message: 'Starting audio download...',
+      });
+      await this.downloadAudio(videoId, audioPath, emitProgress);
 
       logger.info({ videoId, model: this.model }, 'Transcribing audio with Whisper');
-      if (this.onProgress) {
-        this.onProgress({
-          stage: 'transcribing',
-          percentage: 100,
-          message: 'Transcribing with Whisper...',
-        });
-      }
+      emitProgress({
+        stage: 'transcribing',
+        percentage: 100,
+        message: 'Transcribing with Whisper...',
+      });
       const transcriptData = await this.transcribeAudio(audioPath, videoId);
 
-      if (this.onProgress) {
-        this.onProgress({
-          stage: 'complete',
-          percentage: 100,
-          message: 'Transcription complete',
-        });
-      }
+      emitProgress({
+        stage: 'complete',
+        percentage: 100,
+        message: 'Transcription complete',
+      });
 
       return transcriptData;
     } catch (error) {
@@ -220,9 +232,55 @@ export class WhisperExtractor {
   }
 
   /**
-   * Run `yt-dlp` to download the audio track to `outputPath`.
+   * Combine the constructor-level callback and an optional per-call callback
+   * into a single emitter. Either (or both) may be absent — the returned
+   * function safely no-ops the missing one. The per-call callback fires
+   * AFTER the constructor one so a per-video observer sees the latest state.
    */
-  private async downloadAudio(videoId: VideoId, outputPath: string): Promise<void> {
+  private makeProgressEmitter(
+    perCall: WhisperProgressCallback | undefined
+  ): (progress: Parameters<WhisperProgressCallback>[0]) => void {
+    return (progress) => {
+      // Guard EACH observer independently: a throwing progress callback (e.g.
+      // a UI emitter that blows up mid-render) must NOT abort the whisper
+      // extraction. Without this, an exception here bubbles to the outer catch,
+      // the method returns null, and the transcript is lost — all because a
+      // cosmetic progress observer threw. Log and swallow; never rethrow.
+      if (this.onProgress) {
+        try {
+          this.onProgress(progress);
+        } catch (err) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'Whisper constructor onProgress callback threw; ignoring'
+          );
+        }
+      }
+      if (perCall) {
+        try {
+          perCall(progress);
+        } catch (err) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'Whisper per-call onProgress callback threw; ignoring'
+          );
+        }
+      }
+    };
+  }
+
+  /**
+   * Run `yt-dlp` to download the audio track to `outputPath`.
+   *
+   * @param emitProgress - Fan-out progress emitter (constructor + per-call).
+   *   yt-dlp's real download percentages (parsed from its stdout/stderr) are
+   *   reported through this, throttled to every ~5% to avoid event spam.
+   */
+  private async downloadAudio(
+    videoId: VideoId,
+    outputPath: string,
+    emitProgress: (progress: Parameters<WhisperProgressCallback>[0]) => void
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const args = [
         '-x',
@@ -240,49 +298,38 @@ export class WhisperExtractor {
       let stderr = '';
       let lastPercentage = 0;
 
-      proc.stdout?.on('data', (data: Buffer) => {
-        const output = data.toString();
+      const reportDownload = (output: string): void => {
         const progressMatch = output.match(/\[download\]\s+(\d+\.?\d*)%/);
-        if (progressMatch && this.onProgress) {
+        if (progressMatch) {
           const percentage = parseFloat(progressMatch[1]);
           if (percentage - lastPercentage >= 5 || percentage >= 99) {
             lastPercentage = percentage;
-            this.onProgress({
+            emitProgress({
               stage: 'downloading',
               percentage,
               message: `Downloading audio ${percentage.toFixed(1)}%`,
             });
           }
         }
+      };
+
+      proc.stdout?.on('data', (data: Buffer) => {
+        reportDownload(data.toString());
       });
 
       proc.stderr?.on('data', (data: Buffer) => {
         const output = data.toString();
         stderr += output;
-
-        const progressMatch = output.match(/\[download\]\s+(\d+\.?\d*)%/);
-        if (progressMatch && this.onProgress) {
-          const percentage = parseFloat(progressMatch[1]);
-          if (percentage - lastPercentage >= 5 || percentage >= 99) {
-            lastPercentage = percentage;
-            this.onProgress({
-              stage: 'downloading',
-              percentage,
-              message: `Downloading audio ${percentage.toFixed(1)}%`,
-            });
-          }
-        }
+        reportDownload(output);
       });
 
       proc.on('close', (code) => {
         if (code === 0 && fs.existsSync(outputPath)) {
-          if (this.onProgress) {
-            this.onProgress({
-              stage: 'downloading',
-              percentage: 100,
-              message: 'Audio download complete',
-            });
-          }
+          emitProgress({
+            stage: 'downloading',
+            percentage: 100,
+            message: 'Audio download complete',
+          });
           resolve();
         } else {
           reject(
