@@ -1531,7 +1531,9 @@ describe('VideoExtractor.extractPlaylist — enriched progress events', () => {
       videoDetails: new Map([[videoId, makeDetails(videoId, title)]]),
     });
     const transcriptExtractor = makeMockTranscriptExtractor(
-      new Map([[videoId, opts.transcript === undefined ? makeCaptionsTranscript() : opts.transcript]])
+      new Map([
+        [videoId, opts.transcript === undefined ? makeCaptionsTranscript() : opts.transcript],
+      ])
     );
     const whisperExtractor = makeMockWhisperExtractor(
       new Map([[videoId, opts.whisper ?? null]]),
@@ -1590,6 +1592,29 @@ describe('VideoExtractor.extractPlaylist — enriched progress events', () => {
       kind: 'transcript_result',
       source: 'youtube',
       charCount: 'This is a sample transcript.'.length,
+    });
+  });
+
+  it('counts charCount by Unicode code point, not UTF-16 length (emoji parity with Python len())', async () => {
+    // 'ab👍' is 3 code points but 4 UTF-16 code units — the astral emoji is a
+    // surrogate pair. Python's len() returns 3; the old `.length` returned 4.
+    const emojiText = 'ab👍';
+    expect(emojiText.length).toBe(4); // sanity: UTF-16 over-counts
+    const events = await runWith({
+      transcript: {
+        full_text: emojiText,
+        segments: [{ text: emojiText, start: 0, duration: 1 }],
+        language: 'en',
+        is_auto_generated: true,
+        from_whisper: false,
+      },
+    });
+
+    const tr = events.find((e) => e.kind === 'transcript_result');
+    expect(tr).toMatchObject({
+      kind: 'transcript_result',
+      source: 'youtube',
+      charCount: 3,
     });
   });
 
@@ -1687,9 +1712,7 @@ describe('VideoExtractor.extractPlaylist — enriched progress events', () => {
       percent: number;
     }>;
     expect(progressEvents.length).toBeGreaterThanOrEqual(3);
-    expect(progressEvents.map((e) => e.percent)).toEqual(
-      expect.arrayContaining([25, 80, 100])
-    );
+    expect(progressEvents.map((e) => e.percent)).toEqual(expect.arrayContaining([25, 80, 100]));
     for (const e of progressEvents) {
       expect(e.videoId).toBe(videoId);
     }

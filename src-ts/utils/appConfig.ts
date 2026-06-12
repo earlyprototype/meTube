@@ -25,6 +25,25 @@ export interface AppPaths {
 }
 
 /**
+ * Strip trailing slashes from a directory path while preserving the absolute
+ * filesystem root.
+ *
+ * A naive `.replace(/\/+$/, '')` reduces the root `'/'` to `''`, which then
+ * resolves relative to cwd instead of the actual root. This guards that one
+ * case: a value consisting only of slashes collapses to a single `'/'`; every
+ * other value has its trailing slashes removed as before.
+ *
+ * @param dir - The directory path (e.g. `'reports/'`, `'/'`, `'/srv/out//'`).
+ * @returns The path without trailing slashes, or `'/'` when the input was root.
+ */
+export function stripTrailingSlashes(dir: string): string {
+  const stripped = dir.replace(/\/+$/, '');
+  // Empty result means the original was all slashes (the filesystem root) —
+  // preserve a single '/' rather than losing the root.
+  return stripped === '' && dir.length > 0 ? '/' : stripped;
+}
+
+/**
  * Load and resolve the UI paths from `config/config.yaml` (or schema defaults
  * when the file is absent).
  *
@@ -38,8 +57,10 @@ export function loadAppPaths(): AppPaths {
     dbPath: config.database.path,
     // The schema default is 'reports/'; the generator joins this with the
     // filename, so a trailing slash is harmless — but strip it to match the
-    // prior literal 'reports' and keep paths tidy.
-    reportsDir: config.reports.output_dir.replace(/\/+$/, ''),
+    // prior literal 'reports' and keep paths tidy. Preserve a single '/' when
+    // the original was the absolute filesystem root: stripping it to '' would
+    // lose the root and resolve relative to cwd instead.
+    reportsDir: stripTrailingSlashes(config.reports.output_dir),
   };
 }
 

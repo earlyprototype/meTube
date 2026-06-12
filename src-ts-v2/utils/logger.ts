@@ -34,16 +34,18 @@ export interface LoggerConfig {
  * decisions are unit-testable without constructing a real pino instance or
  * touching the filesystem.
  *
- * Level precedence: explicit LOG_LEVEL wins; otherwise test => silent,
- * DEBUG=true => debug, default => info. The default is 'info' (not 'error')
- * now that output is file-bound: it restores diagnosability of per-video
- * failures without risking the TUI.
+ * Level precedence: test => silent UNCONDITIONALLY (even with LOG_LEVEL set);
+ * otherwise explicit LOG_LEVEL wins, then DEBUG=true => debug, default => info.
+ * Test silence is non-overridable because stray LOG_LEVEL in a CI/dev shell
+ * must never let log lines leak into the test runner and interleave with Ink
+ * frames. The default is 'info' (not 'error') now that output is file-bound:
+ * it restores diagnosability of per-video failures without risking the TUI.
  */
 export function buildLoggerConfig(env: NodeJS.ProcessEnv): LoggerConfig {
   const isTest = env.NODE_ENV === 'test';
   const isDebug = env.DEBUG === 'true';
 
-  const level = env.LOG_LEVEL || (isTest ? 'silent' : isDebug ? 'debug' : 'info');
+  const level = isTest ? 'silent' : env.LOG_LEVEL || (isDebug ? 'debug' : 'info');
 
   return {
     level,

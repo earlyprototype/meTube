@@ -220,6 +220,10 @@ export function ReportCommand({ type, id, flags, onComplete }: ReportCommandProp
         } else {
           setError(`Batch report generation failed: ${String(err)}`);
         }
+        // Structured code + remediation for the error UI — same as the
+        // single-report path. Without this, `report --all` failures rendered
+        // only the bare message, losing the actionable remediation context.
+        setErrorInfo(buildErrorInfo(err));
         setStatus('error');
       } finally {
         // Close exactly once on every path. Idempotent: undefined when we

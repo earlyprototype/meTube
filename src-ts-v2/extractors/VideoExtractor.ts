@@ -57,6 +57,28 @@ import { TagRepository } from '../database/TagRepository.js';
 import { TranscriptRepository } from '../database/TranscriptRepository.js';
 import { VideoRepository } from '../database/VideoRepository.js';
 
+/**
+ * Count Unicode code points in a string (NOT UTF-16 code units).
+ *
+ * `String.prototype.length` counts UTF-16 code units, so an astral character
+ * (emoji, many CJK extension glyphs) counts as 2. Python's `len(str)` counts
+ * code points, so a transcript char count reported via `.length` over-counts
+ * vs the Python original. The string iterator yields one entry per code point,
+ * matching Python. Implemented as an O(n) counter that does NOT materialize an
+ * intermediate array (`[...str].length` allocates the whole array first),
+ * keeping it cheap on long transcripts.
+ *
+ * @param value - The string to measure.
+ * @returns The number of Unicode code points.
+ */
+function countCodePoints(value: string): number {
+  let count = 0;
+  for (const _ of value) {
+    count++;
+  }
+  return count;
+}
+
 // --------------------------------------------------------------------------
 // Sibling Wave 3 surfaces (expected API). Defined as TS `interface`s here so
 // the VideoExtractor doesn't import the concrete classes — sibling agents
@@ -1067,7 +1089,9 @@ export class VideoExtractor {
         total,
         title: resolvedTitle,
         source: transcript.from_whisper ? 'whisper' : 'youtube',
-        charCount: transcript.full_text.length,
+        // Code-point count (not UTF-16 .length) to match Python's len() — an
+        // emoji must count as 1, not 2.
+        charCount: countCodePoints(transcript.full_text),
       });
     }
 

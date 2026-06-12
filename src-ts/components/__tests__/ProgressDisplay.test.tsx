@@ -81,6 +81,21 @@ describe('ProgressDisplay — per-video step lines', () => {
     expect(frame).toContain('2 / 5');
   });
 
+  it('clamps the bar (no RangeError, caps at 100%) when current exceeds total', () => {
+    // An off-by-one in event ordering can yield current > total. Without
+    // clamping, filledLength > progressBarLength makes the second .repeat()
+    // count negative and String.repeat throws. The render must survive, cap
+    // the percentage at 100, and fully fill the bar.
+    const render7of5 = () => render(<ProgressDisplay {...BASE_PROPS} current={7} total={5} />);
+    expect(render7of5).not.toThrow();
+
+    const frame = render7of5().lastFrame() ?? '';
+    expect(frame).not.toContain('NaN');
+    expect(frame).toContain('(100%)');
+    // Bar fully filled, no stray dashes from a negative remainder.
+    expect(frame).toContain('#'.repeat(20));
+  });
+
   it('renders 0% (never NaN%) when total is zero', () => {
     // Extraction start, or a run where every video is skipped, leaves total
     // at 0. current / total is NaN — the percentage and bar must guard it.

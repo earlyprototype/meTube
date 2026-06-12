@@ -12,6 +12,7 @@ interface StatusPanelProps {
 
 export function StatusPanel({ showDetails = true }: StatusPanelProps) {
   const [dbStatus, setDbStatus] = useState<'checking' | 'connected' | 'error'>('checking');
+  const [dbPath, setDbPath] = useState<string | null>(null);
   const [authStatus, setAuthStatus] = useState<'checking' | 'valid' | 'invalid'>('checking');
   const [whisperStatus, setWhisperStatus] = useState<'checking' | 'available' | 'unavailable'>(
     'checking'
@@ -23,7 +24,11 @@ export function StatusPanel({ showDetails = true }: StatusPanelProps) {
     // working connection. DB path from config (task 8); a broken config
     // throws ConfigError here, honestly reported as a DB error.
     try {
-      const db = new DatabaseManager(loadAppPaths().dbPath);
+      const resolvedDbPath = loadAppPaths().dbPath;
+      // Capture the real path so the panel shows the configured DB, not a
+      // hardcoded "(metube.db)" literal that lies when config points elsewhere.
+      setDbPath(resolvedDbPath);
+      const db = new DatabaseManager(resolvedDbPath);
       setDbStatus('connected');
       db.close();
     } catch {
@@ -75,7 +80,7 @@ export function StatusPanel({ showDetails = true }: StatusPanelProps) {
 
         <Box>
           <Text color={getStatusColor(dbStatus)}>{getStatusIcon(dbStatus)} Database</Text>
-          {showDetails && <Text dimColor> (metube.db)</Text>}
+          {showDetails && dbPath !== null && <Text dimColor> ({dbPath})</Text>}
         </Box>
 
         <Box>

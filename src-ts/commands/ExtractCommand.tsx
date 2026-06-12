@@ -749,7 +749,10 @@ export function mapEventToProgress(
         current: event.index,
         total: event.total,
         currentVideo: event.title,
-        status: 'downloading',
+        // 'persist' is the DB-write step — surface it as 'saving' (rendered
+        // "Saving to database"), not 'downloading'. The prior value mislabeled
+        // the persist phase as a download.
+        status: 'saving',
       }));
       return;
     case 'transcribe':

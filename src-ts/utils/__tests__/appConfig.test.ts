@@ -18,6 +18,7 @@ import {
   loadAppPaths,
   isUnsubstitutedPlaceholder,
   isGeminiConfigured,
+  stripTrailingSlashes,
 } from '../appConfig.js';
 import { ConfigError } from '../../../src-ts-v2/errors/ConfigError.js';
 
@@ -46,6 +47,38 @@ describe('loadAppPaths', () => {
     });
 
     expect(loadAppPaths().reportsDir).toBe('reports');
+  });
+
+  it('preserves the absolute filesystem root "/" instead of collapsing it to ""', () => {
+    loadConfigSpy.mockReturnValue({
+      database: { path: 'data/metube.db' },
+      reports: { output_dir: '/' },
+    });
+
+    // Stripping to '' would lose the root and resolve relative to cwd.
+    expect(loadAppPaths().reportsDir).toBe('/');
+  });
+});
+
+describe('stripTrailingSlashes', () => {
+  it('removes one or more trailing slashes', () => {
+    expect(stripTrailingSlashes('reports/')).toBe('reports');
+    expect(stripTrailingSlashes('reports///')).toBe('reports');
+    expect(stripTrailingSlashes('/srv/out//')).toBe('/srv/out');
+  });
+
+  it('leaves a path without a trailing slash untouched', () => {
+    expect(stripTrailingSlashes('reports')).toBe('reports');
+    expect(stripTrailingSlashes('/srv/out')).toBe('/srv/out');
+  });
+
+  it('preserves the filesystem root when the input is only slashes', () => {
+    expect(stripTrailingSlashes('/')).toBe('/');
+    expect(stripTrailingSlashes('///')).toBe('/');
+  });
+
+  it('returns empty string for empty input', () => {
+    expect(stripTrailingSlashes('')).toBe('');
   });
 
   it('propagates a ConfigError from a broken config (for the remediation path)', () => {

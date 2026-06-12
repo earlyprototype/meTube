@@ -799,7 +799,7 @@ describe('HTMLReportGenerator — GitHub repo description enrichment', () => {
     await h.generator.generatePlaylistReport(playlistId, h.outputDir);
 
     // Assert — exactly one fetch for the single distinct repo.
-    expect((fetchMock as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+    expect(fetchMock as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
   });
 
   it('degrades gracefully (no description, no throw) when fetch rejects', async () => {
@@ -853,7 +853,55 @@ describe('HTMLReportGenerator — GitHub repo description enrichment', () => {
     await h.generator.generatePlaylistReport(playlistId, h.outputDir);
 
     // Assert — no GitHub API call for a non-github URL.
-    expect((fetchMock as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(fetchMock as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    // Hostname lookalike — substring "github.com" appears but the host differs.
+    ['notgithub.com lookalike', 'https://notgithub.com/owner/repo'],
+    // A different GitHub surface — gist, not a repo.
+    ['gist subdomain', 'https://gist.github.com/owner/abc123'],
+    // Deep path — more than two segments is not a bare owner/repo.
+    ['deep path (tree/main)', 'https://github.com/owner/repo/tree/main'],
+    // Single segment — a user/org page, not a repo.
+    ['single segment (org page)', 'https://github.com/owner'],
+  ])('does NOT enrich a non-canonical GitHub URL: %s', async (_label, url) => {
+    // Arrange — strict URL parsing must reject these; no fetch should fire.
+    const fetchMock = vi.fn(async () =>
+      githubResponse(200, { description: 'SHOULD_NOT_APPEAR' })
+    ) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [{ value: 'owner/repo', url }]);
+
+    // Act
+    const filepath = await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+    const html = fs.readFileSync(filepath, 'utf-8');
+
+    // Assert — no API call, no description rendered, repo still passes through.
+    expect(fetchMock as unknown as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+    expect(html).not.toContain('agg-repo-desc');
+    expect(html).not.toContain('SHOULD_NOT_APPEAR');
+  });
+
+  it('enriches a canonical github.com URL that carries a query string', async () => {
+    // A query string is allowed: the path is still a bare owner/repo, so the
+    // strict parser keeps it and fetches the canonical API URL (no query).
+    const fetchMock = vi.fn(async () =>
+      githubResponse(200, { description: 'QUERY_OK_DESC' })
+    ) as unknown as typeof fetch;
+    h = makeEnrichHarness(fetchMock);
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'owner/repo', url: 'https://github.com/owner/repo?tab=readme' },
+    ]);
+
+    // Act
+    await h.generator.generatePlaylistReport(playlistId, h.outputDir);
+
+    // Assert — fetched the clean API URL, query stripped.
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.github.com/repos/owner/repo',
+      expect.anything()
+    );
   });
 
   it('strips a .git suffix from the repo name when building the API URL', async () => {

@@ -66,9 +66,16 @@ export function ProgressDisplay({
 
   // Guard the zero-total case: extraction start (or an all-skipped run) leaves
   // total === 0, and current / total is NaN — rendering "0 / 0 videos (NaN%)".
-  const percentage = total > 0 ? Math.floor((current / total) * 100) : 0;
   const progressBarLength = 20;
-  const filledLength = total > 0 ? Math.floor((progressBarLength * current) / total) : 0;
+  // Clamp before any .repeat(): a current > total (e.g. an off-by-one event
+  // ordering) would otherwise push filledLength past progressBarLength, making
+  // `progressBarLength - filledLength` negative — and String.repeat throws a
+  // RangeError on a negative count. Clamp percentage to [0,100] and
+  // filledLength to [0,progressBarLength] so the bar always renders.
+  const rawPercentage = total > 0 ? Math.floor((current / total) * 100) : 0;
+  const percentage = Math.max(0, Math.min(100, rawPercentage));
+  const rawFilledLength = total > 0 ? Math.floor((progressBarLength * current) / total) : 0;
+  const filledLength = Math.max(0, Math.min(progressBarLength, rawFilledLength));
   const progressBar = '#'.repeat(filledLength) + '-'.repeat(progressBarLength - filledLength);
 
   const statusText = {

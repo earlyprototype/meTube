@@ -20,8 +20,18 @@ import logger, { buildLoggerConfig, createLogger, LOG_FILE_PATH } from '../utils
 const baseEnv = (): NodeJS.ProcessEnv => ({});
 
 describe('buildLoggerConfig — level precedence', () => {
-  it('respects an explicit LOG_LEVEL over every default', () => {
+  it('enforces silence under test even when LOG_LEVEL is set (non-overridable)', () => {
+    // A stray LOG_LEVEL in a CI/dev shell must NOT let log lines leak into the
+    // test runner — test silence is unconditional and beats LOG_LEVEL.
     const env = { ...baseEnv(), LOG_LEVEL: 'warn', NODE_ENV: 'test', DEBUG: 'true' };
+
+    const { level } = buildLoggerConfig(env);
+
+    expect(level).toBe('silent');
+  });
+
+  it('respects an explicit LOG_LEVEL outside the test environment', () => {
+    const env = { ...baseEnv(), LOG_LEVEL: 'warn', NODE_ENV: 'production' };
 
     const { level } = buildLoggerConfig(env);
 

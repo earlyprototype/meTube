@@ -241,11 +241,30 @@ export class WhisperExtractor {
     perCall: WhisperProgressCallback | undefined
   ): (progress: Parameters<WhisperProgressCallback>[0]) => void {
     return (progress) => {
+      // Guard EACH observer independently: a throwing progress callback (e.g.
+      // a UI emitter that blows up mid-render) must NOT abort the whisper
+      // extraction. Without this, an exception here bubbles to the outer catch,
+      // the method returns null, and the transcript is lost — all because a
+      // cosmetic progress observer threw. Log and swallow; never rethrow.
       if (this.onProgress) {
-        this.onProgress(progress);
+        try {
+          this.onProgress(progress);
+        } catch (err) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'Whisper constructor onProgress callback threw; ignoring'
+          );
+        }
       }
       if (perCall) {
-        perCall(progress);
+        try {
+          perCall(progress);
+        } catch (err) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'Whisper per-call onProgress callback threw; ignoring'
+          );
+        }
       }
     };
   }

@@ -219,8 +219,12 @@ export function PlaylistDiscover({
     setSelected(playlist);
     setStatus('adding');
 
+    // Declared before the try so the finally closes it on EVERY path; a throw
+    // in createOrUpdate previously leaked the SQLite handle for the REPL's
+    // process lifetime.
+    let db: DatabaseManager | undefined;
     try {
-      const db = new DatabaseManager(loadAppPaths().dbPath);
+      db = new DatabaseManager(loadAppPaths().dbPath);
       const repo = new PlaylistRepository(db);
 
       // v2 PlaylistRepository uses camelCase domain shape and branded
@@ -236,11 +240,12 @@ export function PlaylistDiscover({
         enabled: true,
       });
 
-      db.close();
       setStatus('prompt_extract');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus('error');
+    } finally {
+      db?.close();
     }
   };
 
@@ -411,6 +416,7 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
 
   useEffect(() => {
     async function addPlaylist() {
+      let db: DatabaseManager | undefined;
       try {
         if (!playlistId) {
           setError('No playlist ID provided');
@@ -423,8 +429,10 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
         // it as a user-readable error.
         const brandedId = asPlaylistId(playlistId);
 
-        // Initialize services
-        const db = new DatabaseManager(loadAppPaths().dbPath);
+        // Initialize services. Declared before the try-bounded body so the
+        // finally closes it on EVERY path (early return, happy path, throw) —
+        // the prior early-return/catch mix leaked the handle on failure.
+        db = new DatabaseManager(loadAppPaths().dbPath);
         const repo = new PlaylistRepository(db);
 
         // Check if already exists — v2 uses findById, returns null on miss.
@@ -432,7 +440,6 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
         if (existing) {
           setError(`Playlist already tracked: "${existing.title}"`);
           setStatus('error');
-          db.close();
           return;
         }
 
@@ -447,7 +454,6 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
         if (!playlist) {
           setError(`Playlist not found on YouTube: ${playlistId}`);
           setStatus('error');
-          db.close();
           return;
         }
 
@@ -464,7 +470,6 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
 
         setPlaylistData(playlist);
         setStatus('done');
-        db.close();
 
         // In REPL mode, call onComplete; in direct mode, exit after 2 seconds
         if (onComplete) {
@@ -475,6 +480,8 @@ function PlaylistAdd({ playlistId, onComplete }: { playlistId?: string; onComple
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
+      } finally {
+        db?.close();
       }
     }
 
@@ -538,6 +545,10 @@ function PlaylistRemove({
 
   useEffect(() => {
     async function loadPlaylist() {
+      // Declared before the try so the finally closes it on EVERY path; the
+      // prior per-branch close()/catch mix leaked the handle when a repo call
+      // threw.
+      let dbForResolve: DatabaseManager | undefined;
       try {
         if (!playlistId) {
           setError('No playlist ID provided');
@@ -547,12 +558,11 @@ function PlaylistRemove({
 
         // v2 resolver takes a context object; injecting db enables the
         // database-fallback step. Note: each command owns its DB handle.
-        const dbForResolve = new DatabaseManager(loadAppPaths().dbPath);
+        dbForResolve = new DatabaseManager(loadAppPaths().dbPath);
         const resolved = await resolvePlaylistIdentifier(playlistId, {
           db: dbForResolve,
         });
         if (!resolved) {
-          dbForResolve.close();
           setError(
             `Playlist not found: ${playlistId}. Try 'metube playlist list' to see tracked playlists.`
           );
@@ -573,7 +583,6 @@ function PlaylistRemove({
             `Playlist not found: ${resolved.title || actualPlaylistId}. Use 'metube playlist list' to see tracked playlists.`
           );
           setStatus('error');
-          dbForResolve.close();
           return;
         }
 
@@ -583,10 +592,11 @@ function PlaylistRemove({
 
         setPlaylist(pl);
         setStatus('confirming');
-        dbForResolve.close();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
+      } finally {
+        dbForResolve?.close();
       }
     }
 
@@ -610,8 +620,9 @@ function PlaylistRemove({
   });
 
   async function performRemoval() {
+    let db: DatabaseManager | undefined;
     try {
-      const db = new DatabaseManager(loadAppPaths().dbPath);
+      db = new DatabaseManager(loadAppPaths().dbPath);
       const playlistRepo = new PlaylistRepository(db);
 
       // Delete playlist (videos remain - user can manually delete if
@@ -619,7 +630,6 @@ function PlaylistRemove({
       playlistRepo.delete(asPlaylistId(resolvedPlaylistId));
 
       setStatus('done');
-      db.close();
 
       if (onComplete) {
         onComplete();
@@ -629,6 +639,8 @@ function PlaylistRemove({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus('error');
+    } finally {
+      db?.close();
     }
   }
 
@@ -739,13 +751,14 @@ function PlaylistAddMine({
 
   useEffect(() => {
     async function fetchPlaylists() {
+      let db: DatabaseManager | undefined;
       try {
         // Initialize services — v2 YouTubeClient takes the live
         // OAuth2Client returned by authenticate().
         const auth = new YouTubeAuth();
         const oauthClient = await auth.authenticate();
         const client = new YouTubeClient(oauthClient);
-        const db = new DatabaseManager(loadAppPaths().dbPath);
+        db = new DatabaseManager(loadAppPaths().dbPath);
         const repo = new PlaylistRepository(db);
 
         // Get existing playlists — v2 findAll + camelCase playlistId.
@@ -776,7 +789,6 @@ function PlaylistAddMine({
         if (filtered.length === 0) {
           setError('No playlists found matching criteria');
           setStatus('error');
-          db.close();
           return;
         }
 
@@ -792,10 +804,11 @@ function PlaylistAddMine({
         setSelectedIndices(autoSelected);
 
         setStatus('selecting');
-        db.close();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
+      } finally {
+        db?.close();
       }
     }
 
@@ -832,8 +845,9 @@ function PlaylistAddMine({
   });
 
   async function performBulkAdd() {
+    let db: DatabaseManager | undefined;
     try {
-      const db = new DatabaseManager(loadAppPaths().dbPath);
+      db = new DatabaseManager(loadAppPaths().dbPath);
       const repo = new PlaylistRepository(db);
 
       let added = 0;
@@ -864,7 +878,6 @@ function PlaylistAddMine({
       setAddedCount(added);
       setSkippedCount(skipped);
       setStatus('done');
-      db.close();
 
       if (onComplete) {
         onComplete();
@@ -874,6 +887,8 @@ function PlaylistAddMine({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus('error');
+    } finally {
+      db?.close();
     }
   }
 
@@ -996,12 +1011,13 @@ function PlaylistSync({
 
   useEffect(() => {
     async function detectChanges() {
+      let db: DatabaseManager | undefined;
       try {
         // Initialize services — v2 YouTubeClient takes OAuth2Client.
         const auth = new YouTubeAuth();
         const oauthClient = await auth.authenticate();
         const client = new YouTubeClient(oauthClient);
-        const db = new DatabaseManager(loadAppPaths().dbPath);
+        db = new DatabaseManager(loadAppPaths().dbPath);
         const repo = new PlaylistRepository(db);
 
         // Get tracked playlists — v2 findAll + camelCase playlistId.
@@ -1026,10 +1042,11 @@ function PlaylistSync({
         setUnchangedCount(unchanged);
 
         setStatus('reviewing');
-        db.close();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
+      } finally {
+        db?.close();
       }
     }
 
@@ -1053,8 +1070,9 @@ function PlaylistSync({
   });
 
   async function performSync() {
+    let db: DatabaseManager | undefined;
     try {
-      const db = new DatabaseManager(loadAppPaths().dbPath);
+      db = new DatabaseManager(loadAppPaths().dbPath);
       const repo = new PlaylistRepository(db);
 
       let added = 0;
@@ -1083,7 +1101,6 @@ function PlaylistSync({
       setAddCount(added);
       setRemoveCount(removed);
       setStatus('done');
-      db.close();
 
       if (onComplete) {
         onComplete();
@@ -1093,6 +1110,8 @@ function PlaylistSync({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus('error');
+    } finally {
+      db?.close();
     }
   }
 
@@ -1252,6 +1271,10 @@ export function PlaylistVideos({
 
   useEffect(() => {
     async function fetchVideos() {
+      // Declared before the try so the finally closes it on EVERY path; the
+      // prior per-branch close()/catch mix leaked the handle when a repo call
+      // threw.
+      let db: DatabaseManager | undefined;
       try {
         if (!playlistId) {
           setError('No playlist ID provided');
@@ -1260,7 +1283,7 @@ export function PlaylistVideos({
         }
 
         // Initialize services
-        const db = new DatabaseManager(loadAppPaths().dbPath);
+        db = new DatabaseManager(loadAppPaths().dbPath);
         const playlistRepo = new PlaylistRepository(db);
         const videoRepo = new VideoRepository(db);
 
@@ -1268,7 +1291,6 @@ export function PlaylistVideos({
         // database-fallback lookups.
         const resolved = await resolvePlaylistIdentifier(playlistId, { db });
         if (!resolved) {
-          db.close();
           setError(
             `Playlist not found: ${playlistId}. Try 'metube playlist list' to see tracked playlists.`
           );
@@ -1286,7 +1308,6 @@ export function PlaylistVideos({
             `Playlist not found: ${resolved.title || actualPlaylistId}. Run 'metube playlist add ${actualPlaylistId}' first.`
           );
           setStatus('error');
-          db.close();
           return;
         }
 
@@ -1302,7 +1323,6 @@ export function PlaylistVideos({
             `No videos found in playlist. Extract the playlist first using: metube extract playlist ${actualPlaylistId}`
           );
           setStatus('error');
-          db.close();
           return;
         }
 
@@ -1330,7 +1350,6 @@ export function PlaylistVideos({
 
         setVideos(cachedVideos);
         setStatus('loaded');
-        db.close();
 
         // In REPL mode, call onComplete; in direct mode, exit after 2 seconds
         if (onComplete) {
@@ -1341,6 +1360,8 @@ export function PlaylistVideos({
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
+      } finally {
+        db?.close();
       }
     }
 

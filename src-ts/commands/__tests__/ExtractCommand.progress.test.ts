@@ -39,7 +39,10 @@ const INITIAL: ProgressState = {
  * setProgress either with a plain object or an updater; this harness applies
  * both forms against the running state.
  */
-function reduce(events: readonly ExtractProgressEvent[], seed: ProgressState = INITIAL): ProgressState {
+function reduce(
+  events: readonly ExtractProgressEvent[],
+  seed: ProgressState = INITIAL
+): ProgressState {
   let state = seed;
   const setProgress = (next: ProgressState | ((prev: ProgressState) => ProgressState)): void => {
     state = typeof next === 'function' ? next(state) : next;
@@ -140,6 +143,18 @@ describe('mapEventToProgress — title + step lines', () => {
     expect(state.currentVideo).toBe('Vid Two');
     expect(state.stepLines).toEqual([]);
     expect(state.whisperProgress).toBeUndefined();
+  });
+});
+
+describe('mapEventToProgress — status transitions', () => {
+  it("maps a 'persist' event to the 'saving' status (DB-write phase)", () => {
+    const state = reduce([
+      { kind: 'fetch_meta', videoId: VID, index: 1, total: 1, title: 'Vid' },
+      { kind: 'persist', videoId: VID, index: 1, total: 1, title: 'Vid' },
+    ]);
+
+    expect(state.status).toBe('saving');
+    expect(state.currentVideo).toBe('Vid');
   });
 });
 
@@ -263,7 +278,14 @@ describe('mapEventToProgress — preserved counters', () => {
         stage: 'transcribing',
       },
       // Mid-run failure — its accumulators must not linger to the next video.
-      { kind: 'video_failed', videoId: VID, index: 1, total: 1, title: 'Doomed Vid', error: 'boom' },
+      {
+        kind: 'video_failed',
+        videoId: VID,
+        index: 1,
+        total: 1,
+        title: 'Doomed Vid',
+        error: 'boom',
+      },
     ]);
 
     expect(state.failureCount).toBe(1);
@@ -292,7 +314,14 @@ describe('mapEventToProgress — preserved counters', () => {
         percent: 30,
         stage: 'transcribing',
       },
-      { kind: 'video_skipped', videoId: VID, index: 1, total: 1, title: 'Skip Vid', reason: 'exists' },
+      {
+        kind: 'video_skipped',
+        videoId: VID,
+        index: 1,
+        total: 1,
+        title: 'Skip Vid',
+        reason: 'exists',
+      },
     ]);
 
     expect(state.skippedCount).toBe(1);

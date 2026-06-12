@@ -147,10 +147,47 @@ const DEFAULT_GITHUB_THROTTLE_MS = 100;
 const GITHUB_FETCH_TIMEOUT_MS = 5000;
 
 /**
- * Extracts `owner` / `repo` from a GitHub URL. Mirrors the Python regex
- * `r'github\.com/([^/]+)/([^/]+)'` (html_generator.py:213).
+ * Strictly parse `owner` / `repo` from a GitHub repository URL.
+ *
+ * The previous `github.com` substring/regex match misfired on lookalikes
+ * (`notgithub.com`), other GitHub surfaces (`gist.github.com`), deep paths
+ * (`github.com/o/r/tree/main`), and query params. This parses with `new URL`
+ * and accepts ONLY:
+ *   - hostname exactly `github.com` or `www.github.com`
+ *   - pathname of exactly two non-empty segments (`owner/repo`) after trimming
+ *     leading/trailing slashes; a trailing `.git` on the repo is stripped
+ *
+ * Anything else (unparseable URL, wrong host, wrong segment count) returns
+ * `null`, so the caller passes the repo through unenriched.
+ *
+ * @param repoUrl - The candidate repository URL.
+ * @returns `{ owner, repo }` for a canonical repo URL, else `null`.
  */
-const GITHUB_REPO_URL_PATTERN = /github\.com\/([^/]+)\/([^/]+)/;
+function parseGithubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(repoUrl);
+  } catch {
+    return null;
+  }
+
+  if (parsed.hostname !== 'github.com' && parsed.hostname !== 'www.github.com') {
+    return null;
+  }
+
+  const segments = parsed.pathname.split('/').filter((s) => s.length > 0);
+  if (segments.length !== 2) {
+    return null;
+  }
+
+  const owner = segments[0];
+  const repo = segments[1].replace(/\.git$/, '');
+  if (owner.length === 0 || repo.length === 0) {
+    return null;
+  }
+
+  return { owner, repo };
+}
 
 /**
  * Sleep for `ms` milliseconds. A `0` (or negative) delay resolves on the
@@ -898,8 +935,11 @@ export class HTMLReportGenerator {
     let firstFetched = false;
 
     for (const repo of repos) {
-      const isGithub = repo.url !== undefined && repo.url.includes('github.com');
-      if (!isGithub) {
+      // Strict parse — only a canonical github.com owner/repo URL is enriched.
+      // A substring match here misfired on notgithub.com / gist.github.com /
+      // deep paths / query params.
+      const parsedRepo = repo.url !== undefined ? parseGithubRepoUrl(repo.url) : null;
+      if (parsedRepo === null) {
         enriched.push({ ...repo });
         continue;
       }
@@ -922,7 +962,8 @@ export class HTMLReportGenerator {
    * Fetch a single repository's description from the GitHub API. Ports
    * Python `_fetch_github_description` (html_generator.py:200-238).
    *
-   * Extracts `owner/repo` from the URL (stripping a `.git` suffix), GETs
+   * Strictly extracts `owner/repo` via {@link parseGithubRepoUrl} (canonical
+   * github.com host + exactly two path segments, `.git` suffix stripped), GETs
    * `https://api.github.com/repos/{owner}/{repo}` with a
    * {@link GITHUB_FETCH_TIMEOUT_MS} abort timeout, and returns the
    * `description` field on a 200. An empty-string description is treated as
@@ -940,13 +981,12 @@ export class HTMLReportGenerator {
    * @returns The non-empty description, or `null` if unavailable.
    */
   private async fetchGithubDescription(repoUrl: string): Promise<string | null> {
-    const match = GITHUB_REPO_URL_PATTERN.exec(repoUrl);
-    if (match === null) {
+    const parsedRepo = parseGithubRepoUrl(repoUrl);
+    if (parsedRepo === null) {
       return null;
     }
 
-    const owner = match[1];
-    const repo = match[2].replace(/\.git$/, '');
+    const { owner, repo } = parsedRepo;
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}`;
 
     const controller = new AbortController();

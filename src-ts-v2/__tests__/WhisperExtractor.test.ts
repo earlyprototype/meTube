@@ -240,6 +240,47 @@ describe('WhisperExtractor', () => {
       // Assert — unchanged behaviour.
       expect(result?.full_text).toBe('no callback');
     });
+
+    it('still returns the transcript when BOTH progress callbacks throw', async () => {
+      // A throwing progress observer (constructor-level AND per-call) must be
+      // isolated — a UI emitter that blows up must not abort the extraction and
+      // lose the transcript. Each callback is guarded independently.
+      const payload = JSON.stringify({
+        text: 'survives throwing observers',
+        segments: [{ start: 0, end: 1, text: 'survives throwing observers' }],
+        language: 'en',
+      });
+      mockSpawn.mockImplementation(() => {
+        const proc = makeFakeProc();
+        if (mockSpawn.mock.calls.length === 1) {
+          driveClose(proc, { code: 0 });
+        } else {
+          driveClose(proc, { code: 0, stdout: wrapInMarkers(payload) });
+        }
+        return proc;
+      });
+
+      const ctorThrows = vi.fn(() => {
+        throw new Error('constructor observer boom');
+      });
+      const perCallThrows = vi.fn(() => {
+        throw new Error('per-call observer boom');
+      });
+
+      const extractor = new WhisperExtractor({
+        cleanup_audio: false,
+        onProgress: ctorThrows,
+      });
+
+      // Act — per-call callback also throws.
+      const result = await extractor.extract('dQw4w9WgXcQ', perCallThrows);
+
+      // Assert — both observers were invoked (and threw), yet the transcript
+      // came back intact.
+      expect(result?.full_text).toBe('survives throwing observers');
+      expect(ctorThrows).toHaveBeenCalled();
+      expect(perCallThrows).toHaveBeenCalled();
+    });
   });
 
   // ------------------------------------------------------------------------
