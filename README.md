@@ -4,8 +4,6 @@ Turn YouTube rabbit holes into structured, searchable knowledge — a CLI for pe
 
 ![CI](https://github.com/earlyprototype/meTube/actions/workflows/build.yml/badge.svg)
 
-![demo](docs/demo.gif)
-
 ## What this is / why I built it
 
 I have ADHD. I watch a lot of YouTube — not passively, but as a research tool, following threads across channels, playlists, and topics. The problem is that none of it sticks in a retrievable form. A video mention of a GitHub repo disappears into watch history. A name or concept I meant to follow up on evaporates. The consumption is real; the knowledge capture isn't.
