@@ -68,7 +68,7 @@ Handover context: `docs/HANDOVER-2026-05-20-planning.md`.
 
 Other locations:
 
-- `docs/internal/` — archived historical phase reports. Useful context, not active.
+- `docs/internal/` — removed from the working tree (2026-07). The ~50 historical phase reports live in git history: `git log --diff-filter=D -- docs/internal/`.
 - `scripts/dev/` — ad-hoc developer scripts. Not production code.
 - `_archivedkanban.md` — pre-v2 kanban (the Tier 0-4 era). Reference only; `_kanban.md` is live.
 
@@ -240,14 +240,14 @@ entry resolves to under `legacy/python/`).
 - `docs/PORT_PLAN.md` — executable port plan (Phase 2 spec)
 - `docs/MIGRATION_NOTES.md` — what TS gained vs lost from Python (file:line evidence)
 - `~/.claude/plans/enumerated-doodling-melody.md` — full 3-phase plan
-- `docs/internal/DEVELOPMENT_HANDOVER.md` — historical context from the migration team's last day
+- `docs/internal/DEVELOPMENT_HANDOVER.md` — removed with the rest of `docs/internal/`; recover from git history if needed
 
 ---
 
 ## When in doubt
 
 - Read `_kanban.md` first.
-- Don't touch `src-ts/{database, extractors, api, auth, parsers, reports, utils, errors, config.ts}` (dead) or `docs/internal/` unless porting/referencing.
+- Don't touch `archive/src-ts-v1/` (the dead v1 backend) unless porting/referencing.
 - Don't edit production code as orchestrator — spawn an Opus agent.
 - Don't downgrade agent model to sonnet/haiku — opus only.
 - Don't add a kill-criterion or exit ramp anywhere.

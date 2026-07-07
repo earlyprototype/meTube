@@ -2,7 +2,7 @@
 
 > Remediation plan to make the TypeScript Ink rewrite portfolio-ready while
 > recovering the UX wins from the original Python implementation.
-> See `docs/internal/` for historical phase reports and `DEVELOPMENT_HANDOVER.md`.
+> The historical phase reports formerly in `docs/internal/` (incl. `DEVELOPMENT_HANDOVER.md`) were pruned 2026-07; they live in git history.
 
 ## BACKLOG
 
