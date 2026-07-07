@@ -10,7 +10,7 @@ I have ADHD. I watch a lot of YouTube — not passively, but as a research tool,
 
 meTube is the personal-use tool I built to fix that. It connects to my YouTube account, discovers my playlists, and extracts structured data from every video: full transcripts, GitHub repositories and websites from descriptions, topics and people parsed by Gemini, and summary metadata stored locally in SQLite. The result is a searchable, browseable knowledge base built from actual watch history — not curated notes I had to write, but extracted automatically.
 
-This is also a portfolio piece. Honesty in this README beats optimism. The status section below names exactly what ships in v1.0.0 and what's deferred.
+This is also a portfolio piece. Honesty in this README beats optimism. The status section below names exactly what ships and what's deferred.
 
 ## The differentiated capability — dual-transcript pipeline
 
@@ -18,31 +18,31 @@ Most YouTube tools use either the YouTube Transcript API or Whisper — meTube u
 
 **Architectural irony to know about:** Whisper still spawns `python whisper_extractor.py` as a subprocess. The TS binary is not yet a standalone artifact for the Whisper path — it requires a Python venv with `openai-whisper` and `ffmpeg`. De-Pythonising Whisper is on the post-v1.0.0 roadmap; today it works if you have the venv.
 
-## What v1.0.0 ships
+## What ships
 
-These commands are tested and production-ready:
+These commands are tested and working:
 
 | Command | What it does |
 |---|---|
+| `metube` (no args) | Interactive REPL mode |
 | `metube init` | OAuth authentication setup; writes tokens.json |
 | `metube playlist discover` | Discover and cache all your YouTube playlists with reference numbers |
 | `metube playlist list` | Show tracked playlists |
 | `metube playlist add <id>` | Add a playlist by YouTube ID, URL, cache number, or title search |
+| `metube playlist add-mine` | Bulk add all your playlists (`--privacy`, `--skip-existing`) |
+| `metube playlist sync` | Sync tracked playlists against YouTube (`--remove-deleted`) |
 | `metube playlist remove <id>` | Stop tracking a playlist |
+| `metube video add <url-or-id>` | Extract a single video by URL or ID |
 | `metube extract playlist <id>` | Extract all videos from a playlist (skips already-extracted) |
+| `metube extract --all` | Extract every enabled playlist |
 | `metube report playlist <id>` | Generate HTML report for a playlist |
+| `metube report video <id>` | Generate HTML report for a single video |
+| `metube report --all` | Generate reports for every video in the database |
 
-## What's deferred to post-v1.0.0
+## What's still deferred
 
-Out of scope for this release, will re-land one at a time gated by tests:
-
-- REPL mode (`metube` with no args)
-- `extract --all` flag
-- `metube video add <url-or-id>` — single-video extraction
-- `playlist add --search "title"` interactive multiselect
-- `playlist add-mine` bulk add
-- `playlist sync` change-detection
-- Whisper de-Python (separate Tier 3 work)
+- `playlist add --search "title"` interactive multiselect (plain title search already works as the positional argument)
+- Whisper de-Python (separate Tier 3 work; see the architectural note above)
 
 See [`_kanban.md`](_kanban.md) for the live board.
 
@@ -75,6 +75,8 @@ If you run Claude Code (or another MCP-capable client) against this repo, the ka
 ## Architecture
 
 The canonical implementation is TypeScript: Ink (React) for the terminal UI, better-sqlite3 for local storage, googleapis for YouTube Data API, youtube-transcript for native captions, Whisper subprocess for audio fallback, and Google Gemini for entity parsing. HTML reports are Handlebars templates.
+
+Two source trees matter. `src-ts/` is the Ink UI layer — `cli.tsx` is the entry point, with the command screens in `commands/` and shared widgets in `components/` — and it imports the backend directly from `src-ts-v2/`, which owns everything below the UI: database repositories, extractors, the YouTube API client, auth, parsers, and report generation. The UI survived the v1→v2 rewrite intact; the backend was rewritten from the Python source, and the abandoned v1 backend is preserved in `archive/src-ts-v1/`.
 
 For the curious about why the code is shaped this way:
 
