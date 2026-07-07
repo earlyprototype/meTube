@@ -34,7 +34,7 @@
     "ink",
     "terminal-ui"
   ],
-  "author": "",
+  "author": "Thom Conaty",
   "license": "MIT",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
