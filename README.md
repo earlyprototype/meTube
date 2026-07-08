@@ -10,11 +10,9 @@ I watch a lot of YouTube — not passively, but as a research tool, following th
 
 meTube is the personal-use tool I built to fix that. It connects to my YouTube account, discovers my playlists, and extracts structured data from every video: full transcripts, GitHub repositories and websites from descriptions, topics and people parsed by Gemini, and summary metadata stored locally in SQLite. The result is a searchable, browseable knowledge base built from actual watch history — no more hand-written and carefully filed Post-it dossiers, just automatically extracted, transcribed and curated information, deployable via delightful, interactive HTML reports.
 
-
 ## Dual-transcript pipeline
 
-meTube uses both the YouTube Transcript API and Whisper —  both, with a graceful fallback. YouTube captions run first: fast, free, no compute. If they fail or are unavailable, Whisper picks up automatically, downloading audio via yt-dlp and transcribing locally. 
-
+meTube uses both the YouTube Transcript API and Whisper, with a graceful fallback. YouTube captions run first: fast, free, no compute. If they fail or are unavailable, Whisper picks up automatically, downloading audio via yt-dlp and transcribing locally.
 
 ## What ships
 
@@ -34,7 +32,6 @@ meTube uses both the YouTube Transcript API and Whisper —  both, with a gracef
 | `metube report playlist <id>` | Generate HTML report for a playlist |
 | `metube report video <id>` | Generate HTML report for a single video |
 | `metube report --all` | Generate reports for every video in the database |
-
 
 ## Quick start
 
@@ -66,8 +63,7 @@ If you run Claude Code (or another MCP-capable client) against this repo, the ka
 
 The canonical implementation is TypeScript: Ink (React) for the terminal UI, better-sqlite3 for local storage, googleapis for YouTube Data API, youtube-transcript for native captions, Whisper subprocess for audio fallback, and Google Gemini for entity parsing. HTML reports are Handlebars templates.
 
-Two source trees matter. `src-ts/` is the Ink UI layer — `cli.tsx` is the entry point, with the command screens in `commands/` and shared widgets in `components/` — and it imports the backend directly from `src-ts-v2/`, which owns everything below the UI: database repositories, extractors, the YouTube API client, auth, parsers, and report generation. 
-
+Two source trees matter. `src-ts/` is the Ink UI layer — `cli.tsx` is the entry point, with the command screens in `commands/` and shared widgets in `components/` — and it imports the backend directly from `src-ts-v2/`, which owns everything below the UI: database repositories, extractors, the YouTube API client, auth, parsers, and report generation.
 
 ## License
 
