@@ -279,24 +279,13 @@
         </div>
         
         <div class="stats-grid">
-            <div class="stat-box">
-                <div class="stat-number">{{formatNumber video.view_count}}</div>
-                <div class="stat-label">Views</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-number">{{formatNumber video.like_count}}</div>
-                <div class="stat-label">Likes</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-number">{{formatNumber video.comment_count}}</div>
-                <div class="stat-label">Comments</div>
-            </div>
+            {{> video-stat-box number=(formatNumber video.view_count) label="Views"}}
+            {{> video-stat-box number=(formatNumber video.like_count) label="Likes"}}
+            {{> video-stat-box number=(formatNumber video.comment_count) label="Comments"}}
         </div>
-        
+
         {{#if analysis}}
-        <div class="section">
-            <h2 class="collapsible" onclick="toggleSection(this)">AI Summary</h2>
-            <div class="content">
+        {{#> video-section title="AI Summary"}}
                 <div class="summary-box">
                     {{ analysis.summary }}
                 </div>
@@ -305,97 +294,75 @@
                     <strong>Sentiment:</strong> {{ analysis.sentiment }}<br>
                     <strong>Analysed by:</strong> {{ analysis.model_used }}
                 </div>
-            </div>
-        </div>
+        {{/video-section}}
         {{/if}}
-        
+
         {{#if entities.topics}}
-        <div class="section">
-            <h2 class="collapsible" onclick="toggleSection(this)">Topics ({{length entities.topics}})</h2>
-            <div class="content">
+        {{#> video-section title="Topics" count=(length entities.topics)}}
                 <div class="entity-list">
                     {{#each entities.topics}}
-                    <span class="entity-tag topic">{{ this }}</span>
+                    {{> video-entity-tag modifier="topic"}}
                     {{/each}}
                 </div>
-            </div>
-        </div>
+        {{/video-section}}
         {{/if}}
-        
+
         {{#if entities.github_repos}}
-        <div class="section">
-            <h2 class="collapsible" onclick="toggleSection(this)">GitHub Repositories ({{length entities.github_repos}})</h2>
-            <div class="content">
+        {{#> video-section title="GitHub Repositories" count=(length entities.github_repos)}}
                 <div class="entity-list">
                     {{#each entities.github_repos}}
-                    <a href="{{ url }}" target="_blank" class="entity-tag repo">{{ name }}</a>
+                    {{> video-entity-link modifier="repo"}}
                     {{/each}}
                 </div>
-            </div>
-        </div>
+        {{/video-section}}
         {{/if}}
-        
+
         {{#if entities.websites}}
-        <div class="section">
-            <h2 class="collapsible" onclick="toggleSection(this)">Websites ({{length entities.websites}})</h2>
-            <div class="content">
+        {{#> video-section title="Websites" count=(length entities.websites)}}
                 <div class="entity-list">
                     {{#each entities.websites}}
-                    <a href="{{ url }}" target="_blank" class="entity-tag website">{{ name }}</a>
+                    {{> video-entity-link modifier="website"}}
                     {{/each}}
                 </div>
-            </div>
-        </div>
+        {{/video-section}}
         {{/if}}
-        
+
         {{#if entities.people}}
-        <div class="section">
-            <h2 class="collapsible" onclick="toggleSection(this)">People Mentioned ({{length entities.people}})</h2>
-            <div class="content">
+        {{#> video-section title="People Mentioned" count=(length entities.people)}}
                 <div class="entity-list">
                     {{#each entities.people}}
-                    <span class="entity-tag person">{{ this }}</span>
+                    {{> video-entity-tag modifier="person"}}
                     {{/each}}
                 </div>
-            </div>
-        </div>
+        {{/video-section}}
         {{/if}}
-        
+
         {{#if tags}}
-        <div class="section">
-            <h2 class="collapsible" onclick="toggleSection(this)">Tags ({{length tags}})</h2>
-            <div class="content">
+        {{#> video-section title="Tags" count=(length tags)}}
                 <div class="entity-list">
                     {{#each tags}}
-                    <span class="entity-tag">{{ this }}</span>
+                    {{> video-entity-tag}}
                     {{/each}}
                 </div>
-            </div>
-        </div>
+        {{/video-section}}
         {{/if}}
-        
+
         {{#if transcript}}
-        <div class="section">
-            <h2 class="collapsible" onclick="toggleSection(this)">Transcript</h2>
-            <div class="content">
+        {{#> video-section title="Transcript"}}
                 <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">
-                    Language: {{ transcript.language }} | 
-                    {{#if transcript.is_auto_generated}}Auto-generated{{else}}Manual{{/if}} | 
+                    Language: {{ transcript.language }} |
+                    {{#if transcript.is_auto_generated}}Auto-generated{{else}}Manual{{/if}} |
                     {{ transcript.word_count }} words
                 </p>
                 <div class="transcript">{{#each transcript.segments}}<a href="https://youtube.com/watch?v={{ ../video.video_id }}&t={{ start }}s" target="_blank" class="timestamp-link">[{{ timestamp }}]</a>{{ text }}
 {{/each}}</div>
-            </div>
-        </div>
+        {{/video-section}}
         {{/if}}
-        
+
         {{#if video.description}}
-        <div class="section">
-            <h2 class="collapsible" onclick="toggleSection(this)">Description</h2>
-            <div class="content">
+        {{#> video-section title="Description"}}
                 <div style="white-space: pre-wrap; line-height: 1.6;">{{ video.description }}</div>
-            </div>
-        </div>
+        {{/video-section}}
         {{/if}}
         
         <div style="text-align: center; margin-top: 40px; padding: 20px; color: var(--text-secondary); font-size: 14px;">

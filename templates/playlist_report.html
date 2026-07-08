@@ -644,26 +644,11 @@
         
         <!-- Stats Bar -->
         <div class="stats-bar">
-            <div class="stat-card">
-                <div class="stat-value">{{ stats.total_topics }}</div>
-                <div class="stat-label">Topics</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">{{ stats.total_repos }}</div>
-                <div class="stat-label">GitHub Repos</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">{{ stats.total_websites }}</div>
-                <div class="stat-label">Resources</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">{{ stats.total_people }}</div>
-                <div class="stat-label">People</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">{{ playlist.transcript_percentage }}%</div>
-                <div class="stat-label">Transcribed</div>
-            </div>
+            {{> playlist-stat-card value=stats.total_topics label="Topics"}}
+            {{> playlist-stat-card value=stats.total_repos label="GitHub Repos"}}
+            {{> playlist-stat-card value=stats.total_websites label="Resources"}}
+            {{> playlist-stat-card value=stats.total_people label="People"}}
+            {{> playlist-stat-card value=playlist.transcript_percentage suffix="%" label="Transcribed"}}
         </div>
         
         <!-- Navigation -->
@@ -680,40 +665,7 @@
             </div>
             <div class="videos-grid" id="videosGrid">
                 {{#each videos}}
-                <div class="video-card" data-id="{{ video_id }}" data-title="{{ title }}" data-topics="{{#each topics}}{{this}},{{/each}}">
-                    <div class="video-thumbnail-wrapper">
-                        <img src="{{ thumbnail_url }}" alt="{{ title }}" class="video-thumbnail">
-                        <div class="video-overlay"></div>
-                    </div>
-                    <div class="video-content">
-                        <div class="video-title">{{ title }}</div>
-                        <div class="video-meta">
-                            <span>{{ channel_title }}</span>
-                            <span>{{ duration_seconds }}s</span>
-                            <span>{{#if view_count}}{{formatNumber view_count}}{{else}}0{{/if}} views</span>
-                        </div>
-                        {{#if summary}}
-                        <div class="video-summary">{{ summary }}</div>
-                        {{/if}}
-                        <div class="video-topics">
-                            {{#each topics}}
-                            {{#if @first}}<span class="topic-tag">{{ this }}</span>{{/if}}
-                            {{#ifEquals @index 1}}<span class="topic-tag">{{ this }}</span>{{/ifEquals}}
-                            {{#ifEquals @index 2}}<span class="topic-tag">{{ this }}</span>{{/ifEquals}}
-                            {{#ifEquals @index 3}}<span class="topic-tag">{{ this }}</span>{{/ifEquals}}
-                            {{#ifEquals @index 4}}<span class="topic-tag">{{ this }}</span>{{/ifEquals}}
-                            {{/each}}
-                        </div>
-                        <div class="video-actions">
-                            <a href="https://www.youtube.com/watch?v={{ video_id }}" target="_blank" class="btn btn-primary">Watch</a>
-                            <button class="btn btn-danger" onclick="confirmRemove('{{ video_id }}', 'video')">Remove</button>
-                            <label class="checkbox-wrapper">
-                                <input type="checkbox" class="checkbox" onchange="toggleResearched('{{ video_id }}', 'video')" data-id="{{ video_id }}">
-                                <span style="font-size: 0.85rem; color: var(--text-muted);">Done</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
+                {{> playlist-video-card}}
                 {{/each}}
             </div>
         </div>
@@ -725,38 +677,7 @@
             </div>
             <div class="repo-grid" id="reposGrid">
                 {{#each github_repos}}
-                <div class="repo-card" data-id="{{ url }}" data-name="{{ name }}">
-                    <div class="repo-header">
-                        <div class="repo-name">
-                            <a href="{{ url }}" target="_blank">{{ name }}</a>
-                        </div>
-                        <label class="checkbox-wrapper">
-                            <input type="checkbox" class="checkbox" onchange="toggleResearched('{{ url }}', 'repo')" data-id="{{ url }}">
-                            <span style="font-size: 0.85rem; color: var(--text-muted);">Reviewed</span>
-                        </label>
-                    </div>
-                    {{#if description}}
-                    <div class="repo-description">{{ description }}</div>
-                    {{else}}
-                    <div class="repo-description" style="font-style: italic; color: var(--text-muted);">
-                        {{#if summary}}
-                        {{ summary }}
-                        {{else}}
-                        Repository mentioned in {{length videos}} video(s)
-                        {{/if}}
-                    </div>
-                    {{/if}}
-                    <div class="repo-stats">
-                        <span>Mentioned in {{length videos}} video(s)</span>
-                    </div>
-                    <div class="repo-videos">
-                        {{#each videos}}
-                        <div class="video-mention" title="{{ title }}">
-                            Video {{inc @index}}
-                        </div>
-                        {{/each}}
-                    </div>
-                </div>
+                {{> playlist-repo-card}}
                 {{/each}}
             </div>
         </div>

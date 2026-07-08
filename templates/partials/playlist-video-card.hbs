@@ -1,0 +1,34 @@
+<div class="video-card" data-id="{{ video_id }}" data-title="{{ title }}" data-topics="{{#each topics}}{{this}},{{/each}}">
+    <div class="video-thumbnail-wrapper">
+        <img src="{{ thumbnail_url }}" alt="{{ title }}" class="video-thumbnail">
+        <div class="video-overlay"></div>
+    </div>
+    <div class="video-content">
+        <div class="video-title">{{ title }}</div>
+        <div class="video-meta">
+            <span>{{ channel_title }}</span>
+            <span>{{ duration_seconds }}s</span>
+            <span>{{#if view_count}}{{formatNumber view_count}}{{else}}0{{/if}} views</span>
+        </div>
+        {{#if summary}}
+        <div class="video-summary">{{ summary }}</div>
+        {{/if}}
+        <div class="video-topics">
+            {{#each topics}}
+            {{#if @first}}{{> playlist-topic-tag}}{{/if}}
+            {{#ifEquals @index 1}}{{> playlist-topic-tag}}{{/ifEquals}}
+            {{#ifEquals @index 2}}{{> playlist-topic-tag}}{{/ifEquals}}
+            {{#ifEquals @index 3}}{{> playlist-topic-tag}}{{/ifEquals}}
+            {{#ifEquals @index 4}}{{> playlist-topic-tag}}{{/ifEquals}}
+            {{/each}}
+        </div>
+        <div class="video-actions">
+            <a href="https://www.youtube.com/watch?v={{ video_id }}" target="_blank" class="btn btn-primary">Watch</a>
+            <button class="btn btn-danger" onclick="confirmRemove('{{ video_id }}', 'video')">Remove</button>
+            <label class="checkbox-wrapper">
+                <input type="checkbox" class="checkbox" onchange="toggleResearched('{{ video_id }}', 'video')" data-id="{{ video_id }}">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Done</span>
+            </label>
+        </div>
+    </div>
+</div>

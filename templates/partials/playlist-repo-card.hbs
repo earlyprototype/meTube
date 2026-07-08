@@ -1,0 +1,32 @@
+<div class="repo-card" data-id="{{ url }}" data-name="{{ name }}">
+    <div class="repo-header">
+        <div class="repo-name">
+            <a href="{{ url }}" target="_blank">{{ name }}</a>
+        </div>
+        <label class="checkbox-wrapper">
+            <input type="checkbox" class="checkbox" onchange="toggleResearched('{{ url }}', 'repo')" data-id="{{ url }}">
+            <span style="font-size: 0.85rem; color: var(--text-muted);">Reviewed</span>
+        </label>
+    </div>
+    {{#if description}}
+    <div class="repo-description">{{ description }}</div>
+    {{else}}
+    <div class="repo-description" style="font-style: italic; color: var(--text-muted);">
+        {{#if summary}}
+        {{ summary }}
+        {{else}}
+        Repository mentioned in {{length videos}} video(s)
+        {{/if}}
+    </div>
+    {{/if}}
+    <div class="repo-stats">
+        <span>Mentioned in {{length videos}} video(s)</span>
+    </div>
+    <div class="repo-videos">
+        {{#each videos}}
+        <div class="video-mention" title="{{ title }}">
+            Video {{inc @index}}
+        </div>
+        {{/each}}
+    </div>
+</div>

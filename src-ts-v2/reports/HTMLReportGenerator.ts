@@ -326,17 +326,28 @@ function registerHandlebarsHelpers(): void {
 registerHandlebarsHelpers();
 
 /**
- * Register the shared design-token partial so every report template pulls
- * colours, type and spacing from one source (templates/partials/design-tokens.hbs)
- * via `{{> designTokens}}`, instead of each template hand-rolling its own
- * divergent `:root` block. Idempotent; re-read per generator so a custom
- * `templatesDir` is honoured. Missing file is left unregistered — Handlebars
- * then raises a clear "partial not found" at render time.
+ * Register every `*.hbs` file in `templates/partials/` as a Handlebars
+ * partial so templates pull shared markup (design tokens, stat cards, tags,
+ * video/repo cards, …) from one source instead of hand-rolling divergent
+ * copies. Each file is registered under two names: the camelCase form of its
+ * basename (so `design-tokens.hbs` resolves `{{> designTokens}}`) and the raw
+ * basename (`{{> design-tokens}}`). Componentize agents add a partial by
+ * dropping a file here — no generator edit needed.
+ *
+ * Idempotent; re-read per generator so a custom `templatesDir` is honoured.
+ * A missing partials dir is skipped silently — Handlebars then raises a clear
+ * "partial not found" at render time if a template references one.
  */
-function registerDesignTokensPartial(templatesDir: string): void {
-  const partialPath = path.resolve(templatesDir, 'partials', 'design-tokens.hbs');
-  if (fs.existsSync(partialPath)) {
-    Handlebars.registerPartial('designTokens', fs.readFileSync(partialPath, 'utf-8'));
+function registerPartials(templatesDir: string): void {
+  const partialsDir = path.resolve(templatesDir, 'partials');
+  if (!fs.existsSync(partialsDir)) return;
+  for (const file of fs.readdirSync(partialsDir)) {
+    if (!file.endsWith('.hbs')) continue;
+    const basename = file.slice(0, -'.hbs'.length);
+    const camel = basename.replace(/-([a-z0-9])/g, (_m, c: string) => c.toUpperCase());
+    const source = fs.readFileSync(path.join(partialsDir, file), 'utf-8');
+    Handlebars.registerPartial(camel, source);
+    if (basename !== camel) Handlebars.registerPartial(basename, source);
   }
 }
 
@@ -365,7 +376,7 @@ export class HTMLReportGenerator {
   constructor(db: DatabaseManager, config: HTMLReportGeneratorConfig = {}) {
     this.db = db;
     this.templatesDir = config.templatesDir ?? DEFAULT_TEMPLATES_DIR;
-    registerDesignTokensPartial(this.templatesDir);
+    registerPartials(this.templatesDir);
     // Injected fetch wins; otherwise fall back to the runtime global `fetch`
     // (Node 18+ / undici). Captured once so enrichment is deterministic.
     this.githubFetch = config.githubFetch ?? (typeof fetch === 'function' ? fetch : undefined);
