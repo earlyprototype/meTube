@@ -156,3 +156,6 @@ nul
 
 # --- Data backups -------------------------------------------
 data/backups/
+
+# design-system token reference is public design values, not runtime secrets
+!design-system/tokens.json
