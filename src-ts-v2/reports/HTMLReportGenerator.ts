@@ -326,6 +326,21 @@ function registerHandlebarsHelpers(): void {
 registerHandlebarsHelpers();
 
 /**
+ * Register the shared design-token partial so every report template pulls
+ * colours, type and spacing from one source (templates/partials/design-tokens.hbs)
+ * via `{{> designTokens}}`, instead of each template hand-rolling its own
+ * divergent `:root` block. Idempotent; re-read per generator so a custom
+ * `templatesDir` is honoured. Missing file is left unregistered — Handlebars
+ * then raises a clear "partial not found" at render time.
+ */
+function registerDesignTokensPartial(templatesDir: string): void {
+  const partialPath = path.resolve(templatesDir, 'partials', 'design-tokens.hbs');
+  if (fs.existsSync(partialPath)) {
+    Handlebars.registerPartial('designTokens', fs.readFileSync(partialPath, 'utf-8'));
+  }
+}
+
+/**
  * HTML report generator. One instance per logical command path; the
  * constructor is cheap (it just stores references), so callers should
  * feel free to instantiate per command rather than caching globally.
@@ -350,6 +365,7 @@ export class HTMLReportGenerator {
   constructor(db: DatabaseManager, config: HTMLReportGeneratorConfig = {}) {
     this.db = db;
     this.templatesDir = config.templatesDir ?? DEFAULT_TEMPLATES_DIR;
+    registerDesignTokensPartial(this.templatesDir);
     // Injected fetch wins; otherwise fall back to the runtime global `fetch`
     // (Node 18+ / undici). Captured once so enrichment is deterministic.
     this.githubFetch = config.githubFetch ?? (typeof fetch === 'function' ? fetch : undefined);

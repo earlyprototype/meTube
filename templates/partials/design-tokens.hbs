@@ -1,0 +1,73 @@
+/* ─────────────────────────────────────────────────────────────
+   Design tokens — single source of truth for every meTube report.
+   Included by each template with the designTokens partial inside its style.
+   Edit here once; the video and playlist reports both inherit.
+
+   Themes:
+     :root                 light  — video report default
+     [data-theme="dark"]   dark   — video report toggle
+     [data-theme="glass"]  glass  — playlist "Research Hub" (set on <html>)
+   ───────────────────────────────────────────────────────────── */
+:root {
+  /* spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  /* motion */
+  --transition: 0.2s ease;
+
+  /* typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+
+  /* entity colours — shared across every report */
+  --entity-topic: #2196F3;
+  --entity-repo: #9C27B0;
+  --entity-website: #FF9800;
+  --entity-person: #F44336;
+
+  /* light theme (video report default) */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --text-primary: #333333;
+  --text-secondary: #666666;
+  --border-color: #dddddd;
+  --link-color: #0066cc;
+  --accent-color: #4CAF50;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --text-primary: #e0e0e0;
+  --text-secondary: #b0b0b0;
+  --border-color: #444444;
+  --link-color: #4da6ff;
+  --accent-color: #66BB6A;
+}
+
+[data-theme="glass"] {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #14141f;
+  --bg-tertiary: #1a1a2e;
+  --text-primary: #e4e4e7;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --accent-primary: #a855f7;
+  --accent-secondary: #ec4899;
+  --accent-tertiary: #06b6d4;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --border: #27272a;
+  --glass-bg: rgba(20, 20, 31, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}

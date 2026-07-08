@@ -5,25 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ video.title }} - Video Report</title>
     <style>
-        :root {
-            --bg-primary: #ffffff;
-            --bg-secondary: #f5f5f5;
-            --text-primary: #333333;
-            --text-secondary: #666666;
-            --border-color: #dddddd;
-            --link-color: #0066cc;
-            --accent-color: #4CAF50;
-        }
-        
-        [data-theme="dark"] {
-            --bg-primary: #1a1a1a;
-            --bg-secondary: #2d2d2d;
-            --text-primary: #e0e0e0;
-            --text-secondary: #b0b0b0;
-            --border-color: #444444;
-            --link-color: #4da6ff;
-            --accent-color: #66BB6A;
-        }
+        {{> designTokens}}
         
         * {
             box-sizing: border-box;
@@ -194,19 +176,19 @@
         }
         
         .entity-tag.topic {
-            background: #2196F3;
+            background: var(--entity-topic);
         }
-        
+
         .entity-tag.repo {
-            background: #9C27B0;
+            background: var(--entity-repo);
         }
-        
+
         .entity-tag.website {
-            background: #FF9800;
+            background: var(--entity-website);
         }
-        
+
         .entity-tag.person {
-            background: #F44336;
+            background: var(--entity-person);
         }
         
         .summary-box {

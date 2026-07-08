@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="glass">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,22 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --bg-primary: #0a0a0f;
-            --bg-secondary: #14141f;
-            --bg-tertiary: #1a1a2e;
-            --text-primary: #e4e4e7;
-            --text-secondary: #a1a1aa;
-            --text-muted: #71717a;
-            --accent-primary: #a855f7;
-            --accent-secondary: #ec4899;
-            --accent-tertiary: #06b6d4;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --border: #27272a;
-            --glass-bg: rgba(20, 20, 31, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.1);
-        }
+        {{> designTokens}}
         
         * {
             margin: 0;
