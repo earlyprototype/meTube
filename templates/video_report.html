@@ -301,7 +301,7 @@
         {{#> video-section title="Topics" count=(length entities.topics)}}
                 <div class="entity-list">
                     {{#each entities.topics}}
-                    {{> video-entity-tag modifier="topic"}}
+                    {{> video-entity-tag value=this modifier="topic"}}
                     {{/each}}
                 </div>
         {{/video-section}}
@@ -331,7 +331,7 @@
         {{#> video-section title="People Mentioned" count=(length entities.people)}}
                 <div class="entity-list">
                     {{#each entities.people}}
-                    {{> video-entity-tag modifier="person"}}
+                    {{> video-entity-tag value=this modifier="person"}}
                     {{/each}}
                 </div>
         {{/video-section}}
@@ -341,7 +341,7 @@
         {{#> video-section title="Tags" count=(length tags)}}
                 <div class="entity-list">
                     {{#each tags}}
-                    {{> video-entity-tag}}
+                    {{> video-entity-tag value=this}}
                     {{/each}}
                 </div>
         {{/video-section}}
