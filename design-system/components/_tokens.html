@@ -1,0 +1,98 @@
+<!-- @dsCard group="Foundations" -->
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+:root {
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 16px;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  --entity-topic: #2196F3; --entity-repo: #9C27B0; --entity-website: #FF9800; --entity-person: #F44336;
+}
+* { box-sizing: border-box; }
+body { font-family: var(--font-sans); color: #333; background: #fff; line-height: 1.5; }
+h1 { font-size: 28px; margin: 0 0 4px; }
+h2 { font-size: 16px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; margin: 40px 0 16px; border-bottom: 1px solid #eee; padding-bottom: 6px; }
+.sub { color: #888; margin: 0 0 8px; font-size: 14px; }
+.grid { display: flex; flex-wrap: wrap; gap: 16px; }
+.swatch { width: 150px; border: 1px solid #eee; border-radius: 8px; overflow: hidden; font-size: 12px; }
+.swatch .chip { height: 64px; }
+.swatch .meta { padding: 8px; }
+.swatch .name { font-weight: 600; }
+.swatch .val { font-family: var(--font-mono); color: #888; font-size: 11px; }
+.theme-row { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; border-radius: 12px; margin-bottom: 8px; }
+.type-row { display: flex; align-items: baseline; gap: 16px; margin: 10px 0; border-bottom: 1px dashed #eee; padding-bottom: 8px; }
+.type-row .tag { font-family: var(--font-mono); font-size: 12px; color: #888; width: 130px; flex-shrink: 0; }
+.space-row { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
+.space-bar { height: 16px; background: var(--entity-topic); border-radius: 3px; }
+.space-lbl { font-family: var(--font-mono); font-size: 12px; color: #888; width: 130px; }
+</style>
+</head>
+<body style="padding:32px">
+<h1>meTube Design Tokens</h1>
+<p class="sub">Single source of truth — <code>templates/partials/design-tokens.hbs</code>. Three theme scopes: light (<code>:root</code>), dark (<code>[data-theme="dark"]</code>), glass (<code>[data-theme="glass"]</code>).</p>
+
+<h2>Entity colours (theme-independent)</h2>
+<div class="grid">
+  <div class="swatch"><div class="chip" style="background:#2196F3"></div><div class="meta"><div class="name">topic</div><div class="val">#2196F3</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#9C27B0"></div><div class="meta"><div class="name">repo</div><div class="val">#9C27B0</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#FF9800"></div><div class="meta"><div class="name">website</div><div class="val">#FF9800</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#F44336"></div><div class="meta"><div class="name">person</div><div class="val">#F44336</div></div></div>
+</div>
+
+<h2>Light theme &mdash; <code>:root</code> (video report)</h2>
+<div class="theme-row" style="background:#f5f5f5;border:1px solid #ddd">
+  <div class="swatch"><div class="chip" style="background:#ffffff;border-bottom:1px solid #eee"></div><div class="meta"><div class="name">bg-primary</div><div class="val">#ffffff</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#f5f5f5"></div><div class="meta"><div class="name">bg-secondary</div><div class="val">#f5f5f5</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#333333"></div><div class="meta"><div class="name">text-primary</div><div class="val">#333333</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#666666"></div><div class="meta"><div class="name">text-secondary</div><div class="val">#666666</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#0066cc"></div><div class="meta"><div class="name">link-color</div><div class="val">#0066cc</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#4CAF50"></div><div class="meta"><div class="name">accent-color</div><div class="val">#4CAF50</div></div></div>
+</div>
+
+<h2>Dark theme &mdash; <code>[data-theme="dark"]</code> (video toggle)</h2>
+<div class="theme-row" style="background:#1a1a1a">
+  <div class="swatch"><div class="chip" style="background:#1a1a1a;border-bottom:1px solid #444"></div><div class="meta" style="background:#2d2d2d;color:#e0e0e0"><div class="name">bg-primary</div><div class="val">#1a1a1a</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#2d2d2d"></div><div class="meta" style="background:#2d2d2d;color:#e0e0e0"><div class="name">bg-secondary</div><div class="val">#2d2d2d</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#e0e0e0"></div><div class="meta" style="background:#2d2d2d;color:#e0e0e0"><div class="name">text-primary</div><div class="val">#e0e0e0</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#4da6ff"></div><div class="meta" style="background:#2d2d2d;color:#e0e0e0"><div class="name">link-color</div><div class="val">#4da6ff</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#66BB6A"></div><div class="meta" style="background:#2d2d2d;color:#e0e0e0"><div class="name">accent-color</div><div class="val">#66BB6A</div></div></div>
+</div>
+
+<h2>Glass theme &mdash; <code>[data-theme="glass"]</code> (playlist Research Hub)</h2>
+<div class="theme-row" style="background:#0a0a0f">
+  <div class="swatch"><div class="chip" style="background:#0a0a0f;border-bottom:1px solid #27272a"></div><div class="meta" style="background:#14141f;color:#e4e4e7"><div class="name">bg-primary</div><div class="val">#0a0a0f</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#1a1a2e"></div><div class="meta" style="background:#14141f;color:#e4e4e7"><div class="name">bg-tertiary</div><div class="val">#1a1a2e</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#a855f7"></div><div class="meta" style="background:#14141f;color:#e4e4e7"><div class="name">accent-primary</div><div class="val">#a855f7</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#ec4899"></div><div class="meta" style="background:#14141f;color:#e4e4e7"><div class="name">accent-secondary</div><div class="val">#ec4899</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#06b6d4"></div><div class="meta" style="background:#14141f;color:#e4e4e7"><div class="name">accent-tertiary</div><div class="val">#06b6d4</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#10b981"></div><div class="meta" style="background:#14141f;color:#e4e4e7"><div class="name">success</div><div class="val">#10b981</div></div></div>
+  <div class="swatch"><div class="chip" style="background:#f59e0b"></div><div class="meta" style="background:#14141f;color:#e4e4e7"><div class="name">warning</div><div class="val">#f59e0b</div></div></div>
+</div>
+
+<h2>Type scale</h2>
+<div class="type-row"><span class="tag">h1 / 32px</span><span style="font-size:32px;font-weight:600">Video title</span></div>
+<div class="type-row"><span class="tag">h2 / 24px</span><span style="font-size:24px;font-weight:600">Section heading</span></div>
+<div class="type-row"><span class="tag">h3 / 18px</span><span style="font-size:18px;font-weight:600">Sub heading</span></div>
+<div class="type-row"><span class="tag">body / 16px</span><span style="font-size:16px">Body copy and summaries</span></div>
+<div class="type-row"><span class="tag">label / 12px</span><span style="font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:#666">Stat label</span></div>
+<div class="type-row"><span class="tag">mono</span><span style="font-family:var(--font-mono);font-size:16px">karpathy/nanoGPT</span></div>
+
+<h2>Spacing scale</h2>
+<div class="space-row"><span class="space-lbl">--space-1 / 4px</span><div class="space-bar" style="width:4px"></div></div>
+<div class="space-row"><span class="space-lbl">--space-2 / 8px</span><div class="space-bar" style="width:8px"></div></div>
+<div class="space-row"><span class="space-lbl">--space-3 / 12px</span><div class="space-bar" style="width:12px"></div></div>
+<div class="space-row"><span class="space-lbl">--space-4 / 16px</span><div class="space-bar" style="width:16px"></div></div>
+<div class="space-row"><span class="space-lbl">--space-6 / 24px</span><div class="space-bar" style="width:24px"></div></div>
+<div class="space-row"><span class="space-lbl">--space-8 / 32px</span><div class="space-bar" style="width:32px"></div></div>
+
+<h2>Radius</h2>
+<div class="grid">
+  <div style="width:110px;text-align:center"><div style="height:70px;background:var(--entity-repo);border-radius:4px"></div><div class="val" style="margin-top:6px;font-family:var(--font-mono);font-size:12px;color:#888">sm / 4px</div></div>
+  <div style="width:110px;text-align:center"><div style="height:70px;background:var(--entity-repo);border-radius:8px"></div><div class="val" style="margin-top:6px;font-family:var(--font-mono);font-size:12px;color:#888">md / 8px</div></div>
+  <div style="width:110px;text-align:center"><div style="height:70px;background:var(--entity-repo);border-radius:16px"></div><div class="val" style="margin-top:6px;font-family:var(--font-mono);font-size:12px;color:#888">lg / 16px</div></div>
+</div>
+</body>
+</html>
