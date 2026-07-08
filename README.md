@@ -6,21 +6,17 @@ Turn YouTube rabbit holes into structured, searchable knowledge — a CLI for pe
 
 ## What this is / why I built it
 
-I have ADHD. I watch a lot of YouTube — not passively, but as a research tool, following threads across channels, playlists, and topics. The problem is that none of it sticks in a retrievable form. A video mention of a GitHub repo disappears into watch history. A name or concept I meant to follow up on evaporates. The consumption is real; the knowledge capture isn't.
+I watch a lot of YouTube — not passively, but as a research tool, following threads across channels, playlists, and topics (I swear!). The problem is that I often lose track of that rigorous hard work. A video mention of a GitHub repo disappears into watch history. A name or concept I meant to follow up on evaporates. The consumption happens; the knowledge capture doesn't.
 
-meTube is the personal-use tool I built to fix that. It connects to my YouTube account, discovers my playlists, and extracts structured data from every video: full transcripts, GitHub repositories and websites from descriptions, topics and people parsed by Gemini, and summary metadata stored locally in SQLite. The result is a searchable, browseable knowledge base built from actual watch history — not curated notes I had to write, but extracted automatically.
+meTube is the personal-use tool I built to fix that. It connects to my YouTube account, discovers my playlists, and extracts structured data from every video: full transcripts, GitHub repositories and websites from descriptions, topics and people parsed by Gemini, and summary metadata stored locally in SQLite. The result is a searchable, browseable knowledge base built from actual watch history — no more hand-written and carefully filed Post-it dossiers, just automatically extracted, transcribed and curated information, deployable via delightful, interactive HTML reports.
 
-This is also a portfolio piece. Honesty in this README beats optimism. The status section below names exactly what ships and what's deferred.
 
-## The differentiated capability — dual-transcript pipeline
+## Dual-transcript pipeline
 
-Most YouTube tools use either the YouTube Transcript API or Whisper — meTube uses both, with a graceful fallback. YouTube captions run first: fast, free, no compute. When they fail or are unavailable, Whisper picks up automatically, downloading audio via yt-dlp and transcribing locally. Videos that would otherwise be transcript-less get captured. The pipeline is transparent — you see which path was used per video.
+meTube uses both the YouTube Transcript API and Whisper —  both, with a graceful fallback. YouTube captions run first: fast, free, no compute. If they fail or are unavailable, Whisper picks up automatically, downloading audio via yt-dlp and transcribing locally. 
 
-**Architectural irony to know about:** Whisper still spawns `python whisper_extractor.py` as a subprocess. The TS binary is not yet a standalone artifact for the Whisper path — it requires a Python venv with `openai-whisper` and `ffmpeg`. De-Pythonising Whisper is on the post-v1.0.0 roadmap; today it works if you have the venv.
 
 ## What ships
-
-These commands are tested and working:
 
 | Command | What it does |
 |---|---|
@@ -39,12 +35,6 @@ These commands are tested and working:
 | `metube report video <id>` | Generate HTML report for a single video |
 | `metube report --all` | Generate reports for every video in the database |
 
-## What's still deferred
-
-- `playlist add --search "title"` interactive multiselect (plain title search already works as the positional argument)
-- Whisper de-Python (separate Tier 3 work; see the architectural note above)
-
-See [`_kanban.md`](_kanban.md) for the live board.
 
 ## Quick start
 
@@ -76,16 +66,8 @@ If you run Claude Code (or another MCP-capable client) against this repo, the ka
 
 The canonical implementation is TypeScript: Ink (React) for the terminal UI, better-sqlite3 for local storage, googleapis for YouTube Data API, youtube-transcript for native captions, Whisper subprocess for audio fallback, and Google Gemini for entity parsing. HTML reports are Handlebars templates.
 
-Two source trees matter. `src-ts/` is the Ink UI layer — `cli.tsx` is the entry point, with the command screens in `commands/` and shared widgets in `components/` — and it imports the backend directly from `src-ts-v2/`, which owns everything below the UI: database repositories, extractors, the YouTube API client, auth, parsers, and report generation. The UI survived the v1→v2 rewrite intact; the backend was rewritten from the Python source, and the abandoned v1 backend is preserved in `archive/src-ts-v1/`.
+Two source trees matter. `src-ts/` is the Ink UI layer — `cli.tsx` is the entry point, with the command screens in `commands/` and shared widgets in `components/` — and it imports the backend directly from `src-ts-v2/`, which owns everything below the UI: database repositories, extractors, the YouTube API client, auth, parsers, and report generation. 
 
-For the curious about why the code is shaped this way:
-
-- [`docs/REWRITE_AUDIT.md`](docs/REWRITE_AUDIT.md) — the operational diagnostic that drove the v2 rewrite (14 agents, 6 phases)
-- [`docs/adr/0001-rewrite-vs-patch.md`](docs/adr/0001-rewrite-vs-patch.md) — the rewrite-vs-patch decision record
-- [`docs/PORT_PLAN.md`](docs/PORT_PLAN.md) — the executable port plan
-- [`archive/src-ts-v1/WHY.md`](archive/src-ts-v1/WHY.md) — what the archived v1 backend was and why it's gone
-
-The original Python implementation is preserved in `legacy/python/` for reference. It was the source of truth that v1.0.0 was ported from.
 
 ## License
 
