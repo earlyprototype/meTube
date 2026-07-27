@@ -169,11 +169,11 @@ TODO.
 
 `_kanban.md` syncs one-way to GitHub Project #9
 (https://github.com/users/earlyprototype/projects/9) via kanbanger
-(see https://github.com/earlyprototype/kanbanger-partymix).
+(see https://github.com/earlyprototype/kanbanger).
 
 This project uses a **per-project venv** for kanbanger:
 
-- `.venv/` — Python venv with `kanbanger-partymix[mcp]` installed (gitignored)
+- `.venv/` — Python venv with `kanbanger[mcp]` installed (gitignored)
 - `.mcp.json` — wires Claude Code to that venv's `kanbanger_mcp` module
 
 A `post-commit` hook at `.git/hooks/post-commit` auto-syncs whenever
@@ -277,7 +277,7 @@ this project.
 **If the Kanbanger tools aren't available** in this session, the per-project
 `.venv` is probably not provisioned on this machine (it's gitignored, so a
 fresh clone won't have it). Re-provision and restart the session — substitute
-`<kanbanger-source>` with your local clone of `kanbanger-partymix` and
+`<kanbanger-source>` with your local clone of `kanbanger` and
 `<project-dir>` with the absolute path to this project root:
 
 ```bash
