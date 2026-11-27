@@ -143,7 +143,10 @@ function makeHarness(): TestHarness {
   fs.writeFileSync(path.join(templatesDir, 'playlist_report.html'), PLAYLIST_TEMPLATE);
 
   const dbm = new DatabaseManager(':memory:');
-  const generator = new HTMLReportGenerator(dbm, { templatesDir });
+  const generator = new HTMLReportGenerator(dbm, {
+    templatesDir,
+    githubFetch: async () => new Response(null, { status: 404 }),
+  });
   return { dbm, templatesDir, outputDir, tempRoot, generator };
 }
 
@@ -748,6 +751,22 @@ describe('HTMLReportGenerator — GitHub repo description enrichment', () => {
     );
     return playlistId;
   }
+
+  it('keeps stored repositories in offline reports without fetching descriptions', async () => {
+    const githubFetch = vi.fn(async () => githubResponse(200, { description: 'Online only' }));
+    h = makeHarness();
+    const playlistId = seedRepoPlaylist(h.dbm, [
+      { value: 'sample/atlas', url: 'https://github.com/sample/atlas' },
+    ]);
+    const generator = new HTMLReportGenerator(h.dbm, {
+      templatesDir: h.templatesDir,
+      offline: true,
+      githubFetch,
+    });
+    const report = await generator.generatePlaylistReport(playlistId, h.outputDir);
+    expect(fs.readFileSync(report, 'utf8')).toContain('sample/atlas');
+    expect(githubFetch).not.toHaveBeenCalled();
+  });
 
   it('fetches and renders the GitHub description for each unique repo', async () => {
     // Arrange

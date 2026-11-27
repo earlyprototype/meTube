@@ -80,6 +80,9 @@ import type {
  * defaults match the Python original and the v1 TS implementation.
  */
 export interface HTMLReportGeneratorConfig {
+  /** Write linked video pages with each playlist and omit network enrichment and remote media. */
+  readonly offline?: boolean;
+
   /**
    * Directory containing the Handlebars templates `video_report.html`
    * and `playlist_report.html`. Resolved relative to `process.cwd()`
@@ -358,6 +361,7 @@ function registerPartials(templatesDir: string): void {
  */
 export class HTMLReportGenerator {
   private readonly db: DatabaseManager;
+  private readonly offline: boolean;
   private readonly templatesDir: string;
   private readonly githubFetch: typeof fetch | undefined;
   private readonly githubThrottleMs: number;
@@ -375,6 +379,7 @@ export class HTMLReportGenerator {
 
   constructor(db: DatabaseManager, config: HTMLReportGeneratorConfig = {}) {
     this.db = db;
+    this.offline = config.offline ?? false;
     this.templatesDir = config.templatesDir ?? DEFAULT_TEMPLATES_DIR;
     registerPartials(this.templatesDir);
     // Injected fetch wins; otherwise fall back to the runtime global `fetch`
@@ -500,21 +505,21 @@ export class HTMLReportGenerator {
       });
     }
 
-    const baseReportData = this.buildPlaylistReportData(
+    const reportData = this.buildPlaylistReportData(
       playlistId,
       playlist.title,
       playlist.description,
       videos
     );
 
-    // GitHub repo description enrichment (Python html_generator.py:382-389).
-    // Network-touching but fully isolated: any failure degrades to "no
-    // description" and never fails or hangs report generation.
-    const enrichedRepos = await this.enrichGithubDescriptions(baseReportData.github_repos);
-    const reportData: CompletePlaylistReportData = {
-      ...baseReportData,
-      github_repos: enrichedRepos,
-    };
+    if (this.offline) {
+      for (const video of reportData.videos) {
+        const filepath = await this.generateVideoReport(asVideoId(video.video_id), outputDir);
+        video.report_href = encodeURIComponent(path.basename(filepath));
+      }
+    } else {
+      reportData.github_repos = await this.enrichGithubDescriptions(reportData.github_repos);
+    }
 
     const html = this.renderPlaylistTemplate(reportData);
 
@@ -1068,7 +1073,7 @@ export class HTMLReportGenerator {
       this.videoTemplate = this.loadTemplate('video_report');
     }
     try {
-      return this.videoTemplate(data);
+      return this.videoTemplate({ ...data, offline: this.offline });
     } catch (error) {
       throw new AppError('Failed to render video report template', {
         code: REPORT_ERROR_CODES.RENDER_FAILED,
@@ -1083,7 +1088,7 @@ export class HTMLReportGenerator {
       this.playlistTemplate = this.loadTemplate('playlist_report');
     }
     try {
-      return this.playlistTemplate(data);
+      return this.playlistTemplate({ ...data, offline: this.offline });
     } catch (error) {
       throw new AppError('Failed to render playlist report template', {
         code: REPORT_ERROR_CODES.RENDER_FAILED,

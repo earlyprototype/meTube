@@ -257,7 +257,9 @@
             <button class="theme-toggle" onclick="toggleTheme()">Toggle Dark Mode</button>
         </div>
         
+        {{#unless offline}}
         <img src="{{ video.thumbnail_url }}" alt="Video thumbnail" class="thumbnail">
+        {{/unless}}
         
         <div class="meta">
             <div class="meta-item">
@@ -347,17 +349,19 @@
         {{/video-section}}
         {{/if}}
 
-        {{#if transcript}}
         {{#> video-section title="Transcript"}}
+            {{#if transcript}}
                 <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">
                     Language: {{ transcript.language }} |
                     {{#if transcript.is_auto_generated}}Auto-generated{{else}}Manual{{/if}} |
                     {{ transcript.word_count }} words
                 </p>
-                <div class="transcript">{{#each transcript.segments}}<a href="https://youtube.com/watch?v={{ ../video.video_id }}&t={{ start }}s" target="_blank" class="timestamp-link">[{{ timestamp }}]</a>{{ text }}
+                <div class="transcript">{{#each transcript.segments}}{{#if @root.offline}}[{{ timestamp }}] {{else}}<a href="https://youtube.com/watch?v={{ ../video.video_id }}&t={{ start }}s" target="_blank" class="timestamp-link">[{{ timestamp }}]</a>{{/if}}{{ text }}
 {{/each}}</div>
+            {{else}}
+                <p>Transcript unavailable.</p>
+            {{/if}}
         {{/video-section}}
-        {{/if}}
 
         {{#if video.description}}
         {{#> video-section title="Description"}}
@@ -365,9 +369,11 @@
         {{/video-section}}
         {{/if}}
         
+        {{#unless offline}}
         <div style="text-align: center; margin-top: 40px; padding: 20px; color: var(--text-secondary); font-size: 14px;">
             <a href="https://youtube.com/watch?v={{ video.video_id }}" target="_blank" style="font-size: 16px; color: var(--link-color);">View on YouTube</a>
         </div>
+        {{/unless}}
     </div>
     
     <script>

@@ -11,6 +11,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src-ts/cli.tsx",
+    "demo:report": "node --import tsx scripts/dev/demo-offline-report.ts",
     "dev:init": "tsx src-ts/cli.tsx init",
     "dev:list": "tsx src-ts/cli.tsx playlist list",
     "dev:discover": "tsx src-ts/cli.tsx playlist discover",

@@ -111,6 +111,7 @@ export interface PlaylistReportData {
  */
 export interface PlaylistVideoSummary {
   video_id: string;
+  report_href?: string;
   title: string;
   channel_title: string;
   published_at: string;
