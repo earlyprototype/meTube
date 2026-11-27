@@ -63,7 +63,7 @@ With the project dependencies installed, run this from the repository root. The 
 npm --offline --no-update-notifier run demo:report
 ```
 
-Open the printed file URL for **The Tide Notebook**. Select **Read report** on **Reading the Tide Clock** to see the transcript and the extracted topic **Tide gauges**. The second video, **Surveying Glass Bay**, displays **Transcript unavailable**.
+Open the printed file URL for **The Tide Notebook**. Select **Read report** on **Reading the Tide Clock** to see its transcript and two extracted topics, **Tide gauges** and **Coastal surveying**. The report for **Surveying Glass Bay** displays **Transcript unavailable**.
 
 Each run creates a fresh `metube-offline-*` directory in the system temporary directory. It contains the seeded SQLite library (`library.db`) and a `reports/` folder with three HTML files. You can move the whole `reports/` folder and reopen its `playlist_*.html` file. Both video links resolve from that folder. Delete the temporary demo directory when finished.
 

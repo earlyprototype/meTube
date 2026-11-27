@@ -1,6 +1,5 @@
-import { execFileSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -27,30 +26,34 @@ it('can move and browse the same two reports on each offline demo run', () => {
   }
   const originalDb = fs.readFileSync(userDbPath);
 
-  const loader = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
-  const script = fileURLToPath(
-    new URL('../../scripts/dev/demo-offline-report.ts', import.meta.url)
+  // Run the published npm script with the disposable library as its working directory.
+  const project = fileURLToPath(new URL('../../', import.meta.url));
+  fs.copyFileSync(path.join(project, 'package.json'), path.join(workspace, 'package.json'));
+  for (const dir of ['node_modules', 'scripts']) {
+    fs.symlinkSync(path.join(project, dir), path.join(workspace, dir), 'junction');
+  }
+  fs.copyFileSync(
+    new URL('./fixtures/offline-network.cjs', import.meta.url),
+    path.join(workspace, 'offline-network.cjs')
   );
-  const guard = fileURLToPath(new URL('./fixtures/offline-network.cjs', import.meta.url));
   const run = (destination: string) => {
-    const stdout = execFileSync(
-      process.execPath,
-      ['--require', guard, '--import', loader, script],
-      {
-        cwd: workspace,
-        env: {
-          PATH: process.env.PATH,
-          SystemRoot: process.env.SystemRoot,
-          HOME: workspace,
-          USERPROFILE: workspace,
-          TMPDIR: workspace,
-          TEMP: workspace,
-          TMP: workspace,
-        },
-        encoding: 'utf8',
-        timeout: 30_000,
-      }
-    );
+    const stdout = execSync('npm --offline --no-update-notifier run demo:report', {
+      cwd: workspace,
+      env: {
+        PATH: process.env.PATH,
+        SystemRoot: process.env.SystemRoot,
+        HOME: workspace,
+        USERPROFILE: workspace,
+        TMPDIR: workspace,
+        TEMP: workspace,
+        TMP: workspace,
+        npm_config_cache: path.join(workspace, 'npm-cache'),
+        npm_config_loglevel: 'silent',
+        NODE_OPTIONS: '--require=./offline-network.cjs',
+      },
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
     const playlist = fileURLToPath(stdout.trim());
     const reports = path.dirname(playlist);
     const demoRoot = path.dirname(reports);
@@ -72,6 +75,7 @@ it('can move and browse the same two reports on each offline demo run', () => {
     expect(html).toMatch(/>Reading the Tide Clock</);
     expect(html).toMatch(/>Surveying Glass Bay</);
     expect(html).toMatch(/>Tide gauges</);
+    expect(html).toMatch(/>Coastal surveying</);
     const links = Array.from(
       html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>Read report<\/a>/g),
       ([, href]) => href
@@ -85,11 +89,13 @@ it('can move and browse the same two reports on each offline demo run', () => {
     });
     expect(pages[0]).toContain('<h1>Reading the Tide Clock</h1>');
     expect(pages[0]).toMatch(/>Tide gauges</);
+    expect(pages[0]).toMatch(/>Coastal surveying</);
     expect(pages[0]).toMatch(/class="transcript">\[00:00\] The brass float marks the high tide\./);
     expect(pages[0]).not.toContain('Transcript unavailable');
     expect(pages[1]).toContain('<h1>Surveying Glass Bay</h1>');
     expect(pages[1]).toMatch(/>Transcript unavailable\.</);
     expect(pages[1]).not.toContain('The brass float marks the high tide.');
+    expect(pages[1]).not.toMatch(/>(?:Tide gauges|Coastal surveying)</);
     for (const page of [html, ...pages]) {
       expect(page).not.toMatch(/<(?:img|link|script)\b[^>]*(?:src|href)="https?:/i);
     }
