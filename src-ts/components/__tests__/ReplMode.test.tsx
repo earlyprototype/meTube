@@ -36,27 +36,34 @@ const expectedRows = [
   '╚═╝     ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═════╝ ╚══════╝',
 ];
 
-it('keeps the complete header logo in one JSX string after Prettier runs', async () => {
-  const filepath = fileURLToPath(new URL('../ReplMode.tsx', import.meta.url));
-  const source = await readFile(filepath, 'utf8');
-  const formatted = await format(source, { ...(await resolveConfig(filepath)), filepath });
-  const tree = ts.createSourceFile(filepath, formatted, ts.ScriptTarget.Latest);
-  const literals: string[] = [];
+it.each(['lf', 'crlf'] as const)(
+  'keeps the complete header logo in one JSX string after Prettier formats with %s line endings',
+  async (endOfLine) => {
+    const filepath = fileURLToPath(new URL('../ReplMode.tsx', import.meta.url));
+    const source = await readFile(filepath, 'utf8');
+    const formatted = await format(source, {
+      ...(await resolveConfig(filepath)),
+      filepath,
+      endOfLine,
+    });
+    const tree = ts.createSourceFile(filepath, formatted, ts.ScriptTarget.Latest);
+    const literals: string[] = [];
 
-  function visit(node: ts.Node) {
-    if (
-      ts.isJsxExpression(node) &&
-      node.expression &&
-      ts.isNoSubstitutionTemplateLiteral(node.expression)
-    ) {
-      literals.push(node.expression.text);
+    function visit(node: ts.Node) {
+      if (
+        ts.isJsxExpression(node) &&
+        node.expression &&
+        ts.isNoSubstitutionTemplateLiteral(node.expression)
+      ) {
+        literals.push(node.expression.text);
+      }
+      ts.forEachChild(node, visit);
     }
-    ts.forEachChild(node, visit);
-  }
 
-  visit(tree);
-  expect(literals).toContain(expectedRows.join('\n'));
-});
+    visit(tree);
+    expect(literals).toContain(expectedRows.join('\n'));
+  }
+);
 
 it('preserves every logo column in the persistent REPL header', async () => {
   vi.useFakeTimers();
