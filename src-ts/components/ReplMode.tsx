@@ -278,29 +278,14 @@ export function ReplMode({ onCommand, onExit }: ReplModeProps) {
       >
         <Box flexDirection="column" alignItems="center">
           <Box backgroundColor={inkColors.greyDark}>
-            <Box flexDirection="column" alignItems="center">
-              {/* ASCII logo — spacing is significant. Kept as JS string
-                  literals ({'...'}) so Prettier can't collapse the internal
-                  runs of spaces the way it does for bare JSX text children. */}
-              <Text color={inkColors.orange} bold>
-                {'███╗   ███╗███████╗████████╗██╗   ██╗██████╗ ███████╗'}
-              </Text>
-              <Text color={inkColors.orange} bold>
-                {'████╗ ████║██╔════╝╚══██╔══╝██║   ██║██╔══██╗██╔════╝'}
-              </Text>
-              <Text color={inkColors.orange} bold>
-                {'██╔████╔██║█████╗     ██║   ██║   ██║██████╔╝█████╗  '}
-              </Text>
-              <Text color={inkColors.orange} bold>
-                {'██║╚██╔╝██║██╔══╝     ██║   ██║   ██║██╔══██╗██╔══╝  '}
-              </Text>
-              <Text color={inkColors.orange} bold>
-                {'██║ ╚═╝ ██║███████╗   ██║   ╚██████╔╝██████╔╝███████╗'}
-              </Text>
-              <Text color={inkColors.orange} bold>
-                {'╚═╝     ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═════╝ ╚══════╝'}
-              </Text>
-            </Box>
+            <Text color={inkColors.orange} bold>
+              {`███╗   ███╗███████╗████████╗██╗   ██╗██████╗ ███████╗
+████╗ ████║██╔════╝╚══██╔══╝██║   ██║██╔══██╗██╔════╝
+██╔████╔██║█████╗     ██║   ██║   ██║██████╔╝█████╗\x20\x20
+██║╚██╔╝██║██╔══╝     ██║   ██║   ██║██╔══██╗██╔══╝\x20\x20
+██║ ╚═╝ ██║███████╗   ██║   ╚██████╔╝██████╔╝███████╗
+╚═╝     ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═════╝ ╚══════╝`}
+            </Text>
           </Box>
           <Box marginTop={1}>
             <Text color={inkColors.greyLight}>YouTube Video Extraction & Analysis CLI</Text>
