@@ -444,7 +444,9 @@ export class HTMLReportGenerator {
 
     ensureDirectory(outputDir);
     const safeTitle = sanitizeFilename(video.title);
-    const filename = `${videoId}_${safeTitle}.html`;
+    // Hex keeps case-sensitive video IDs distinct on case-insensitive filesystems.
+    const fileId = this.offline ? Buffer.from(videoId).toString('hex') : videoId;
+    const filename = `${fileId}_${safeTitle}.html`;
     const filepath = path.resolve(outputDir, filename);
 
     try {
