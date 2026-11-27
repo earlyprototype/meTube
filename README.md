@@ -55,6 +55,18 @@ metube report playlist 3     # generate the HTML report
 
 You can also use the `mtb` alias for all commands.
 
+## Offline playlist report demo
+
+With the project dependencies installed, run this from the repository root. The demo works offline and requires no credentials.
+
+```sh
+npm --offline --no-update-notifier run demo:report
+```
+
+Open the printed file URL for **The Tide Notebook**. Select **Read report** on **Reading the Tide Clock** to see its transcript and two extracted topics, **Tide gauges** and **Coastal surveying**. The report for **Surveying Glass Bay** displays **Transcript unavailable**.
+
+Each run creates a fresh `metube-offline-*` directory in the system temporary directory. It contains the seeded SQLite library (`library.db`) and a `reports/` folder with three HTML files. You can move the whole `reports/` folder and reopen its `playlist_*.html` file. Both video links resolve from that folder. Delete the temporary demo directory when finished.
+
 ## Optional: kanbanger MCP for AI sessions
 
 If you run Claude Code (or another MCP-capable client) against this repo, the kanban board at `_kanban.md` syncs through the [kanbanger](https://github.com/earlyprototype/kanbanger-partymix) MCP server. The wiring is `.mcp.json`, but that file carries absolute, machine-specific paths so it is gitignored. Copy `.mcp.json.example` to `.mcp.json` and update the `KANBANGER_WORKSPACE` value (and the `command` path if your venv lives elsewhere) before launching your client.

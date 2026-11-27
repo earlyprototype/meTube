@@ -17,13 +17,7 @@ jobs:
         with:
           node-version: '22'
 
-      # The committed lockfile is generated on Windows and omits the
-      # platform-specific Rollup native binary CI needs
-      # (@rollup/rollup-linux-x64-gnu). npm ci refuses to fetch optional
-      # deps missing from the lockfile (npm/cli#4828), so drop it and let
-      # npm resolve fresh for ubuntu-latest each run.
-      - name: Install (workaround npm/cli#4828)
-        run: rm -f package-lock.json && npm install --include=optional
+      - run: npm ci --include=optional
 
       - run: npm run build
 

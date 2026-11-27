@@ -1,8 +1,10 @@
 <div class="video-card" data-id="{{ video_id }}" data-title="{{ title }}" data-topics="{{#each topics}}{{this}},{{/each}}">
+    {{#unless @root.offline}}
     <div class="video-thumbnail-wrapper">
         <img src="{{ thumbnail_url }}" alt="{{ title }}" class="video-thumbnail">
         <div class="video-overlay"></div>
     </div>
+    {{/unless}}
     <div class="video-content">
         <div class="video-title">{{ title }}</div>
         <div class="video-meta">
@@ -23,7 +25,11 @@
             {{/each}}
         </div>
         <div class="video-actions">
+            {{#if report_href}}
+            <a href="{{ report_href }}" class="btn btn-primary">Read report</a>
+            {{else}}
             <a href="https://www.youtube.com/watch?v={{ video_id }}" target="_blank" class="btn btn-primary">Watch</a>
+            {{/if}}
             <button class="btn btn-danger" onclick="confirmRemove('{{ video_id }}', 'video')">Remove</button>
             <label class="checkbox-wrapper">
                 <input type="checkbox" class="checkbox" onchange="toggleResearched('{{ video_id }}', 'video')" data-id="{{ video_id }}">
