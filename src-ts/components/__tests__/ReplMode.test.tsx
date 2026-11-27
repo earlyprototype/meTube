@@ -1,7 +1,11 @@
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 import React from 'react';
 import { Text } from 'ink';
 import { cleanup, render } from 'ink-testing-library';
+import { format, resolveConfig } from 'prettier';
+import ts from 'typescript';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ReplMode } from '../ReplMode.js';
 
@@ -23,15 +27,38 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+const expectedRows = [
+  '███╗   ███╗███████╗████████╗██╗   ██╗██████╗ ███████╗',
+  '████╗ ████║██╔════╝╚══██╔══╝██║   ██║██╔══██╗██╔════╝',
+  '██╔████╔██║█████╗     ██║   ██║   ██║██████╔╝█████╗  ',
+  '██║╚██╔╝██║██╔══╝     ██║   ██║   ██║██╔══██╗██╔══╝  ',
+  '██║ ╚═╝ ██║███████╗   ██║   ╚██████╔╝██████╔╝███████╗',
+  '╚═╝     ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═════╝ ╚══════╝',
+];
+
+it('keeps the complete header logo in one JSX string after Prettier runs', async () => {
+  const filepath = fileURLToPath(new URL('../ReplMode.tsx', import.meta.url));
+  const source = await readFile(filepath, 'utf8');
+  const formatted = await format(source, { ...(await resolveConfig(filepath)), filepath });
+  const tree = ts.createSourceFile(filepath, formatted, ts.ScriptTarget.Latest);
+  const literals: string[] = [];
+
+  function visit(node: ts.Node) {
+    if (
+      ts.isJsxExpression(node) &&
+      node.expression &&
+      ts.isNoSubstitutionTemplateLiteral(node.expression)
+    ) {
+      literals.push(node.expression.text);
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(tree);
+  expect(literals).toContain(expectedRows.join('\n'));
+});
+
 it('preserves every logo column in the persistent REPL header', async () => {
-  const expectedRows = [
-    '███╗   ███╗███████╗████████╗██╗   ██╗██████╗ ███████╗',
-    '████╗ ████║██╔════╝╚══██╔══╝██║   ██║██╔══██╗██╔════╝',
-    '██╔████╔██║█████╗     ██║   ██║   ██║██████╔╝█████╗  ',
-    '██║╚██╔╝██║██╔══╝     ██║   ██║   ██║██╔══██╗██╔══╝  ',
-    '██║ ╚═╝ ██║███████╗   ██║   ╚██████╔╝██████╔╝███████╗',
-    '╚═╝     ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═════╝ ╚══════╝',
-  ];
   vi.useFakeTimers();
   const { lastFrame } = render(<ReplMode onCommand={vi.fn()} onExit={vi.fn()} />);
   await vi.advanceTimersByTimeAsync(1500);
